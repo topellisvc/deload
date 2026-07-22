@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { OneRepMaxCalculator } from "@/components/calculators/one-rep-max-calculator";
+import { RelatedTools } from "@/components/related-tools";
 
 export const metadata: Metadata = {
   title: "One-Rep Max Calculator",
@@ -125,6 +126,8 @@ export default function OneRepMaxPage() {
           </section>
         </article>
       </div>
+
+      <RelatedTools currentSlug="one-rep-max" />
     </>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AcwrCalculator } from "@/components/calculators/acwr-calculator";
+import { RelatedTools } from "@/components/related-tools";
 
 export const metadata: Metadata = {
   title: "Training Load Ratio (ACWR) Calculator",
@@ -126,6 +127,8 @@ export default function AcwrPage() {
           </section>
         </article>
       </div>
+
+      <RelatedTools currentSlug="acwr" />
     </>
   );
 }

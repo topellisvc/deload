@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { QuickWorkoutGenerator } from "@/components/calculators/quick-workout-generator";
+import { RelatedTools } from "@/components/related-tools";
 
 export const metadata: Metadata = {
   title: "Quick Workout Generator",
@@ -111,6 +112,8 @@ export default function QuickWorkoutPage() {
           </section>
         </article>
       </div>
+
+      <RelatedTools currentSlug="quick-workout" />
     </>
   );
 }
