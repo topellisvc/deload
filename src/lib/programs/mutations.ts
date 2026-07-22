@@ -426,9 +426,14 @@ export async function swapBlockPositions(
   // collides while b's row still holds it (confirmed live: this threw
   // "duplicate key value violates unique constraint" and silently left
   // the DB order unchanged under an optimistic UI that looked reordered).
-  // Stage through a temporary out-of-range position so the two real
-  // values are never both claimed at once.
-  const tempPosition = -Math.abs(Date.now());
+  // Stage through a temporary negative position so the two real values
+  // are never both claimed at once — real positions are always positive,
+  // so any negative number is safe. Random rather than a fixed constant
+  // so two swaps racing on the same day (e.g. a double click) can't
+  // collide with each other; NOT Date.now() — that's ~1.7 trillion,
+  // which overflows Postgres's 32-bit `integer` column (confirmed live:
+  // "value ... is out of range for type integer" on the very next test).
+  const tempPosition = -(1 + Math.floor(Math.random() * 1_000_000));
   const { error: e0 } = await supabase.from("exercise_blocks").update({ position: tempPosition }).eq("id", a.id);
   if (e0) return { error: e0.message };
   const { error: e1 } = await supabase.from("exercise_blocks").update({ position: a.position }).eq("id", b.id);
