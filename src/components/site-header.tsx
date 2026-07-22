@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Dumbbell } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthStatus } from "@/components/auth/auth-status";
 
 export function SiteHeader() {
   return (
@@ -20,6 +21,13 @@ export function SiteHeader() {
           >
             Tools
           </Link>
+          <Link
+            href="/programs"
+            className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Programs
+          </Link>
+          <AuthStatus />
           <ThemeToggle />
         </nav>
       </div>
