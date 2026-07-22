@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { CalendarDays, Dumbbell, Flame, Gauge, Percent, Shuffle, Timer } from "lucide-react";
+import { CalendarDays, Compass, Dumbbell, Flame, Gauge, Percent, Shuffle, Timer } from "lucide-react";
 
 /**
  * Central registry of live tools. Deliberately small right now — we ship
@@ -45,6 +45,13 @@ export const TOOLS: ToolMeta[] = [
     description:
       "Estimate your body fat percentage from a tape measure using the U.S. Navy circumference method, with an honest accuracy margin and a fat mass / lean mass breakdown.",
     icon: Percent,
+  },
+  {
+    slug: "training-style-finder",
+    name: "Training Style Finder",
+    description:
+      "Not sure what kind of training actually fits you? Answer 3 questions to find out whether powerlifting-style, bodybuilding-style, calisthenics, general fitness, or hybrid training suits your goal and equipment.",
+    icon: Compass,
   },
   {
     slug: "training-split-finder",
