@@ -14,6 +14,9 @@ export interface ToolMeta {
   icon: LucideIcon;
 }
 
+// Order here drives display order on the homepage, /tools, and the "More
+// tools" cross-links — broadest-appeal tools first, more specialized /
+// coach-oriented tools (like ACWR) last.
 export const TOOLS: ToolMeta[] = [
   {
     slug: "one-rep-max",
@@ -23,18 +26,11 @@ export const TOOLS: ToolMeta[] = [
     icon: Dumbbell,
   },
   {
-    slug: "acwr",
-    name: "Training Load Ratio (ACWR) Calculator",
+    slug: "calorie-macro-calculator",
+    name: "Calorie & Macro Calculator",
     description:
-      "Check whether your recent training load has spiked relative to your 4-week baseline, using the acute:chronic workload ratio method from sports science.",
-    icon: Gauge,
-  },
-  {
-    slug: "quick-workout",
-    name: "Quick Workout Generator",
-    description:
-      "Pick a goal, your equipment, a focus area, and how much time you have — get a balanced session built from real exercise-selection rules, not a random shuffle.",
-    icon: Shuffle,
+      "Estimate your daily calorie target and a protein/fat/carb split from multiple published formulas, with an honest range instead of one falsely precise number.",
+    icon: Flame,
   },
   {
     slug: "body-fat-percentage",
@@ -44,10 +40,17 @@ export const TOOLS: ToolMeta[] = [
     icon: Percent,
   },
   {
-    slug: "calorie-macro-calculator",
-    name: "Calorie & Macro Calculator",
+    slug: "quick-workout",
+    name: "Quick Workout Generator",
     description:
-      "Estimate your daily calorie target and a protein/fat/carb split from multiple published formulas, with an honest range instead of one falsely precise number.",
-    icon: Flame,
+      "Pick a goal, your equipment, a focus area, and how much time you have — get a balanced session built from real exercise-selection rules, not a random shuffle.",
+    icon: Shuffle,
+  },
+  {
+    slug: "acwr",
+    name: "Training Load Ratio (ACWR) Calculator",
+    description:
+      "Check whether your recent training load has spiked relative to your 4-week baseline, using the acute:chronic workload ratio method from sports science.",
+    icon: Gauge,
   },
 ];
