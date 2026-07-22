@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, TrendingDown, TrendingUp, CheckCircle2 } from "lucide-react";
 import { motion } from "motion/react";
+import { track } from "@vercel/analytics";
 import { z } from "zod";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,8 +30,10 @@ const ZONE_STYLES: Record<AcwrZone, { badge: string; icon: typeof CheckCircle2 }
   "High risk": { badge: "bg-danger/15 text-danger", icon: AlertTriangle },
 };
 
+const DEFAULT_INPUTS = ["220", "240", "230", "230"];
+
 export function AcwrCalculator() {
-  const [inputs, setInputs] = useState(["220", "240", "230", "230"]);
+  const [inputs, setInputs] = useState(DEFAULT_INPUTS);
 
   const numericLoads = inputs.map((v) => Number(v));
   const parsed = loadSchema.safeParse(numericLoads);
@@ -45,6 +48,18 @@ export function AcwrCalculator() {
       return null;
     }
   }, [parsed, numericLoads]);
+
+  // Fire once per session, only once inputs have actually diverged from
+  // the pre-filled defaults — distinguishes real usage from someone just
+  // landing on the page with the seed values intact.
+  const hasTrackedRef = useRef(false);
+  useEffect(() => {
+    if (hasTrackedRef.current || !result) return;
+    if (inputs.some((v, i) => v !== DEFAULT_INPUTS[i])) {
+      track("calculate_acwr");
+      hasTrackedRef.current = true;
+    }
+  }, [inputs, result]);
 
   function handleChange(index: number, value: string) {
     setInputs((prev) => prev.map((v, i) => (i === index ? value : v)));

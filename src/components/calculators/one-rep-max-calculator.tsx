@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { motion } from "motion/react";
+import { track } from "@vercel/analytics";
 import { z } from "zod";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,18 @@ export function OneRepMaxCalculator() {
     if (!result) return null;
     return generateTrainingTable(result.average);
   }, [result]);
+
+  // Fire once per session, only once the user has actually changed an
+  // input away from the pre-filled defaults — distinguishes real usage
+  // from someone just landing on the page with the seed values intact.
+  const hasTrackedRef = useRef(false);
+  useEffect(() => {
+    if (hasTrackedRef.current || !result) return;
+    if (weightInput !== "100" || repsInput !== "5") {
+      track("calculate_1rm");
+      hasTrackedRef.current = true;
+    }
+  }, [weightInput, repsInput, result]);
 
   function handleUnitChange(next: WeightUnit) {
     if (next === unit) return;

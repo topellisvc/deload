@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { RefreshCw, Shuffle } from "lucide-react";
 import { motion } from "motion/react";
+import { track } from "@vercel/analytics";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ export function QuickWorkoutGenerator() {
   const [workout, setWorkout] = useState<GeneratedWorkout | null>(null);
 
   function handleGenerate() {
+    track(workout ? "regenerate_workout" : "generate_workout", { goal, equipment, focus });
     setWorkout(
       generateWorkout({ goal, equipment, focus, timeMinutes: Number(timeMinutes) })
     );
