@@ -29,6 +29,9 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  verification: {
+    google: "SEV6LGAA88dSh8TOqKYPCS4tDubnzLM2SSYqCQOxFh0",
+  },
 };
 
 // Runs before hydration to avoid a light/dark flash. Dark is the default;
