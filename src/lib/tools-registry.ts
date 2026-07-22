@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Dumbbell, Flame, Gauge, Percent, Shuffle, Timer } from "lucide-react";
+import { CalendarDays, Dumbbell, Flame, Gauge, Percent, Shuffle, Timer } from "lucide-react";
 
 /**
  * Central registry of live tools. Deliberately small right now — we ship
@@ -45,6 +45,13 @@ export const TOOLS: ToolMeta[] = [
     description:
       "Estimate your body fat percentage from a tape measure using the U.S. Navy circumference method, with an honest accuracy margin and a fat mass / lean mass breakdown.",
     icon: Percent,
+  },
+  {
+    slug: "training-split-finder",
+    name: "Training Split Finder",
+    description:
+      "Find the training split that actually fits your goal, experience, and how many days a week you can train — Full Body, Upper/Lower, or Push/Pull/Legs, with the reasoning shown.",
+    icon: CalendarDays,
   },
   {
     slug: "quick-workout",
