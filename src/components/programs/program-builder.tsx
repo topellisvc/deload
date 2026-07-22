@@ -334,7 +334,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         </button>
       </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap">
+      {/*
+        On mobile, days stack in one column (default flex-col). On desktop
+        they run in a single horizontal row that scrolls sideways instead
+        of wrapping to a second line — wrapping pushed later days below
+        the fold, which defeats the point of having a whole week visible
+        without navigating between days. A few days fit without scrolling;
+        a 6-7 day week scrolls sideways, still on one screen.
+      */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:flex-nowrap lg:items-start lg:overflow-x-auto lg:pb-2">
         {week.days.map((day) => (
           <DayColumn
             key={day.id}

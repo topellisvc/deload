@@ -66,49 +66,53 @@ export function SetRowEditor({ set, onChange, onDelete }: SetRowEditorProps) {
   }
 
   return (
-    <div className="grid grid-cols-[3rem_auto_1fr_auto_2.25rem] items-center gap-1.5 sm:grid-cols-[3rem_3.5rem_1fr_5.5rem_4rem_2.25rem]">
+    // Flexbox with wrap, not a fixed grid template: this row lives inside a
+    // day column with a fixed pixel width regardless of viewport size, so
+    // Tailwind's viewport-based sm:/lg: breakpoints don't reflect the space
+    // actually available here — they were previously causing extra columns
+    // to appear on wide screens with nowhere to fit, squeezing the reps
+    // field to near-zero. Flex-wrap just reflows onto a second line when
+    // the row runs out of room, based on the column's real width.
+    <div className="flex flex-wrap items-center gap-1.5">
       <input
         aria-label="Number of sets"
         value={sets}
         onChange={(e) => setSets(e.target.value)}
         onBlur={commitSets}
         inputMode="numeric"
-        className="h-8 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="h-8 w-11 shrink-0 rounded-md border border-border bg-surface px-1 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       />
-      <span className="hidden text-center text-xs text-muted-foreground sm:block">sets</span>
       <input
         aria-label="Reps"
         value={reps}
         onChange={(e) => setReps(e.target.value)}
         onBlur={commitReps}
         placeholder="reps"
-        className="h-8 min-w-0 rounded-md border border-border bg-surface px-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="h-8 min-w-[3.5rem] flex-1 rounded-md border border-border bg-surface px-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       />
-      <div className="col-span-2 flex items-center gap-1 sm:col-span-1">
-        <select
-          aria-label="Load type"
-          value={set.load_type}
-          onChange={(e) => onChange({ load_type: e.target.value as LoadType })}
-          className="h-8 rounded-md border border-border bg-surface px-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        >
-          {LOAD_TYPE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        {showLoadValue && (
-          <input
-            aria-label={`Load (${loadOption.unit})`}
-            value={loadValue}
-            onChange={(e) => setLoadValue(e.target.value)}
-            onBlur={commitLoadValue}
-            placeholder={loadOption.unit ?? ""}
-            inputMode="decimal"
-            className="h-8 w-14 min-w-0 rounded-md border border-border bg-surface px-1.5 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          />
-        )}
-      </div>
+      <select
+        aria-label="Load type"
+        value={set.load_type}
+        onChange={(e) => onChange({ load_type: e.target.value as LoadType })}
+        className="h-8 shrink-0 rounded-md border border-border bg-surface px-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        {LOAD_TYPE_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      {showLoadValue && (
+        <input
+          aria-label={`Load (${loadOption.unit})`}
+          value={loadValue}
+          onChange={(e) => setLoadValue(e.target.value)}
+          onBlur={commitLoadValue}
+          placeholder={loadOption.unit ?? ""}
+          inputMode="decimal"
+          className="h-8 w-14 shrink-0 rounded-md border border-border bg-surface px-1.5 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        />
+      )}
       <input
         aria-label="Rest (seconds)"
         value={rest}
@@ -116,13 +120,13 @@ export function SetRowEditor({ set, onChange, onDelete }: SetRowEditorProps) {
         onBlur={commitRest}
         placeholder="rest s"
         inputMode="numeric"
-        className="hidden h-8 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:block"
+        className="h-8 w-16 shrink-0 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       />
       <button
         type="button"
         onClick={onDelete}
         aria-label="Delete set row"
-        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <Trash2 className="size-4" />
       </button>
