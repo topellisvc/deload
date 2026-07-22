@@ -64,6 +64,7 @@ export function ExercisePicker({ exerciseId, customName, onChange, className }: 
         }}
         placeholder="Exercise name"
         aria-label="Exercise name"
+        title={text}
         className={cn(
           "w-full rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground placeholder:text-muted-foreground placeholder:font-normal transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary",

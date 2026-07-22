@@ -62,6 +62,8 @@ export interface ExerciseBlock {
   rounds: number;
 }
 
+export type ActivityType = "strength" | "run";
+
 export interface BlockExercise {
   id: string;
   block_id: string;
@@ -69,6 +71,7 @@ export interface BlockExercise {
   exercise_id: string | null;
   custom_name: string | null;
   notes: string | null;
+  activity_type: ActivityType;
 }
 
 export type LoadType = "weight" | "percent_1rm" | "rpe" | "bodyweight" | "other";
@@ -83,4 +86,8 @@ export interface SetPrescription {
   load_value: number | null;
   rest_seconds: number | null;
   notes: string | null;
+  /** Run rows only (activity_type === "run"); unused by strength rows. */
+  distance_meters: number | null;
+  duration_seconds: number | null;
+  pace_seconds_per_km: number | null;
 }

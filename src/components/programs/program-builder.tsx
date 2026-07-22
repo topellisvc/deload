@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { BlockRow, DayRow, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
+import type { ActivityType, BlockRow, DayRow, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
 import * as m from "@/lib/programs/mutations";
 import { DayColumn } from "@/components/programs/day-column";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
@@ -219,6 +219,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const { set, error } = await m.addSetRow(supabase, {
       blockExerciseId: exercise.id,
       position: exercise.sets.length + 1,
+      activityType: exercise.activity_type,
       copyFrom: lastSet,
     });
     if (error || !set) {
@@ -228,6 +229,37 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
       exercises: b.exercises.map((ex, i) => (i === 0 ? { ...ex, sets: [...ex.sets, set] } : ex)),
+    }));
+  }
+
+  async function handleActivityTypeChange(dayId: string, blockId: string, activityType: ActivityType) {
+    const day = week.days.find((d) => d.id === dayId);
+    const exercise = day?.blocks.find((b) => b.id === blockId)?.exercises[0];
+    if (!exercise || exercise.activity_type === activityType) return;
+
+    // Switching wipes the existing set rows (sets/reps/load and
+    // distance/duration aren't convertible), so confirm if there's
+    // anything a user would actually lose.
+    const hasData = exercise.sets.some((s) =>
+      activityType === "run"
+        ? s.load_value != null || (s.reps && s.reps.length > 0)
+        : s.distance_meters != null || s.duration_seconds != null
+    );
+    if (hasData && !window.confirm(`Switch to ${activityType === "run" ? "Run" : "Lift"}? This clears the set data already entered for this exercise.`)) {
+      return;
+    }
+
+    const { set, error } = await m.switchExerciseActivityType(supabase, {
+      blockExerciseId: exercise.id,
+      activityType,
+    });
+    if (error || !set) {
+      fail(error ?? "Couldn't switch exercise type.");
+      return;
+    }
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.map((ex, i) => (i === 0 ? { ...ex, activity_type: activityType, sets: [set] } : ex)),
     }));
   }
 
@@ -356,6 +388,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
             onMoveBlock={(blockId, direction) => handleMoveBlock(day.id, blockId, direction)}
             onExerciseChange={(blockId, patch) => handleExerciseChange(day.id, blockId, patch)}
+            onActivityTypeChange={(blockId, activityType) => handleActivityTypeChange(day.id, blockId, activityType)}
             onAddSet={(blockId) => handleAddSet(day.id, blockId)}
             onSetChange={(blockId, setId, patch) => handleSetChange(day.id, blockId, setId, patch)}
             onDeleteSet={(blockId, setId) => handleDeleteSet(day.id, blockId, setId)}

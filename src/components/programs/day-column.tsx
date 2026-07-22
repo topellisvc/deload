@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Copy, Plus } from "lucide-react";
-import type { DayRow, SetRow } from "@/lib/programs/types";
+import type { ActivityType, DayRow, SetRow } from "@/lib/programs/types";
 import { ExerciseBlockCard } from "@/components/programs/exercise-block-card";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +15,7 @@ interface DayColumnProps {
   onDeleteBlock: (blockId: string) => void;
   onMoveBlock: (blockId: string, direction: "up" | "down") => void;
   onExerciseChange: (blockId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
+  onActivityTypeChange: (blockId: string, activityType: ActivityType) => void;
   onAddSet: (blockId: string) => void;
   onSetChange: (blockId: string, setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (blockId: string, setId: string) => void;
@@ -35,6 +36,7 @@ export function DayColumn({
   onDeleteBlock,
   onMoveBlock,
   onExerciseChange,
+  onActivityTypeChange,
   onAddSet,
   onSetChange,
   onDeleteSet,
@@ -50,7 +52,7 @@ export function DayColumn({
   }
 
   return (
-    <div className="flex w-full shrink-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 lg:w-80">
+    <div className="flex w-full shrink-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 lg:w-96">
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <input
@@ -118,6 +120,7 @@ export function DayColumn({
                 onMoveDown={() => onMoveBlock(block.id, "down")}
                 onDeleteBlock={() => onDeleteBlock(block.id)}
                 onExerciseChange={(patch) => onExerciseChange(block.id, patch)}
+                onActivityTypeChange={(activityType) => onActivityTypeChange(block.id, activityType)}
                 onAddSet={() => onAddSet(block.id)}
                 onSetChange={(setId, patch) => onSetChange(block.id, setId, patch)}
                 onDeleteSet={(setId) => onDeleteSet(block.id, setId)}

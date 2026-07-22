@@ -1,4 +1,5 @@
 import type {
+  ActivityType,
   BlockExercise,
   BlockType,
   ExerciseBlock,
@@ -11,6 +12,7 @@ import type {
 } from "@/lib/supabase/types";
 
 export type {
+  ActivityType,
   BlockType,
   LoadType,
   Program,
