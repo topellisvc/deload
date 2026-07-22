@@ -50,7 +50,7 @@ export const TOOLS: ToolMeta[] = [
     slug: "training-style-finder",
     name: "Training Style Finder",
     description:
-      "Not sure what kind of training actually fits you? Answer 3 questions to find out whether powerlifting-style, bodybuilding-style, calisthenics, general fitness, or hybrid training suits your goal and equipment.",
+      "Not sure what kind of training actually fits you? Answer 4 questions to find out which of 8 disciplines — from powerlifting-style to CrossFit-style to power & speed training — suits your goal and equipment.",
     icon: Compass,
   },
   {

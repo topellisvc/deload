@@ -14,6 +14,7 @@ const DEFAULT_ANSWERS: Record<string, string> = {
   goal: "health",
   equipment: "full_gym",
   structure: "consistent",
+  progress: "general_progress",
 };
 
 export function TrainingStyleFinder() {

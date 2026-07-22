@@ -5,14 +5,14 @@ import { RelatedTools } from "@/components/related-tools";
 export const metadata: Metadata = {
   title: "Training Style Finder",
   description:
-    "Not sure what kind of training actually fits you? Answer 3 questions to find out whether powerlifting-style, bodybuilding-style, calisthenics, general fitness, or hybrid training suits your goal and equipment.",
+    "Not sure what kind of training actually fits you? Answer 4 questions to find out which of 8 disciplines — from powerlifting-style to CrossFit-style to power & speed training — suits your goal and equipment.",
   alternates: {
     canonical: "/tools/training-style-finder",
   },
   openGraph: {
     title: "Training Style Finder | Deload",
     description:
-      "Not sure what kind of training actually fits you? Answer 3 questions to find out whether powerlifting-style, bodybuilding-style, calisthenics, general fitness, or hybrid training suits your goal and equipment.",
+      "Not sure what kind of training actually fits you? Answer 4 questions to find out which of 8 disciplines — from powerlifting-style to CrossFit-style to power & speed training — suits your goal and equipment.",
     url: "/tools/training-style-finder",
   },
 };
@@ -21,7 +21,7 @@ const FAQS = [
   {
     question: "How is this different from the Training Split Finder?",
     answer:
-      "This one answers a bigger question first: which overall discipline actually fits you — powerlifting-style, bodybuilding-style, calisthenics, general fitness, or hybrid training. The Training Split Finder assumes you've already settled on general resistance training and helps you structure the week (Full Body, Upper/Lower, or Push/Pull/Legs). Use this one first if you're not sure what you're even training toward.",
+      "This one answers a bigger question first: which overall discipline actually fits you — powerlifting-style, bodybuilding-style, powerbuilding, CrossFit-style, power & speed training, calisthenics, general fitness, or hybrid training. The Training Split Finder assumes you've already settled on general resistance training and helps you structure the week (Full Body, Upper/Lower, or Push/Pull/Legs). Use this one first if you're not sure what you're even training toward.",
   },
   {
     question: "Is this scientifically validated?",
@@ -37,6 +37,16 @@ const FAQS = [
     question: "Can I combine styles, or do I have to pick one?",
     answer:
       "Plenty of real training blends elements of more than one of these — the categories here are useful starting points, not rigid boxes. If your result doesn't feel quite right, that's a signal to adjust rather than a fixed verdict.",
+  },
+  {
+    question: "What's the actual difference between Hybrid and CrossFit-Style?",
+    answer:
+      "Both mix strength and conditioning rather than specializing, but CrossFit-style training specifically layers in Olympic weightlifting, gymnastics-style movements, and workouts benchmarked against a time or score — it's a specific, structured methodology. Hybrid/Conditioning is the looser version: varied strength and cardio without the benchmarked, competitive framework.",
+  },
+  {
+    question: "What's the difference between Powerlifting-Style and Powerbuilding?",
+    answer:
+      "Powerlifting-style training is specialized purely toward the squat, bench, and deadlift numbers going up. Powerbuilding keeps those same heavy lifts but adds real accessory and isolation volume on top, aimed at building visible muscle alongside strength — the tradeoff is slightly slower progress on the pure strength numbers than a dedicated powerlifting approach would give you.",
   },
   {
     question: "What do I do with this recommendation?",
@@ -72,8 +82,8 @@ export default function TrainingStyleFinderPage() {
             Training Style Finder
           </h1>
           <p className="text-muted-foreground">
-            Not sure what kind of training actually fits you? Answer 3
-            questions to find out.
+            Not sure what kind of training actually fits you? Answer 4
+            questions to find out, across 8 different disciplines.
           </p>
         </header>
 
@@ -85,12 +95,13 @@ export default function TrainingStyleFinderPage() {
               Why we ask about equipment before preferences
             </h2>
             <p className="text-muted-foreground">
-              Powerlifting-style training is built around barbell squat,
-              bench, and deadlift — without consistent barbell access, it
-              genuinely isn&rsquo;t that discipline anymore, no matter how much
-              you&rsquo;d prefer it. We treat that as a hard constraint rather
-              than just another preference, and only match on goals and
-              session style once the practical question is settled.
+              Powerlifting-style training, powerbuilding, and CrossFit-style
+              training are all built around barbell work — without
+              consistent barbell access, none of them are genuinely that
+              discipline anymore, no matter how much you&rsquo;d prefer one of
+              them. We treat that as a hard constraint rather than just
+              another preference, and only match on goals and session style
+              once the practical question is settled.
             </p>
           </section>
 

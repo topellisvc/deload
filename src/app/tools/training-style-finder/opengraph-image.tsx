@@ -10,7 +10,7 @@ export default function OpengraphImage() {
       <OgCard
         eyebrow="Tool"
         title="Training Style Finder"
-        description="3 questions to find the training discipline that actually fits you."
+        description="4 questions, 8 disciplines — find the training style that actually fits you."
       />
     ),
     size
