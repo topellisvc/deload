@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Dumbbell, Flame, Gauge, Percent, Shuffle } from "lucide-react";
+import { Dumbbell, Flame, Gauge, Percent, Shuffle, Timer } from "lucide-react";
 
 /**
  * Central registry of live tools. Deliberately small right now — we ship
@@ -24,6 +24,13 @@ export const TOOLS: ToolMeta[] = [
     description:
       "Estimate your true one-rep max from any set, with a confidence range and a full percentage-based training table.",
     icon: Dumbbell,
+  },
+  {
+    slug: "running-pace-calculator",
+    name: "Running Pace Calculator",
+    description:
+      "Solve pace, time, or distance from any two, see even splits, and predict your finish time at other race distances using Riegel's formula.",
+    icon: Timer,
   },
   {
     slug: "calorie-macro-calculator",
