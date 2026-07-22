@@ -422,9 +422,18 @@ export async function swapBlockPositions(
   a: { id: string; position: number },
   b: { id: string; position: number }
 ): Promise<{ error: string | null }> {
-  const { error: e1 } = await supabase.from("exercise_blocks").update({ position: b.position }).eq("id", a.id);
+  // (day_id, position) is unique, so writing a straight to b's position
+  // collides while b's row still holds it (confirmed live: this threw
+  // "duplicate key value violates unique constraint" and silently left
+  // the DB order unchanged under an optimistic UI that looked reordered).
+  // Stage through a temporary out-of-range position so the two real
+  // values are never both claimed at once.
+  const tempPosition = -Math.abs(Date.now());
+  const { error: e0 } = await supabase.from("exercise_blocks").update({ position: tempPosition }).eq("id", a.id);
+  if (e0) return { error: e0.message };
+  const { error: e1 } = await supabase.from("exercise_blocks").update({ position: a.position }).eq("id", b.id);
   if (e1) return { error: e1.message };
-  const { error: e2 } = await supabase.from("exercise_blocks").update({ position: a.position }).eq("id", b.id);
+  const { error: e2 } = await supabase.from("exercise_blocks").update({ position: b.position }).eq("id", a.id);
   return { error: e2?.message ?? null };
 }
 
