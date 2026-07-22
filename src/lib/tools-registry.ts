@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Dumbbell } from "lucide-react";
+import { Dumbbell, Gauge } from "lucide-react";
 
 /**
  * Central registry of live tools. Deliberately small right now — we ship
@@ -21,5 +21,12 @@ export const TOOLS: ToolMeta[] = [
     description:
       "Estimate your true one-rep max from any set, with a confidence range and a full percentage-based training table.",
     icon: Dumbbell,
+  },
+  {
+    slug: "acwr",
+    name: "Training Load Ratio (ACWR) Calculator",
+    description:
+      "Check whether your recent training load has spiked relative to your 4-week baseline, using the acute:chronic workload ratio method from sports science.",
+    icon: Gauge,
   },
 ];
