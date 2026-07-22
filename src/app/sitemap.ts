@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { TOOLS } from "@/lib/tools-registry";
 
-const SITE_URL = "https://example.com";
+const SITE_URL = "https://deloadhq.com";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
