@@ -17,8 +17,8 @@ interface SignInFormProps {
 }
 
 /**
- * Email-only, passwordless sign-in. Sends both a clickable link and a
- * 6-digit code in the same email.
+ * Email-only, passwordless sign-in. Sends both a clickable link and an
+ * 8-digit code in the same email.
  *
  * The code matters for a real case the link alone doesn't cover: someone
  * requests sign-in on their laptop, but checks email on their phone.
@@ -85,21 +85,21 @@ export function SignInForm({ redirectTo = "/" }: SignInFormProps) {
             <CheckCircle2 className="size-8 text-success" />
             <p className="text-foreground">Check your email</p>
             <p className="text-sm text-muted-foreground">
-              We sent a link and a 6-digit code to {email}. Click the link on
+              We sent a link and an 8-digit code to {email}. Click the link on
               this device, or — if you&apos;re reading the email somewhere
               else — enter the code below instead.
             </p>
           </div>
 
           <form onSubmit={handleVerifyCode} className="flex flex-col gap-3 border-t border-border pt-5">
-            <Label htmlFor="code">6-digit code</Label>
+            <Label htmlFor="code">8-digit code</Label>
             <div className="relative">
               <KeyRound className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 id="code"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                placeholder="123456"
+                placeholder="12345678"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 className="pl-11 tracking-widest"
