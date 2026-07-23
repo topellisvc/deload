@@ -41,10 +41,13 @@ export default async function AthletePage({ params }: AthletePageProps) {
     redirect(`/sign-in?redirect_to=/coaching/athletes/${id}`);
   }
 
-  const role = await getMyRole(supabase, user.id);
+  // getMyClients doesn't depend on the role check's result, only on the
+  // gate passing — run both concurrently and check afterward. Worst case
+  // (someone who isn't a coach) fetches one extra query that goes unused;
+  // best case (the common path) saves a full round-trip.
+  const [role, clients] = await Promise.all([getMyRole(supabase, user.id), getMyClients(supabase, user.id)]);
   if (role !== "coach") notFound();
 
-  const clients = await getMyClients(supabase, user.id);
   const client = clients.find((c) => c.client_id === id && c.status === "active");
   // Covers both "not actually one of this coach's clients" and "invite
   // still pending" (no linked user yet, so there's nothing here to show).

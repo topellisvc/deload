@@ -43,12 +43,15 @@ export default async function DashboardPage() {
     redirect("/sign-in?redirect_to=/dashboard");
   }
 
-  const profile = await getMyProfileDetails(supabase, user.id);
-  // Fetched first (not inside the Promise.all below) because getDashboardStats
-  // needs its completion/consistency % — computing it twice would mean the
-  // stat cards and the hero/today's-workout sections could disagree about
-  // what "today" is.
-  const activeContext = await getActiveProgramContext(supabase, user.id);
+  // profile and activeContext are independent of each other (both only
+  // need user.id) but both feed the Promise.all below (getDashboardStats
+  // needs profile.role and activeContext together, computed once here
+  // rather than re-derived per section — otherwise the stat cards and the
+  // hero/today's-workout sections could disagree about what "today" is).
+  const [profile, activeContext] = await Promise.all([
+    getMyProfileDetails(supabase, user.id),
+    getActiveProgramContext(supabase, user.id),
+  ]);
 
   const [stats, recentSessionActivity, records, recentActivity, coachingData] = await Promise.all([
     getDashboardStats(supabase, user.id, profile.role, activeContext),

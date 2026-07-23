@@ -38,14 +38,15 @@ export default async function CoachingPage() {
     redirect("/sign-in?redirect_to=/coaching");
   }
 
-  const profile = await getMyProfileDetails(supabase, user.id);
-  const isCoach = profile.role === "coach";
-
-  const [pendingInvites, myCoaches, programs] = await Promise.all([
+  // profile doesn't gate any of these three (isCoach is only checked
+  // further down) — run all four concurrently instead of profile first.
+  const [profile, pendingInvites, myCoaches, programs] = await Promise.all([
+    getMyProfileDetails(supabase, user.id),
     getPendingInvitesForMe(supabase),
     getMyCoaches(supabase, user.id),
     getProgramSummaries(supabase, user.id),
   ]);
+  const isCoach = profile.role === "coach";
 
   const activeCoaches = myCoaches.filter((c) => c.status === "active" && c.client_id);
   const hasActiveCoaches = activeCoaches.length > 0;

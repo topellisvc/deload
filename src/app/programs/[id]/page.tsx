@@ -39,34 +39,42 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
   if (!program) notFound();
 
   const trainingDayIds = program.weeks.flatMap((w) => w.days.map((d) => d.id));
-  const logs = await getSessionLogs(supabase, trainingDayIds);
-  const logsByDay = groupLogsByDay(logs);
 
-  // Every performed set/segment across every logged session on this
-  // program — fetched once here (not per DayLogControl) and handed down as
-  // a flat map, same batching principle as logs/logsByDay above.
-  const loggedSets = await getLoggedSets(supabase, logs.map((l) => l.id));
-  const loggedSetsByExercise = groupLoggedSetsByExercise(loggedSets);
-
-  // The athlete's current 1RMs — used to prefill a suggested working weight
-  // when logging a 'percent_1rm' set (spec: "Use the athlete's stored 1RM
-  // to calculate a suggested working weight... remain editable"). Always
-  // the *athlete's* PRs regardless of who's viewing, since that's whose
-  // 1RM the percentage is relative to.
-  const personalRecords = await getPersonalRecords(supabase, program.athlete_id);
-
-  // Only relevant when the viewer isn't the owner (i.e. is the athlete on
-  // a coach-assigned program) — the "Assigned by" banner only ever shows
-  // in that case.
-  const assignedByEmail =
+  // logs -> loggedSets is a real dependency (need log ids first), but
+  // nothing else on this page depends on it or on each other — those used
+  // to run as one long sequential chain of awaits, each a full network
+  // round-trip to Supabase, stacking latency for no reason. Running them
+  // concurrently means this page's total wait is roughly the slowest single
+  // branch instead of the sum of all of them.
+  const [{ logs, loggedSets }, personalRecords, assignedByEmail, clients] = await Promise.all([
+    (async () => {
+      const logs = await getSessionLogs(supabase, trainingDayIds);
+      // Every performed set/segment across every logged session on this
+      // program — fetched once here (not per DayLogControl) and handed
+      // down as a flat map, same batching principle as logs/logsByDay.
+      const loggedSets = await getLoggedSets(supabase, logs.map((l) => l.id));
+      return { logs, loggedSets };
+    })(),
+    // The athlete's current 1RMs — used to prefill a suggested working
+    // weight when logging a 'percent_1rm' set (spec: "Use the athlete's
+    // stored 1RM to calculate a suggested working weight... remain
+    // editable"). Always the *athlete's* PRs regardless of who's viewing,
+    // since that's whose 1RM the percentage is relative to.
+    getPersonalRecords(supabase, program.athlete_id),
+    // Only relevant when the viewer isn't the owner (i.e. is the athlete
+    // on a coach-assigned program) — the "Assigned by" banner only ever
+    // shows in that case.
     program.owner_id !== user.id
-      ? await getCoachEmail(supabase, { coachId: program.owner_id, clientId: user.id })
-      : null;
+      ? getCoachEmail(supabase, { coachId: program.owner_id, clientId: user.id })
+      : Promise.resolve(null),
+    // Only used by the owner-only "Send a copy" dialog's client picker,
+    // but cheap enough (and RLS-scoped to this user regardless) to just
+    // always fetch rather than branch on isOwner here.
+    getMyClients(supabase, user.id),
+  ]);
 
-  // Only used by the owner-only "Send a copy" dialog's client picker, but
-  // cheap enough (and RLS-scoped to this user regardless) to just always
-  // fetch rather than branch on isOwner here.
-  const clients = await getMyClients(supabase, user.id);
+  const logsByDay = groupLogsByDay(logs);
+  const loggedSetsByExercise = groupLoggedSetsByExercise(loggedSets);
   const activeClients = clients.filter((c) => c.status === "active");
 
   return (

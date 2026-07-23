@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, Dumbbell, Sparkles } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/providers/auth-provider";
 import { getMyProfile } from "@/lib/coaching/queries";
 import { chooseRole } from "@/lib/coaching/mutations";
 import type { UserRole } from "@/lib/supabase/types";
@@ -12,50 +12,40 @@ import { cn } from "@/lib/utils";
 /**
  * A one-time "coach or athlete?" prompt shown right after someone signs
  * in for the first time (profiles.role_selected still false). Lives in
- * the root layout as a client-only island, same reasoning as AuthStatus:
- * checking auth/profile state server-side here would force every static
- * page (including the public calculators) into dynamic per-request
- * rendering just for this, which isn't worth it for a one-time prompt.
+ * the root layout as a client-only island, same reasoning as AuthStatus.
+ *
+ * Reads the signed-in user from the shared AuthProvider instead of running
+ * its own session subscription (this used to be a sixth independent copy
+ * of that same check); the profile-role lookup below is specific to this
+ * component so it still runs its own fetch, just keyed off `user` from
+ * context instead of a locally-tracked session.
  *
  * Athletes can still become coaches later via the "Become a coach" nav
  * link (CoachNavLink) — this only decides what they see first, not a
  * permanent lock-in.
  */
 export function RoleOnboarding() {
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useAuth();
   const [needsSelection, setNeedsSelection] = useState(false);
   const [submitting, setSubmitting] = useState<UserRole | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const supabase = createClient();
-    let cancelled = false;
-
-    async function checkSelection(u: User) {
-      const { roleSelected } = await getMyProfile(supabase, u.id);
-      if (!cancelled) setNeedsSelection(!roleSelected);
+    if (!user) {
+      setNeedsSelection(false);
+      return;
     }
+    let cancelled = false;
+    const supabase = createClient();
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (cancelled) return;
-      setUser(session?.user ?? null);
-      if (session?.user) checkSelection(session.user);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (cancelled) return;
-      setUser(session?.user ?? null);
-      if (session?.user) checkSelection(session.user);
-      else setNeedsSelection(false);
+    getMyProfile(supabase, user.id).then(({ roleSelected }) => {
+      if (!cancelled) setNeedsSelection(!roleSelected);
     });
 
     return () => {
       cancelled = true;
-      subscription.unsubscribe();
     };
-  }, []);
+  }, [user]);
 
   async function choose(role: UserRole) {
     if (!user) return;

@@ -88,37 +88,52 @@ export async function getSessionHistory(supabase: SupabaseClient, athleteId: str
   if (logs.length === 0) return [];
 
   const dayIds = Array.from(new Set(logs.map((l) => l.training_day_id)));
-  const { data: daysData } = await supabase.from("training_days").select("*").in("id", dayIds);
-  const days = (daysData ?? []) as TrainingDay[];
 
-  const weekIds = Array.from(new Set(days.map((d) => d.week_id)));
-  const { data: weeksData } = weekIds.length
-    ? await supabase.from("program_weeks").select("id, program_id").in("id", weekIds)
-    : { data: [] };
-  const weeks = (weeksData ?? []) as { id: string; program_id: string }[];
+  // Two independent chains from here — days->weeks->programs (for display
+  // labels) and blocks->blockExercises->sets (the prescription tree) both
+  // only need dayIds, neither needs the other's result — but they used to
+  // run as one strict 6-deep sequential chain of round-trips. Running the
+  // two chains concurrently roughly halves this function's total latency.
+  const [{ days, weeks, programsMeta }, { blocks, blockExercises, sets }] = await Promise.all([
+    (async () => {
+      const { data: daysData } = await supabase.from("training_days").select("*").in("id", dayIds);
+      const days = (daysData ?? []) as TrainingDay[];
 
-  const programIds = Array.from(new Set(weeks.map((w) => w.program_id)));
-  const { data: programsData } = programIds.length
-    ? await supabase.from("programs").select("id, name").in("id", programIds)
-    : { data: [] };
-  const programsMeta = (programsData ?? []) as { id: string; name: string }[];
+      const weekIds = Array.from(new Set(days.map((d) => d.week_id)));
+      const { data: weeksData } = weekIds.length
+        ? await supabase.from("program_weeks").select("id, program_id").in("id", weekIds)
+        : { data: [] };
+      const weeks = (weeksData ?? []) as { id: string; program_id: string }[];
 
-  const { data: blocksData } = dayIds.length
-    ? await supabase.from("exercise_blocks").select("*").in("day_id", dayIds).order("position", { ascending: true })
-    : { data: [] };
-  const blocks = (blocksData ?? []) as ExerciseBlock[];
-  const blockIds = blocks.map((b) => b.id);
+      const programIds = Array.from(new Set(weeks.map((w) => w.program_id)));
+      const { data: programsData } = programIds.length
+        ? await supabase.from("programs").select("id, name").in("id", programIds)
+        : { data: [] };
+      const programsMeta = (programsData ?? []) as { id: string; name: string }[];
 
-  const { data: blockExercisesData } = blockIds.length
-    ? await supabase.from("block_exercises").select("*").in("block_id", blockIds).order("position", { ascending: true })
-    : { data: [] };
-  const blockExercises = (blockExercisesData ?? []) as BlockExercise[];
-  const blockExerciseIds = blockExercises.map((be) => be.id);
+      return { days, weeks, programsMeta };
+    })(),
+    (async () => {
+      const { data: blocksData } = dayIds.length
+        ? await supabase.from("exercise_blocks").select("*").in("day_id", dayIds).order("position", { ascending: true })
+        : { data: [] };
+      const blocks = (blocksData ?? []) as ExerciseBlock[];
+      const blockIds = blocks.map((b) => b.id);
 
-  const { data: setsData } = blockExerciseIds.length
-    ? await supabase.from("set_prescriptions").select("*").in("block_exercise_id", blockExerciseIds).order("position", { ascending: true })
-    : { data: [] };
-  const sets = (setsData ?? []) as SetPrescription[];
+      const { data: blockExercisesData } = blockIds.length
+        ? await supabase.from("block_exercises").select("*").in("block_id", blockIds).order("position", { ascending: true })
+        : { data: [] };
+      const blockExercises = (blockExercisesData ?? []) as BlockExercise[];
+      const blockExerciseIds = blockExercises.map((be) => be.id);
+
+      const { data: setsData } = blockExerciseIds.length
+        ? await supabase.from("set_prescriptions").select("*").in("block_exercise_id", blockExerciseIds).order("position", { ascending: true })
+        : { data: [] };
+      const sets = (setsData ?? []) as SetPrescription[];
+
+      return { blocks, blockExercises, sets };
+    })(),
+  ]);
 
   const dayById = new Map(days.map((d) => [d.id, d]));
   const weekById = new Map(weeks.map((w) => [w.id, w]));

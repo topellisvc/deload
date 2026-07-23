@@ -47,13 +47,17 @@ export default async function ProfilePage() {
   }
 
   const profile = await getMyProfileDetails(supabase, user.id);
-  const [stats, currentProgram, records, athleteSummary] = await Promise.all([
+  // getCoachingSummary only needs profile.role (known as soon as the line
+  // above resolves), not any of the other four results — it used to run
+  // as an extra sequential round-trip after this Promise.all instead of
+  // inside it.
+  const [stats, currentProgram, records, athleteSummary, coachingSummary] = await Promise.all([
     getMyStats(supabase, user.id, profile.role),
     getCurrentProgram(supabase, user.id),
     getPersonalRecords(supabase, user.id),
     getAthleteSummary(supabase, user.id),
+    profile.role === "coach" ? getCoachingSummary(supabase, user.id) : Promise.resolve(null),
   ]);
-  const coachingSummary = profile.role === "coach" ? await getCoachingSummary(supabase, user.id) : null;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-12">

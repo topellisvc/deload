@@ -1,46 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { LogOut } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/providers/auth-provider";
 import { buttonVariants } from "@/components/ui/button";
 
 /**
  * Auth state for the header — sign-in link when signed out, email +
  * sign-out button when signed in.
  *
- * Deliberately a client component, not a server one that reads cookies.
- * This lives in the root layout's header, so if it read auth state
- * server-side, every single page on the site (including every static
- * calculator page) would be forced into dynamic, per-request rendering
- * just to know whether one nav item should say "Sign in" — a real
- * performance and cost regression for pages that have nothing to do with
- * auth. Checking client-side keeps the rest of the site fully static; the
- * cost is a brief loading state before the auth widget resolves, which is
- * the right tradeoff here.
+ * Reads from the shared AuthProvider (see that file for why this is
+ * client-side rather than server-rendered — same reasoning as before this
+ * was consolidated, just now shared with the other five components that
+ * needed the same session check instead of each running its own).
  */
 export function AuthStatus() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const supabase = createClient();
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const { user, loading } = useAuth();
 
   async function handleSignOut() {
     const supabase = createClient();
