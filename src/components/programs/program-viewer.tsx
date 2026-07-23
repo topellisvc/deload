@@ -69,9 +69,16 @@ function SetDetails({ set, isRun }: { set: SetRow; isRun: boolean }) {
         : null;
 
   return (
-    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="text-sm font-semibold tabular-nums text-foreground">
-        {set.sets} <span className="text-muted-foreground/70">×</span> {set.reps || "?"}
+    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      <span className="flex items-baseline gap-2.5">
+        <span className="flex items-baseline gap-1">
+          <span className="text-sm font-semibold tabular-nums text-foreground">{set.sets}</span>
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">sets</span>
+        </span>
+        <span className="flex items-baseline gap-1">
+          <span className="text-sm font-semibold tabular-nums text-foreground">{set.reps || "?"}</span>
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">reps</span>
+        </span>
       </span>
       {loadLabel && (
         <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium tabular-nums text-foreground/80">
