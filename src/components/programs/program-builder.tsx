@@ -19,6 +19,22 @@ const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string }[] = [
   { value: "hybrid", label: "Hybrid" },
 ];
 
+/**
+ * Every position column in the program tree (program_weeks, training_days,
+ * exercise_blocks, block_exercises, set_prescriptions) has a `unique
+ * (parent_id, position)` constraint. Deleting an item never renumbers its
+ * siblings — a week/block/exercise/set gets removed, but whatever came
+ * after it keeps its original position — so `items.length` (a count) can
+ * end up lower than the highest position actually still in use. Basing a
+ * new item's position on the real max instead of the count is what keeps
+ * "add" from ever proposing a position that's already taken (confirmed
+ * live: `items.length + 1` collided with a leftover position and threw
+ * "duplicate key value violates unique constraint" after a mid-list delete).
+ */
+function nextPosition(items: { position: number }[]): number {
+  return items.reduce((max, item) => Math.max(max, item.position), 0) + 1;
+}
+
 interface ProgramBuilderProps {
   initialProgram: ProgramTree;
 }
@@ -104,7 +120,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const dayTemplate = lastWeek.days.map((d) => ({ label: d.label, is_rest_day: d.is_rest_day }));
     const { week: newWeek, error } = await m.addWeek(supabase, {
       programId: program.id,
-      position: program.weeks.length + 1,
+      position: nextPosition(program.weeks),
       dayTemplate,
       sourceWeek: params.sourceWeek,
       progressionPercent: params.progressionPercent,
@@ -139,7 +155,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleCopyDayTo(sourceDay: DayRow, targetDayId: string) {
     const targetDay = week.days.find((d) => d.id === targetDayId);
     if (!targetDay) return;
-    const targetStartPosition = targetDay.blocks.length + 1;
+    const targetStartPosition = nextPosition(targetDay.blocks);
     const { blocks, error } = await m.copyDayContents(supabase, {
       sourceDay,
       targetDayId,
@@ -156,7 +172,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleAddBlock(dayId: string) {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
-    const { block, error } = await m.addExerciseBlock(supabase, { dayId, position: day.blocks.length + 1 });
+    const { block, error } = await m.addExerciseBlock(supabase, { dayId, position: nextPosition(day.blocks) });
     if (error || !block) {
       fail(error ?? "Couldn't add exercise.");
       return;
@@ -201,7 +217,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     if (!block) return;
     const { exercise, error } = await m.addExerciseToBlock(supabase, {
       blockId,
-      position: block.exercises.length + 1,
+      position: nextPosition(block.exercises),
     });
     if (error || !exercise) {
       fail(error ?? "Couldn't add exercise.");
@@ -274,7 +290,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const lastSet = exercise.sets[exercise.sets.length - 1];
     const { set, error } = await m.addSetRow(supabase, {
       blockExerciseId: exercise.id,
-      position: exercise.sets.length + 1,
+      position: nextPosition(exercise.sets),
       activityType: exercise.activity_type,
       copyFrom: lastSet,
     });
