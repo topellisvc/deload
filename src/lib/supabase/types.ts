@@ -11,6 +11,7 @@ export type UserRole = "athlete" | "coach";
 export interface Profile {
   id: string;
   role: UserRole;
+  role_selected: boolean;
   display_name: string | null;
   created_at: string;
 }

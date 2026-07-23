@@ -10,10 +10,12 @@ import { upgradeToCoach } from "@/lib/coaching/mutations";
 
 /**
  * Shown on /clients instead of the roster/invite UI for anyone who isn't
- * role='coach' yet. Coaching is the paid tier — self-programming stays
- * free. There's no billing hooked up yet (see 0003_coach_clients.sql), so
- * this button flips the role directly; once real billing exists this is
- * the one place that changes, nothing downstream of the role column does.
+ * role='coach' yet — most likely someone who chose "Train myself" during
+ * onboarding (see RoleOnboarding) and is now landing here via the
+ * "Become a coach" nav link or a direct visit. Free for now, no billing
+ * hooked up yet (see 0003_coach_clients.sql); this button flips the role
+ * directly, and once real billing exists this is the one place that
+ * changes, nothing downstream of the role column does.
  */
 export function UpgradePrompt({ userId }: { userId: string }) {
   const router = useRouter();
@@ -41,10 +43,10 @@ export function UpgradePrompt({ userId }: { userId: string }) {
       <Card>
         <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
           <Sparkles className="size-8 text-primary" />
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Coaching is a paid feature</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Become a coach</h1>
           <p className="max-w-md text-sm text-muted-foreground">
-            Building your own programs is free, always. Coaching — inviting clients and
-            building programs for them — is the paid tier.
+            Invite clients and build programs for them. It&rsquo;s free while we&rsquo;re building
+            things out — no payment, no catch.
           </p>
 
           {error && (
@@ -55,7 +57,7 @@ export function UpgradePrompt({ userId }: { userId: string }) {
           )}
 
           <Button onClick={handleUpgrade} disabled={submitting} size="lg">
-            {submitting ? "Upgrading…" : "Upgrade to Coach"}
+            {submitting ? "Setting you up…" : "Become a coach"}
           </Button>
         </CardContent>
       </Card>

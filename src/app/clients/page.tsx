@@ -20,6 +20,9 @@ export default async function ClientsPage() {
     redirect("/sign-in?redirect_to=/clients");
   }
 
+  // Becoming a coach is always an explicit choice — either at first
+  // sign-in (RoleOnboarding) or via this page's UpgradePrompt — never
+  // granted automatically just for landing here.
   const role = await getMyRole(supabase, user.id);
   if (role !== "coach") {
     return <UpgradePrompt userId={user.id} />;

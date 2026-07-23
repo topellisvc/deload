@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { UserRole } from "@/lib/supabase/types";
 
 function authCallbackUrl(redirectTo: string): string {
   const url = new URL("/auth/callback", window.location.origin);
@@ -66,17 +67,29 @@ export async function inviteClient(
 }
 
 /**
- * Self-service upgrade to the coach tier. No payment involved yet — this
- * flips profiles.role directly (RLS: "profiles are editable by their
- * owner" already permits this, no new policy needed) — but every place
- * that actually matters (creating a client invite, assigning a program to
- * someone else) is gated by this same role column at the database level,
- * so wiring in real billing later just means changing what calls this
- * function, not the gate itself.
+ * Records the user's coach-or-athlete choice — used both by the first-login
+ * onboarding prompt (RoleOnboarding) and by the "Become a coach" upgrade
+ * path later (UpgradePrompt), since they're the same underlying action:
+ * set the role, and mark that they've now actually been asked so
+ * RoleOnboarding never nags them again. No payment involved yet (RLS:
+ * "profiles are editable by their owner" already permits this, no new
+ * policy needed) — but every place that actually matters (creating a
+ * client invite, assigning a program to someone else) is gated by this
+ * same role column at the database level, so wiring in real billing later
+ * just means changing what calls this function, not the gate itself.
  */
+export async function chooseRole(
+  supabase: SupabaseClient,
+  userId: string,
+  role: UserRole
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("profiles").update({ role, role_selected: true }).eq("id", userId);
+  return { error: friendlyError(error, "Couldn't save that. Try again.") };
+}
+
+/** Thin wrapper around chooseRole for the "Become a coach" upgrade path. */
 export async function upgradeToCoach(supabase: SupabaseClient, userId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("profiles").update({ role: "coach" }).eq("id", userId);
-  return { error: friendlyError(error, "Couldn't upgrade your account. Try again.") };
+  return chooseRole(supabase, userId, "coach");
 }
 
 export async function removeClient(

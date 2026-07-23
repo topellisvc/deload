@@ -13,6 +13,25 @@ export async function getMyRole(supabase: SupabaseClient, userId: string): Promi
   return data?.role ?? "athlete";
 }
 
+/**
+ * Role plus whether they've actually been asked yet — used by the
+ * client-side onboarding/nav islands (RoleOnboarding, CoachNavLink) that
+ * can't check this server-side without forcing every static page into
+ * dynamic rendering (see AuthStatus's comment for why auth state is
+ * checked client-side in the header).
+ */
+export async function getMyProfile(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<{ role: UserRole; roleSelected: boolean }> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("role, role_selected")
+    .eq("id", userId)
+    .maybeSingle<{ role: UserRole; role_selected: boolean }>();
+  return { role: data?.role ?? "athlete", roleSelected: data?.role_selected ?? false };
+}
+
 /** Everyone this user has invited as a client (pending + active), newest first. */
 export async function getMyClients(supabase: SupabaseClient, coachId: string): Promise<CoachClient[]> {
   const { data } = await supabase
