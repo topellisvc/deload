@@ -13,6 +13,8 @@ export type UserRole = "athlete" | "coach";
  * depend on a specific calculator's module. */
 export type ProfileLengthUnit = "cm" | "in";
 export type ProfileMassUnit = "kg" | "lb";
+export type ProfileSex = "male" | "female" | "other" | "prefer_not_to_say";
+export type ExperienceLevel = "beginner" | "intermediate" | "advanced";
 
 export interface Profile {
   id: string;
@@ -24,7 +26,29 @@ export interface Profile {
   weight_value: number | null;
   weight_unit: ProfileMassUnit | null;
   goal: string | null;
+  bio: string | null;
+  date_of_birth: string | null;
+  sex: ProfileSex | null;
+  experience_level: ExperienceLevel | null;
+  /** One of StyleId from lib/training-style/recommend-style.ts — see
+   * migration 0009 for why this is self-reported rather than pulled from
+   * the finder tool automatically. */
+  training_style: string | null;
   created_at: string;
+}
+
+/** A single current PR — one row per (user, record_type), see migration
+ * 0009 for why record_type is a free text key instead of dedicated
+ * columns per lift/distance. */
+export interface PersonalRecord {
+  id: string;
+  user_id: string;
+  record_type: string;
+  value_number: number;
+  unit: string;
+  achieved_on: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export type CoachClientStatus = "pending" | "active";
