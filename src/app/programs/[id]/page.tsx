@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getProgramTree } from "@/lib/programs/queries";
 import { getCoachEmail } from "@/lib/coaching/queries";
 import { getSessionLogs, groupLogsByDay } from "@/lib/logging/queries";
-import { ProgramBuilder } from "@/components/programs/program-builder";
 import { ProgramViewer } from "@/components/programs/program-viewer";
 
 export const metadata: Metadata = {
@@ -16,6 +15,12 @@ interface ProgramPageProps {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * The default landing page for any program — always the read-only view,
+ * for the self-programmer, the coach, and the client alike. Structural
+ * editing lives at /programs/[id]/edit, which is owner-only; this page
+ * never branches into ProgramBuilder.
+ */
 export default async function ProgramPage({ params }: ProgramPageProps) {
   const { id } = await params;
   const supabase = await createClient();
@@ -36,20 +41,20 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
   const logs = await getSessionLogs(supabase, trainingDayIds);
   const logsByDay = groupLogsByDay(logs);
 
-  // owner_id === athlete_id for every self-programmed program (the
-  // common case) — only a coach-assigned program can differ, and only the
-  // owner (coach) gets edit access; the athlete gets a read-only view.
-  if (program.owner_id !== user.id) {
-    const assignedByEmail = await getCoachEmail(supabase, { coachId: program.owner_id, clientId: user.id });
-    return (
-      <ProgramViewer
-        program={program}
-        assignedByEmail={assignedByEmail}
-        currentUserId={user.id}
-        logsByDay={logsByDay}
-      />
-    );
-  }
+  // Only relevant when the viewer isn't the owner (i.e. is the athlete on
+  // a coach-assigned program) — the "Assigned by" banner only ever shows
+  // in that case.
+  const assignedByEmail =
+    program.owner_id !== user.id
+      ? await getCoachEmail(supabase, { coachId: program.owner_id, clientId: user.id })
+      : null;
 
-  return <ProgramBuilder initialProgram={program} currentUserId={user.id} logsByDay={logsByDay} />;
+  return (
+    <ProgramViewer
+      program={program}
+      assignedByEmail={assignedByEmail}
+      currentUserId={user.id}
+      logsByDay={logsByDay}
+    />
+  );
 }

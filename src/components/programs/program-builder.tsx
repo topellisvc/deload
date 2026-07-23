@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { ActivityType, BlockRow, DayRow, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
-import type { SessionLog } from "@/lib/supabase/types";
 import * as m from "@/lib/programs/mutations";
 import { DayColumn } from "@/components/programs/day-column";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
@@ -21,8 +21,6 @@ const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string }[] = [
 
 interface ProgramBuilderProps {
   initialProgram: ProgramTree;
-  currentUserId: string;
-  logsByDay: Record<string, SessionLog[]>;
 }
 
 /**
@@ -34,13 +32,10 @@ interface ProgramBuilderProps {
  * already enforcing access and the network being the main realistic
  * failure mode, a visible retry-or-refresh prompt is enough for now.
  */
-export function ProgramBuilder({ initialProgram, currentUserId, logsByDay }: ProgramBuilderProps) {
+export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [program, setProgram] = useState(initialProgram);
-  // Only the athlete logs their own training — a coach editing a client's
-  // program structure isn't who did (or didn't) do the workout.
-  const loggingAthleteId = program.athlete_id === currentUserId ? currentUserId : undefined;
   const [selectedWeekId, setSelectedWeekId] = useState(initialProgram.weeks[0]?.id ?? "");
   const [addWeekOpen, setAddWeekOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -384,10 +379,18 @@ export function ProgramBuilder({ initialProgram, currentUserId, logsByDay }: Pro
             className="w-fit"
           />
         </div>
-        <Button variant="outline" size="sm" onClick={handleDeleteProgram} disabled={deleting} className="self-start">
-          <Trash2 className="size-4" />
-          Delete program
-        </Button>
+        <div className="flex items-center gap-2 self-start">
+          <Link
+            href={`/programs/${program.id}`}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Done editing
+          </Link>
+          <Button variant="outline" size="sm" onClick={handleDeleteProgram} disabled={deleting}>
+            <Trash2 className="size-4" />
+            Delete program
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -464,8 +467,6 @@ export function ProgramBuilder({ initialProgram, currentUserId, logsByDay }: Pro
               handleSetChange(day.id, blockId, blockExerciseId, setId, patch)
             }
             onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
-            loggingAthleteId={loggingAthleteId}
-            logs={logsByDay[day.id]}
           />
         ))}
       </div>

@@ -62,7 +62,9 @@ export function NewProgramDialog({ open, onClose, userId, activeClients }: NewPr
       return;
     }
 
-    router.push(`/programs/${program.id}`);
+    // A freshly-created program is empty — go straight to building it out
+    // rather than the read-only view.
+    router.push(`/programs/${program.id}/edit`);
   }
 
   return (

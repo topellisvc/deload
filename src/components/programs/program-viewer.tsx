@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { PersonStanding, Repeat, UserRound } from "lucide-react";
+import Link from "next/link";
+import { Pencil, PersonStanding, Repeat, UserRound } from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree, SetRow } from "@/lib/programs/types";
 import type { SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
@@ -18,6 +19,23 @@ function formatDuration(totalSeconds: number | null): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** Local calendar date (not UTC) so "today" matches the viewer's own clock. */
+function todayDateString(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatLogDate(isoDate: string, today: string): string {
+  if (isoDate === today) return "today";
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (year === undefined || month === undefined || day === undefined) return isoDate;
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function describeSet(set: SetRow, isRun: boolean): string {
@@ -39,22 +57,23 @@ function describeSet(set: SetRow, isRun: boolean): string {
 }
 
 /**
- * Read-only rendering of a program tree for someone who's the athlete but
- * not the owner — a coach-assigned program. Deliberately a separate
- * component from ProgramBuilder rather than a `readOnly` prop threaded
- * through DayColumn/ExerciseBlockCard/SetRowEditor/RunSetRowEditor: those
- * are all built around live onChange handlers wired to mutations, and
+ * Universal read-only rendering of a program tree — the default landing
+ * view for everyone with access, regardless of whether they're the owner,
+ * the athlete, or both. Structural editing (exercises, sets, program
+ * metadata) lives at /programs/[id]/edit, owner-only; this component never
+ * renders those affordances. Deliberately a separate component from
+ * ProgramBuilder rather than a `readOnly` prop threaded through
+ * DayColumn/ExerciseBlockCard/SetRowEditor/RunSetRowEditor: those are all
+ * built around live onChange handlers wired to mutations, and
  * disabled-looking input boxes are worse UX here than plain formatted
  * text. RLS already prevents any write from this page regardless — this
  * component just doesn't render the affordances to try.
  */
 interface ProgramViewerProps {
   program: ProgramTree;
+  /** Only set (and only shown) when the viewer is the athlete on a
+   * coach-assigned program, i.e. !isOwner. */
   assignedByEmail: string | null;
-  /** Always the signed-in viewer's own id — this component only ever
-   * renders for the program's athlete (see programs/[id]/page.tsx), so
-   * logging is always available here, unlike ProgramBuilder where the
-   * viewer might be the coach instead. */
   currentUserId: string;
   logsByDay: Record<string, SessionLog[]>;
 }
@@ -62,15 +81,21 @@ interface ProgramViewerProps {
 export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByDay }: ProgramViewerProps) {
   const [selectedWeekId, setSelectedWeekId] = useState(program.weeks[0]?.id ?? "");
   const week = program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0];
+  const today = todayDateString();
+
+  const isOwner = program.owner_id === currentUserId;
+  const isAthlete = program.athlete_id === currentUserId;
 
   return (
     <div className="mx-auto flex max-w-[100rem] flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
-      <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
-        <UserRound className="mt-0.5 size-4 shrink-0 text-primary" />
-        <p className="text-sm text-foreground">
-          Assigned by {assignedByEmail ?? "your coach"} — view only.
-        </p>
-      </div>
+      {!isOwner && (
+        <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <UserRound className="mt-0.5 size-4 shrink-0 text-primary" />
+          <p className="text-sm text-foreground">
+            Assigned by {assignedByEmail ?? "your coach"} — view only.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-1 flex-col gap-2">
@@ -79,6 +104,15 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
             {DISCIPLINE_LABEL[program.discipline]}
           </span>
         </div>
+        {isOwner && (
+          <Link
+            href={`/programs/${program.id}/edit`}
+            className="flex items-center gap-1.5 self-start rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <Pencil className="size-3.5" />
+            Edit program
+          </Link>
+        )}
       </div>
 
       {week && (
@@ -156,9 +190,19 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
                   </div>
                 )}
 
-                {!day.is_rest_day && (
+                {!day.is_rest_day && isAthlete && (
                   <DayLogControl trainingDayId={day.id} athleteId={currentUserId} logs={logsByDay[day.id] ?? []} />
                 )}
+
+                {!day.is_rest_day && !isAthlete && isOwner && (() => {
+                  const dayLogs = logsByDay[day.id] ?? [];
+                  if (dayLogs.length === 0) return null;
+                  return (
+                    <p className="border-t border-border pt-2.5 text-xs font-medium text-muted-foreground">
+                      Logged {dayLogs.length}× · last {formatLogDate(dayLogs[0]!.performed_on, today)}
+                    </p>
+                  );
+                })()}
               </div>
             ))}
           </div>
