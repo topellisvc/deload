@@ -38,9 +38,24 @@ export function ProgramCard({
 }: ProgramCardProps) {
   const { label, Icon } = DISCIPLINE_META[program.discipline];
 
+  // assignmentLabel starting with "For " means the viewer is the coach and
+  // this program's athlete is someone else — that's the case a coach's
+  // combined /programs list can show several of at once (one active
+  // program per client is normal, not a bug), so it gets its own color and
+  // wording to make clear "active" here means active *for that client*,
+  // not for the person looking at the list. A "From " program (the viewer
+  // IS the athlete, just on a coach-assigned plan) is the viewer's own
+  // active program and keeps the plain badge.
+  const activeForClient = program.is_active && program.assignmentLabel?.startsWith("For ") ? program.assignmentLabel.slice(4) : null;
+
   return (
     <Link href={`/programs/${program.id}`} className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-      <Card className={cn("transition-colors hover:bg-surface-hover", program.is_active && "border-primary/50")}>
+      <Card
+        className={cn(
+          "transition-colors hover:bg-surface-hover",
+          program.is_active && (activeForClient ? "border-success/50" : "border-primary/50")
+        )}
+      >
         <CardContent className="flex flex-col gap-3 p-5">
           <div className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
@@ -48,9 +63,14 @@ export function ProgramCard({
               {label}
             </span>
             {program.is_active && (
-              <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                <CheckCircle2 className="size-3.5" />
-                Active
+              <span
+                className={cn(
+                  "flex min-w-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
+                  activeForClient ? "bg-success/15 text-success" : "bg-primary/10 text-primary"
+                )}
+              >
+                <CheckCircle2 className="size-3.5 shrink-0" />
+                {activeForClient ? <span className="truncate">Active for {activeForClient}</span> : "Active"}
               </span>
             )}
           </div>
