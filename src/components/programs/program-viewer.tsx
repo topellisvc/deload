@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Pencil, PersonStanding, Repeat, UserRound } from "lucide-react";
+import { Clock3, Pencil, PersonStanding, Repeat, UserRound } from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree, SetRow } from "@/lib/programs/types";
 import type { SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
@@ -38,22 +38,54 @@ function formatLogDate(isoDate: string, today: string): string {
   });
 }
 
-function describeSet(set: SetRow, isRun: boolean): string {
+/**
+ * One prescription row, rendered as a scannable strip rather than a single
+ * run-on sentence: the sets×reps (or run distance/duration) stands out in
+ * bold, load and rest are secondary pills off to the side. Exercises with
+ * more than one prescription row (e.g. a working set and a back-off set)
+ * end up as a small aligned stack instead of two near-identical sentences.
+ */
+function SetDetails({ set, isRun }: { set: SetRow; isRun: boolean }) {
   if (isRun) {
     const distance = set.distance_meters != null ? `${set.distance_meters / 1000}km` : null;
     const duration = set.duration_seconds != null ? formatDuration(set.duration_seconds) : null;
-    return [distance, duration].filter(Boolean).join(" in ") || "—";
+    if (!distance && !duration) {
+      return <span className="text-muted-foreground">—</span>;
+    }
+    return (
+      <span className="flex items-baseline gap-1.5">
+        {distance && <span className="text-sm font-semibold tabular-nums text-foreground">{distance}</span>}
+        {distance && duration && <span className="text-[11px] text-muted-foreground">in</span>}
+        {duration && <span className="text-sm font-semibold tabular-nums text-foreground">{duration}</span>}
+      </span>
+    );
   }
 
-  const parts = [`${set.sets} × ${set.reps || "?"}`];
-  if (set.load_value != null) {
-    const unit = set.load_type === "percent_1rm" ? "%" : set.load_type === "weight" ? "kg" : "";
-    parts.push(`@ ${set.load_value}${unit}`);
-  } else if (set.load_type !== "weight") {
-    parts.push(`(${set.load_type.replace("_", " ")})`);
-  }
-  if (set.rest_seconds != null) parts.push(`rest ${set.rest_seconds}s`);
-  return parts.join(" ");
+  const loadLabel =
+    set.load_value != null
+      ? `${set.load_value}${set.load_type === "percent_1rm" ? "%" : set.load_type === "weight" ? "kg" : ""}`
+      : set.load_type !== "weight"
+        ? set.load_type.replace("_", " ")
+        : null;
+
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="text-sm font-semibold tabular-nums text-foreground">
+        {set.sets} <span className="text-muted-foreground/70">×</span> {set.reps || "?"}
+      </span>
+      {loadLabel && (
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium tabular-nums text-foreground/80">
+          {loadLabel}
+        </span>
+      )}
+      {set.rest_seconds != null && (
+        <span className="flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
+          <Clock3 className="size-3" />
+          {set.rest_seconds}s
+        </span>
+      )}
+    </span>
+  );
 }
 
 /**
@@ -154,19 +186,23 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
                     {day.blocks.map((block: BlockRow) => {
                       const isGrouped = block.exercises.length > 1;
                       return (
-                        <div key={block.id} className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3">
+                        <div key={block.id} className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3.5">
                           {isGrouped && (
                             <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
                               <Repeat className="size-3.5" />
                               Superset · {block.rounds} rounds
                             </div>
                           )}
-                          {block.exercises.map((exercise) => {
+                          {block.exercises.map((exercise, i) => {
                             const isRun = exercise.activity_type === "run";
                             return (
                               <div
                                 key={exercise.id}
-                                className={isGrouped ? "flex flex-col gap-1 border-l-2 border-primary/30 pl-2.5" : "flex flex-col gap-1"}
+                                className={cn(
+                                  "flex flex-col gap-1.5",
+                                  isGrouped && "border-l-2 border-primary/30 pl-2.5",
+                                  isGrouped && i > 0 && "border-t border-border/70 pt-2.5"
+                                )}
                               >
                                 <div className="flex items-center gap-1.5">
                                   {isRun && <PersonStanding className="size-3.5 shrink-0 text-muted-foreground" />}
@@ -174,10 +210,10 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
                                     {exercise.custom_name || exercise.exercise_id}
                                   </span>
                                 </div>
-                                <ul className="flex flex-col gap-0.5">
+                                <ul className="flex flex-col gap-1 pl-0.5">
                                   {exercise.sets.map((set) => (
-                                    <li key={set.id} className="text-xs text-muted-foreground">
-                                      {describeSet(set, isRun)}
+                                    <li key={set.id}>
+                                      <SetDetails set={set} isRun={isRun} />
                                     </li>
                                   ))}
                                 </ul>
