@@ -30,7 +30,7 @@ const PILLARS = [
     title: "Coaching",
     description:
       "Invite clients, assign them programs, and see what actually got done — free while we're building this out.",
-    href: "/clients",
+    href: "/coaching",
     cta: "Become a coach",
   },
 ];

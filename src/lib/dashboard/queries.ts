@@ -2,16 +2,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getActiveProgram } from "@/lib/programs/queries";
 import type { DayRow, WeekRow } from "@/lib/programs/types";
 import { getMyStats } from "@/lib/profile/queries";
-import { getMyClients } from "@/lib/coaching/queries";
 import type { UserRole } from "@/lib/supabase/types";
 import type {
   ActiveProgramContext,
   ActivityEvent,
-  CoachingDashboardData,
   DashboardStats,
   TodayWorkout,
   UpcomingSession,
 } from "@/lib/dashboard/types";
+
+// getCoachingDashboard moved to @/lib/coaching/queries — it's coaching
+// domain data (a coach's client roster), re-exported here only so
+// existing imports of it from this file don't need to change.
+export { getCoachingDashboard } from "@/lib/coaching/queries";
 
 // ============================================================
 // Small local date helpers — same convention as profile/queries.ts and
@@ -285,61 +288,4 @@ export async function getRecentActivity(supabase: SupabaseClient, userId: string
 
   events.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
   return events.slice(0, 8);
-}
-
-// ============================================================
-// Coaching dashboard (only fetched/rendered for role === 'coach')
-// ============================================================
-
-/**
- * Reuses getMyClients (already fetches every coach_clients row this coach
- * owns) rather than separate active/pending count queries — same data
- * getCoachingSummary (profile page) is built from, just shaped for the
- * dashboard's client list + "needs attention" flagging instead of a single
- * summary card.
- */
-export async function getCoachingDashboard(supabase: SupabaseClient, coachId: string): Promise<CoachingDashboardData> {
-  const clients = await getMyClients(supabase, coachId);
-  const activeClients = clients.filter((c) => c.status === "active" && c.client_id);
-  const pendingInvites = clients.filter((c) => c.status === "pending");
-
-  const clientIds = activeClients.map((c) => c.client_id).filter((id): id is string => id !== null);
-  const lastActivityByClient = new Map<string, string>();
-  if (clientIds.length > 0) {
-    const { data } = await supabase
-      .from("session_logs")
-      .select("athlete_id, performed_on")
-      .in("athlete_id", clientIds)
-      .order("performed_on", { ascending: false })
-      .limit(200);
-    for (const row of (data ?? []) as { athlete_id: string; performed_on: string }[]) {
-      if (!lastActivityByClient.has(row.athlete_id)) lastActivityByClient.set(row.athlete_id, row.performed_on);
-    }
-  }
-
-  const attentionCutoff = shiftDate(todayDateString(), -14);
-  const clientSummaries = activeClients.map((c) => {
-    const lastActivityOn = c.client_id ? (lastActivityByClient.get(c.client_id) ?? null) : null;
-    return {
-      id: c.id,
-      email: c.client_email,
-      lastActivityOn,
-      needsAttention: !lastActivityOn || lastActivityOn < attentionCutoff,
-    };
-  });
-
-  const recentActivity = Array.from(lastActivityByClient.entries())
-    .sort((a, b) => (a[1] < b[1] ? 1 : -1))
-    .slice(0, 5)
-    .map(([clientId, performedOn]) => ({
-      clientEmail: activeClients.find((c) => c.client_id === clientId)?.client_email ?? "a client",
-      performedOn,
-    }));
-
-  return {
-    activeClientCount: activeClients.length,
-    pendingInviteCount: pendingInvites.length,
-    clients: clientSummaries,
-    recentActivity,
-  };
 }

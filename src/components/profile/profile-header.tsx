@@ -1,19 +1,8 @@
 import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import type { Profile } from "@/lib/supabase/types";
-
-function getInitials(displayName: string | null, email: string): string {
-  if (displayName?.trim()) {
-    const words = displayName.trim().split(/\s+/);
-    const first = words[0]?.[0] ?? "";
-    const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
-    const initials = `${first}${last}`.toUpperCase();
-    if (initials) return initials;
-  }
-  return email[0]?.toUpperCase() ?? "?";
-}
 
 function formatMemberSince(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString(undefined, { month: "long", year: "numeric" });

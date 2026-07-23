@@ -60,6 +60,28 @@ export interface CoachClient {
   client_email: string;
   coach_email: string;
   status: CoachClientStatus;
+  /** Optional note a coach can attach when inviting someone (migration 0011). */
+  invite_message: string | null;
+  /** When this invite was accepted — distinct from created_at, which is
+   * when it was *sent*. Null until accepted (migration 0011). */
+  accepted_at: string | null;
+  created_at: string;
+}
+
+/**
+ * One message in a coach<->athlete conversation. `coach_client_id` doubles
+ * as the conversation id — each coaching relationship is inherently 1:1,
+ * so there's no separate conversations table (migration 0011).
+ */
+export interface Message {
+  id: string;
+  coach_client_id: string;
+  sender_id: string;
+  recipient_id: string;
+  body: string;
+  /** Reserved for future attachment support — unused today. */
+  attachment_url: string | null;
+  read_at: string | null;
   created_at: string;
 }
 

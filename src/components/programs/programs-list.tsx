@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
-import { PendingInvites } from "@/components/programs/pending-invites";
-import { MyCoaches } from "@/components/programs/my-coaches";
 import { createClient } from "@/lib/supabase/client";
 import { setActiveProgram } from "@/lib/programs/mutations";
 import { getProgramTree } from "@/lib/programs/queries";
@@ -19,11 +17,11 @@ interface ProgramsListProps {
   programs: ProgramSummary[];
   userId: string;
   activeClients: CoachClient[];
-  pendingInvites: CoachClient[];
-  myCoaches: CoachClient[];
 }
 
-export function ProgramsList({ programs: initialPrograms, userId, activeClients, pendingInvites, myCoaches }: ProgramsListProps) {
+/** Invitations and the coach roster used to render at the top of this
+ * page — both moved to /coaching as part of the Coaching hub. */
+export function ProgramsList({ programs: initialPrograms, userId, activeClients }: ProgramsListProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [programs, setPrograms] = useState(initialPrograms);
   const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
@@ -74,9 +72,6 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-16">
-      <PendingInvites invites={pendingInvites} userId={userId} />
-      <MyCoaches coaches={myCoaches} />
-
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">Programs</h1>

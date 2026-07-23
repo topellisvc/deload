@@ -9,12 +9,15 @@ function formatWhen(iso: string): string {
  * Newest first (getRecentActivity already sorts). Only session_log and
  * coach_interaction events exist today; the ActivityEvent union has room
  * for program_change and richer coach events later without this component
- * needing a rewrite — just another arm in the switch below.
+ * needing a rewrite — just another arm in the switch below. `title` is
+ * overridable so the coaching hub's athlete detail page can label this
+ * "Workout history" while /dashboard keeps "Recent activity" — same
+ * component and query, just different framing for who's reading it.
  */
-export function RecentActivitySection({ events }: { events: ActivityEvent[] }) {
+export function RecentActivitySection({ events, title = "Recent activity" }: { events: ActivityEvent[]; title?: string }) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-6">
-      <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">Recent activity</h2>
+      <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">{title}</h2>
       {events.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing logged yet — your training history will show up here.</p>
       ) : (

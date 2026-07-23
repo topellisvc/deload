@@ -40,15 +40,17 @@ function friendlyError(error: { message: string } | null, fallback: string): str
  */
 export async function inviteClient(
   supabase: SupabaseClient,
-  params: { coachId: string; coachEmail: string; email: string }
+  params: { coachId: string; coachEmail: string; email: string; message?: string }
 ): Promise<{ error: string | null }> {
   const email = params.email.trim().toLowerCase();
   if (!email) return { error: "Enter an email address." };
 
+  const message = params.message?.trim();
   const { error: insertError } = await supabase.from("coach_clients").insert({
     coach_id: params.coachId,
     client_email: email,
     coach_email: params.coachEmail,
+    invite_message: message || null,
   });
   if (insertError) {
     if (insertError.code === "23505") return { error: "You've already invited this email." };
@@ -112,7 +114,7 @@ export async function acceptInvite(
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from("coach_clients")
-    .update({ client_id: params.userId, status: "active" })
+    .update({ client_id: params.userId, status: "active", accepted_at: new Date().toISOString() })
     .eq("id", params.coachClientId)
     .is("client_id", null);
   return { error: friendlyError(error, "Couldn't accept this invite. Try again.") };

@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { AlertTriangle, ArrowLeft, CalendarClock, ClipboardList, Mail, Plus } from "lucide-react";
+import { AlertTriangle, CalendarClock, ClipboardList, Mail, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ProgramCard } from "@/components/programs/program-card";
@@ -29,11 +28,16 @@ function formatDate(iso: string): string {
 }
 
 /**
- * One client's own programs — this, not the flat /clients roster, is
- * where a coach adjusts what a specific person is actually training on.
- * Reuses ProgramCard/NewProgramDialog/SendProgramDialog exactly as the
- * main /programs list does, just pre-scoped to one athlete_id instead of
+ * One client's own programs — this, not the flat client roster, is where
+ * a coach adjusts what a specific person is actually training on. Reuses
+ * ProgramCard/NewProgramDialog/SendProgramDialog exactly as the main
+ * /programs list does, just pre-scoped to one athlete_id instead of
  * "everything I own or am assigned."
+ *
+ * No outer page wrapper or back-link here — the caller (/coaching/athletes/[id])
+ * owns the page chrome so this can sit alongside the workout history,
+ * messages, and notes sections that round out the athlete detail page,
+ * all inside one shared max-width container.
  */
 export function ClientDetail({ coachId, client, programs: initialPrograms, lastActivityOn, activeClients }: ClientDetailProps) {
   const [programs, setPrograms] = useState(initialPrograms);
@@ -80,16 +84,8 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-16">
-      <Link
-        href="/clients"
-        className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        All clients
-      </Link>
-
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">{client.client_email}</h1>
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">

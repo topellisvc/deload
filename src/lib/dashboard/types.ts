@@ -59,18 +59,3 @@ export interface DashboardStats {
 export type ActivityEvent =
   | { type: "session_log"; id: string; occurredAt: string; dayLabel: string; programName: string }
   | { type: "coach_interaction"; id: string; occurredAt: string; detail: string };
-
-export interface CoachingClientSummary {
-  id: string;
-  email: string;
-  lastActivityOn: string | null;
-  /** No logged session in 14+ days (or ever). */
-  needsAttention: boolean;
-}
-
-export interface CoachingDashboardData {
-  activeClientCount: number;
-  pendingInviteCount: number;
-  clients: CoachingClientSummary[];
-  recentActivity: { clientEmail: string; performedOn: string }[];
-}

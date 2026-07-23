@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, PlusCircle, UserPlus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { CoachingDashboardData } from "@/lib/dashboard/types";
+import type { CoachingDashboardData } from "@/lib/coaching/types";
 
 function formatWhen(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -10,10 +10,10 @@ function formatWhen(iso: string): string {
 /**
  * Only rendered when the signed-in user coaches athletes — a coach can
  * also be an athlete, so this sits alongside the rest of the dashboard,
- * never replacing it. "Open client" from the spec became "View clients"
- * here: there's no per-client detail route in this app yet (/clients is
- * the whole roster), so a button literally called "Open client" with
- * nowhere specific to go would be a fake affordance.
+ * never replacing it. A lightweight teaser for the full /coaching hub,
+ * not a second copy of it — everything here links out to /coaching (or
+ * straight to a specific client's page, now that one exists) rather than
+ * duplicating the roster/invite UI that lives there.
  */
 export function CoachingDashboardSection({ data }: { data: CoachingDashboardData }) {
   const hasAnyClients = data.activeClientCount > 0 || data.pendingInviteCount > 0;
@@ -24,16 +24,16 @@ export function CoachingDashboardSection({ data }: { data: CoachingDashboardData
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Coaching</h2>
         <div className="flex flex-wrap gap-2">
-          <Link href="/clients">
+          <Link href="/coaching">
             <Button variant="outline" size="sm">
               <UserPlus className="size-3.5" />
               Invite athlete
             </Button>
           </Link>
-          <Link href="/clients">
+          <Link href="/coaching">
             <Button variant="outline" size="sm">
               <Users className="size-3.5" />
-              View clients
+              Open Coaching
             </Button>
           </Link>
           <Link href="/programs">
@@ -73,7 +73,9 @@ export function CoachingDashboardSection({ data }: { data: CoachingDashboardData
               <ul className="flex flex-col divide-y divide-border">
                 {needingAttention.map((client) => (
                   <li key={client.id} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
-                    <span className="text-sm text-foreground">{client.email}</span>
+                    <Link href={`/coaching/athletes/${client.clientId}`} className="text-sm text-foreground hover:underline">
+                      {client.email}
+                    </Link>
                     <span className="text-xs text-muted-foreground">
                       {client.lastActivityOn ? `Last active ${formatWhen(client.lastActivityOn)}` : "No activity yet"}
                     </span>
