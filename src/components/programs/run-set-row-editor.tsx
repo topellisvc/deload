@@ -80,6 +80,7 @@ export function RunSetRowEditor({ set, onChange, onDelete }: RunSetRowEditorProp
           placeholder="mm:ss"
           className="h-8 w-20 shrink-0 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         />
+        <span className="text-xs text-muted-foreground">time</span>
       </div>
       <button
         type="button"

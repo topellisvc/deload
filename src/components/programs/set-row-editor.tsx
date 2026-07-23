@@ -73,23 +73,29 @@ export function SetRowEditor({ set, onChange, onDelete }: SetRowEditorProps) {
     // to appear on wide screens with nowhere to fit, squeezing the reps
     // field to near-zero. Flex-wrap just reflows onto a second line when
     // the row runs out of room, based on the column's real width.
-    <div className="flex flex-wrap items-center gap-1.5">
-      <input
-        aria-label="Number of sets"
-        value={sets}
-        onChange={(e) => setSets(e.target.value)}
-        onBlur={commitSets}
-        inputMode="numeric"
-        className="h-8 w-11 shrink-0 rounded-md border border-border bg-surface px-1 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      />
-      <input
-        aria-label="Reps"
-        value={reps}
-        onChange={(e) => setReps(e.target.value)}
-        onBlur={commitReps}
-        placeholder="reps"
-        className="h-8 min-w-[3.5rem] flex-1 rounded-md border border-border bg-surface px-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      />
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <div className="flex items-center gap-1">
+        <input
+          aria-label="Number of sets"
+          value={sets}
+          onChange={(e) => setSets(e.target.value)}
+          onBlur={commitSets}
+          inputMode="numeric"
+          className="h-8 w-11 shrink-0 rounded-md border border-border bg-surface px-1 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        />
+        <span className="shrink-0 text-xs text-muted-foreground">sets</span>
+      </div>
+      <div className="flex min-w-[6rem] flex-1 items-center gap-1">
+        <input
+          aria-label="Reps"
+          value={reps}
+          onChange={(e) => setReps(e.target.value)}
+          onBlur={commitReps}
+          placeholder="8-10"
+          className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        />
+        <span className="shrink-0 text-xs text-muted-foreground">reps</span>
+      </div>
       <select
         aria-label="Load type"
         value={set.load_type}
@@ -103,25 +109,29 @@ export function SetRowEditor({ set, onChange, onDelete }: SetRowEditorProps) {
         ))}
       </select>
       {showLoadValue && (
-        <input
-          aria-label={`Load (${loadOption.unit})`}
-          value={loadValue}
-          onChange={(e) => setLoadValue(e.target.value)}
-          onBlur={commitLoadValue}
-          placeholder={loadOption.unit ?? ""}
-          inputMode="decimal"
-          className="h-8 w-14 shrink-0 rounded-md border border-border bg-surface px-1.5 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        />
+        <div className="flex items-center gap-1">
+          <input
+            aria-label={`Load (${loadOption.unit})`}
+            value={loadValue}
+            onChange={(e) => setLoadValue(e.target.value)}
+            onBlur={commitLoadValue}
+            inputMode="decimal"
+            className="h-8 w-14 shrink-0 rounded-md border border-border bg-surface px-1.5 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          />
+          <span className="shrink-0 text-xs text-muted-foreground">{loadOption.unit}</span>
+        </div>
       )}
-      <input
-        aria-label="Rest (seconds)"
-        value={rest}
-        onChange={(e) => setRest(e.target.value)}
-        onBlur={commitRest}
-        placeholder="rest s"
-        inputMode="numeric"
-        className="h-8 w-16 shrink-0 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      />
+      <div className="flex items-center gap-1">
+        <input
+          aria-label="Rest (seconds)"
+          value={rest}
+          onChange={(e) => setRest(e.target.value)}
+          onBlur={commitRest}
+          inputMode="numeric"
+          className="h-8 w-16 shrink-0 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        />
+        <span className="shrink-0 text-xs text-muted-foreground">rest sec</span>
+      </div>
       <button
         type="button"
         onClick={onDelete}
