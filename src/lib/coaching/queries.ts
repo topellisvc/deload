@@ -34,31 +34,21 @@ export async function getMyCoaches(supabase: SupabaseClient, clientId: string): 
 }
 
 /**
- * Resolves any invite(s) addressed to this user's email that haven't been
- * linked to their account yet, filling in client_id and flipping the row
- * to 'active'. This is necessary because a coach only knows a client's
- * email at invite time, before that person necessarily has an account —
- * see the migration comment in 0003_coach_clients.sql for why (no
- * service-role key / admin API available to pre-create accounts).
- *
- * Call this once per sign-in (safe to call on every page load — the
- * `client_id is null` filter makes it a no-op after the first time).
+ * Pending invites addressed to this user's email, awaiting their explicit
+ * accept/decline — never auto-linked just because they signed in. A coach
+ * only knows a client's email at invite time, so this can't be looked up
+ * by client_id until accepted; RLS ("clients can see relationships naming
+ * them") already restricts the result to rows actually naming this user
+ * (by id or by email match), so no extra filtering is needed here beyond
+ * status.
  */
-export async function resolvePendingInvites(
-  supabase: SupabaseClient,
-  userId: string,
-  email: string
-): Promise<void> {
-  // Lowercase to match how client_email is always stored (see
-  // inviteClient) — auth.users.email isn't guaranteed lowercase for
-  // someone who signed up before ever being invited. The RLS policy on
-  // this update does the same lower() comparison, so this is belt and
-  // suspenders, not the only place this matters.
-  await supabase
+export async function getPendingInvitesForMe(supabase: SupabaseClient): Promise<CoachClient[]> {
+  const { data } = await supabase
     .from("coach_clients")
-    .update({ client_id: userId, status: "active" })
-    .ilike("client_email", email.toLowerCase())
-    .is("client_id", null);
+    .select("*")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  return (data ?? []) as CoachClient[];
 }
 
 /** The coach's email for one specific coach->client relationship, if it exists. */

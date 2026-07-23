@@ -18,8 +18,13 @@ function authCallbackUrl(redirectTo: string): string {
  * verifyOtp/exchangeCodeForSession happens here, just a "send mail" call.
  *
  * The roster row is written first and shows up as 'pending' immediately
- * regardless of email deliverability; it flips to 'active' once the
- * invitee actually signs in (see resolvePendingInvites).
+ * regardless of email deliverability. It stays 'pending' — and no program
+ * can be assigned to the invitee — until they explicitly accept it (see
+ * acceptInvite). Signing in off the invite email does not by itself link
+ * anything: linking a random email you happen to know to your roster,
+ * just because that person naturally signed in for unrelated reasons
+ * someday, would let a coach silently attach themselves to someone who
+ * never agreed to it.
  */
 export async function inviteClient(
   supabase: SupabaseClient,
@@ -64,6 +69,38 @@ export async function upgradeToCoach(supabase: SupabaseClient, userId: string): 
 }
 
 export async function removeClient(
+  supabase: SupabaseClient,
+  coachClientId: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("coach_clients").delete().eq("id", coachClientId);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Explicit, user-initiated acceptance of a pending invite — the only way
+ * a coach_clients row is allowed to link to a real client_id. The
+ * `client_id is null` guard also stops a stale/already-resolved invite
+ * from being re-accepted twice.
+ */
+export async function acceptInvite(
+  supabase: SupabaseClient,
+  params: { coachClientId: string; userId: string }
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("coach_clients")
+    .update({ client_id: params.userId, status: "active" })
+    .eq("id", params.coachClientId)
+    .is("client_id", null);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Declining a pending invite just deletes the row — the client-side
+ * delete policy also lets someone remove themselves from an *active*
+ * coaching relationship later, not only a pending one, so "decline" and
+ * "leave" both reuse this.
+ */
+export async function declineInvite(
   supabase: SupabaseClient,
   coachClientId: string
 ): Promise<{ error: string | null }> {

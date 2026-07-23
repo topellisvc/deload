@@ -155,7 +155,7 @@ export function ClientsManager({ clients, coachId, coachEmail }: ClientsManagerP
                       ) : (
                         <Clock className="size-3.5" />
                       )}
-                      {client.status === "active" ? "Active" : "Invited — waiting for them to sign in"}
+                      {client.status === "active" ? "Active" : "Invited — waiting for them to accept"}
                     </span>
                   </div>
                   <Button
