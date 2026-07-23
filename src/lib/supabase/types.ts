@@ -8,11 +8,22 @@
 
 export type UserRole = "athlete" | "coach";
 
+/** Mirrors the unit types in lib/calculators/body-fat.ts — declared
+ * separately here rather than imported so the core data model doesn't
+ * depend on a specific calculator's module. */
+export type ProfileLengthUnit = "cm" | "in";
+export type ProfileMassUnit = "kg" | "lb";
+
 export interface Profile {
   id: string;
   role: UserRole;
   role_selected: boolean;
   display_name: string | null;
+  height_value: number | null;
+  height_unit: ProfileLengthUnit | null;
+  weight_value: number | null;
+  weight_unit: ProfileMassUnit | null;
+  goal: string | null;
   created_at: string;
 }
 

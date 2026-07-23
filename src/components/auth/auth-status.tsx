@@ -64,7 +64,12 @@ export function AuthStatus() {
 
   return (
     <div className="flex items-center gap-2">
-      <span className="hidden text-sm text-muted-foreground sm:inline">{user.email}</span>
+      <Link
+        href="/profile"
+        className="hidden rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:inline"
+      >
+        {user.email}
+      </Link>
       <button
         type="button"
         onClick={handleSignOut}
