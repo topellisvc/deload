@@ -4,6 +4,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { RoleOnboarding } from "@/components/onboarding/role-onboarding";
+import { ToastProvider } from "@/components/ui/toast";
 import "./globals.css";
 
 const SITE_URL = "https://deloadhq.com";
@@ -60,12 +61,14 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="font-sans antialiased">
-        <div className="flex min-h-screen flex-col">
-          <SiteHeader />
-          <main className="flex-1">{children}</main>
-          <SiteFooter />
-        </div>
-        <RoleOnboarding />
+        <ToastProvider>
+          <div className="flex min-h-screen flex-col">
+            <SiteHeader />
+            <main className="flex-1">{children}</main>
+            <SiteFooter />
+          </div>
+          <RoleOnboarding />
+        </ToastProvider>
         <Analytics />
         <SpeedInsights />
       </body>

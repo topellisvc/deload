@@ -7,6 +7,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { cloneProgram } from "@/lib/programs/mutations";
 import type { ProgramTree } from "@/lib/programs/types";
@@ -31,6 +32,7 @@ interface SendProgramDialogProps {
  */
 export function SendProgramDialog({ open, onClose, program, currentUserId, activeClients }: SendProgramDialogProps) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [name, setName] = useState(`${program.name} (copy)`);
   const [targetId, setTargetId] = useState(MYSELF);
   const [submitting, setSubmitting] = useState(false);
@@ -58,6 +60,12 @@ export function SendProgramDialog({ open, onClose, program, currentUserId, activ
       setError(cloneError ?? "Something went wrong copying the program.");
       return;
     }
+
+    // Fired before the navigation below — ToastProvider lives in the root
+    // layout, above every page, so the toast survives the route change to
+    // the new copy's edit page instead of being unmounted with this dialog.
+    const targetClient = targetId === MYSELF ? null : activeClients.find((c) => c.client_id === targetId);
+    showToast(targetClient ? `Sent to ${targetClient.client_email}` : `"${name.trim()}" copied for you`);
 
     router.push(`/programs/${cloned.id}/edit`);
   }
