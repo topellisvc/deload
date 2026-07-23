@@ -4,6 +4,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthStatus } from "@/components/auth/auth-status";
 import { CoachingNavLink } from "@/components/coaching-nav-link";
 import { DashboardNavLink } from "@/components/dashboard-nav-link";
+import { HistoryNavLink } from "@/components/history-nav-link";
 import { ProfileNavLink } from "@/components/profile-nav-link";
 
 export function SiteHeader() {
@@ -17,9 +18,9 @@ export function SiteHeader() {
           <Dumbbell className="size-5 text-primary" />
           Deload
         </Link>
-        {/* Dashboard, Programs, Coaching, Tools, Profile — Dashboard/Coaching/Profile
-            are auth-gated islands (hidden when signed out); Tools and Programs
-            are static links, same as before. */}
+        {/* Dashboard, Programs, History, Coaching, Tools, Profile — Dashboard/
+            History/Coaching/Profile are auth-gated islands (hidden when
+            signed out); Tools and Programs are static links, same as before. */}
         <nav className="flex items-center gap-1">
           <DashboardNavLink />
           <Link
@@ -28,6 +29,7 @@ export function SiteHeader() {
           >
             Programs
           </Link>
+          <HistoryNavLink />
           <CoachingNavLink />
           <Link
             href="/tools"

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CheckCircle2, Dumbbell, PersonStanding, Send, UsersRound, Waves } from "lucide-react";
+import { CalendarDays, CheckCircle2, Dumbbell, PersonStanding, Send, Trash2, UsersRound, Waves } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,11 @@ interface ProgramCardProps {
   canSend: boolean;
   sendingCopy: boolean;
   onSend: (programId: string) => void;
+  /** Same owner-only gating again — matches the "programs are deletable by
+   * their owner" RLS policy, and mirrors canSetActive/canSend exactly. */
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: (programId: string) => void;
 }
 
 export function ProgramCard({
@@ -35,6 +40,9 @@ export function ProgramCard({
   canSend,
   sendingCopy,
   onSend,
+  canDelete,
+  deleting,
+  onDelete,
 }: ProgramCardProps) {
   const { label, Icon } = DISCIPLINE_META[program.discipline];
 
@@ -90,7 +98,7 @@ export function ProgramCard({
               <span className="min-w-0 flex-1 truncate">{program.assignmentLabel}</span>
             </div>
           )}
-          {(canSetActive || canSend) && (
+          {(canSetActive || canSend || canDelete) && (
             <div className="mt-1 flex flex-wrap gap-2">
               {canSetActive && !program.is_active && (
                 <Button
@@ -122,6 +130,22 @@ export function ProgramCard({
                 >
                   <Send className="size-3.5" />
                   {sendingCopy ? "Loading…" : "Send a copy"}
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={deleting}
+                  className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDelete(program.id);
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                  {deleting ? "Deleting…" : "Delete"}
                 </Button>
               )}
             </div>

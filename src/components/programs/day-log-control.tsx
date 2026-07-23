@@ -7,27 +7,8 @@ import { createSessionLog, deleteSessionLog, updateSessionLogNote } from "@/lib/
 import type { LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
 import type { BlockRow } from "@/lib/programs/types";
 import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
+import { formatLogDate, todayDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-
-/** Local calendar date (not UTC) — "did I train today" should follow the
- * athlete's own clock, not whatever the server's timezone happens to be. */
-function todayDateString(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function formatLogDate(isoDate: string, today: string): string {
-  if (isoDate === today) return "Today";
-  const [year, month, day] = isoDate.split("-").map(Number);
-  if (year === undefined || month === undefined || day === undefined) return isoDate;
-  // Parsed and formatted as UTC so the displayed date always matches what
-  // was stored, regardless of the viewer's own timezone offset.
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 interface DayLogControlProps {
   trainingDayId: string;

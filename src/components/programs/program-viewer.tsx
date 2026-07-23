@@ -13,6 +13,7 @@ import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { setActiveProgram } from "@/lib/programs/mutations";
+import { formatLogDate as formatLogDateShared, todayDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 const DISCIPLINE_LABEL: Record<ProgramDiscipline, string> = {
@@ -21,21 +22,11 @@ const DISCIPLINE_LABEL: Record<ProgramDiscipline, string> = {
   hybrid: "Hybrid",
 };
 
-/** Local calendar date (not UTC) so "today" matches the viewer's own clock. */
-function todayDateString(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
+// This page's inline copy always used a lowercase "today" (mid-sentence
+// usage, e.g. "last today"), unlike DayLogControl's capitalized "Today" —
+// preserved via the shared helper's `capitalize: false` option.
 function formatLogDate(isoDate: string, today: string): string {
-  if (isoDate === today) return "today";
-  const [year, month, day] = isoDate.split("-").map(Number);
-  if (year === undefined || month === undefined || day === undefined) return isoDate;
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return formatLogDateShared(isoDate, today, { capitalize: false });
 }
 
 /**

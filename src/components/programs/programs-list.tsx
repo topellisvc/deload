@@ -9,7 +9,7 @@ import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { createClient } from "@/lib/supabase/client";
-import { setActiveProgram } from "@/lib/programs/mutations";
+import { deleteProgram, setActiveProgram } from "@/lib/programs/mutations";
 import { getProgramTree } from "@/lib/programs/queries";
 import type { ProgramSummary, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
@@ -31,6 +31,8 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
   const [loadingSendId, setLoadingSendId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendTarget, setSendTarget] = useState<ProgramTree | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // ProgramCard only has the lightweight ProgramSummary shape (no nested
   // tree — see getProgramSummaries), so sending a copy from the list needs
@@ -78,6 +80,29 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
     router.refresh();
   }
 
+  async function handleDelete(programId: string) {
+    const target = programs.find((p) => p.id === programId);
+    if (!target) return;
+    if (!window.confirm(`Delete "${target.name}"? This removes every week, day, and logged session in it — this can't be undone.`)) {
+      return;
+    }
+
+    const previous = programs;
+    setDeleteError(null);
+    setDeletingId(programId);
+    setPrograms((current) => current.filter((p) => p.id !== programId));
+
+    const supabase = createClient();
+    const { error } = await deleteProgram(supabase, programId);
+    setDeletingId(null);
+    if (error) {
+      setPrograms(previous);
+      setDeleteError(error);
+      return;
+    }
+    router.refresh();
+  }
+
   // A program's assignmentLabel starts with "For " exactly when the viewer
   // owns it but someone else (a client) is the athlete — see
   // getProgramSummaries. Everything else (self-programmed, or a "From "
@@ -100,6 +125,9 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
             canSend={program.owner_id === userId}
             sendingCopy={loadingSendId === program.id}
             onSend={handleSend}
+            canDelete={program.owner_id === userId}
+            deleting={deletingId === program.id}
+            onDelete={handleDelete}
           />
         ))}
       </div>
@@ -122,10 +150,10 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
         </Button>
       </div>
 
-      {(activeError || sendError) && (
+      {(activeError || sendError || deleteError) && (
         <div className="mb-6 flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-          <p className="text-sm text-foreground">{activeError || sendError}</p>
+          <p className="text-sm text-foreground">{activeError || sendError || deleteError}</p>
         </div>
       )}
 

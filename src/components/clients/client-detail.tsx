@@ -9,7 +9,7 @@ import { ProgramCard } from "@/components/programs/program-card";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { createClient } from "@/lib/supabase/client";
-import { setActiveProgram } from "@/lib/programs/mutations";
+import { deleteProgram, setActiveProgram } from "@/lib/programs/mutations";
 import { getProgramTree } from "@/lib/programs/queries";
 import type { ProgramSummary, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
@@ -49,6 +49,8 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
   const [loadingSendId, setLoadingSendId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendTarget, setSendTarget] = useState<ProgramTree | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleSetActive(programId: string) {
     const target = programs.find((p) => p.id === programId);
@@ -90,6 +92,29 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
     setSendTarget(tree);
   }
 
+  async function handleDelete(programId: string) {
+    const target = programs.find((p) => p.id === programId);
+    if (!target) return;
+    if (!window.confirm(`Delete "${target.name}"? This removes every week, day, and logged session in it — this can't be undone.`)) {
+      return;
+    }
+
+    const previous = programs;
+    setDeleteError(null);
+    setDeletingId(programId);
+    setPrograms((current) => current.filter((p) => p.id !== programId));
+
+    const supabase = createClient();
+    const { error } = await deleteProgram(supabase, programId);
+    setDeletingId(null);
+    if (error) {
+      setPrograms(previous);
+      setDeleteError(error);
+      return;
+    }
+    router.refresh();
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -114,10 +139,10 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
         </Button>
       </div>
 
-      {(activeError || sendError) && (
+      {(activeError || sendError || deleteError) && (
         <div className="mb-6 flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-          <p className="text-sm text-foreground">{activeError || sendError}</p>
+          <p className="text-sm text-foreground">{activeError || sendError || deleteError}</p>
         </div>
       )}
 
@@ -143,6 +168,9 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
               canSend
               sendingCopy={loadingSendId === program.id}
               onSend={handleSend}
+              canDelete
+              deleting={deletingId === program.id}
+              onDelete={handleDelete}
             />
           ))}
         </div>

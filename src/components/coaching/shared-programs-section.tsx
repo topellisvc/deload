@@ -27,6 +27,9 @@ export function SharedProgramsSection({ programs }: { programs: ProgramSummary[]
               canSend={false}
               sendingCopy={false}
               onSend={() => {}}
+              canDelete={false}
+              deleting={false}
+              onDelete={() => {}}
             />
           ))}
         </div>
