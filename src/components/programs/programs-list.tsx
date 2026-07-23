@@ -7,13 +7,15 @@ import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import type { ProgramSummary } from "@/lib/programs/types";
+import type { CoachClient } from "@/lib/supabase/types";
 
 interface ProgramsListProps {
   programs: ProgramSummary[];
   userId: string;
+  activeClients: CoachClient[];
 }
 
-export function ProgramsList({ programs, userId }: ProgramsListProps) {
+export function ProgramsList({ programs, userId, activeClients }: ProgramsListProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
@@ -50,7 +52,12 @@ export function ProgramsList({ programs, userId }: ProgramsListProps) {
         </div>
       )}
 
-      <NewProgramDialog open={dialogOpen} onClose={() => setDialogOpen(false)} userId={userId} />
+      <NewProgramDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        userId={userId}
+        activeClients={activeClients}
+      />
     </div>
   );
 }

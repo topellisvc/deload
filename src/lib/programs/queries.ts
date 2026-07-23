@@ -136,11 +136,37 @@ export async function getProgramSummaries(
   const weeksByProgram = groupBy(weeks, (w) => w.program_id);
   const daysByWeek = groupBy(days, (d) => d.week_id);
 
+  // Resolve a human-readable "for <client>" / "from <coach>" label for any
+  // programs where owner_id !== athlete_id, using the coach_clients
+  // roster as the source of truth — not profiles.display_name, which
+  // nothing in the app currently sets, so it'd just be blank.
+  const crossAssigned = list.filter((p) => p.owner_id !== p.athlete_id);
+  let relationships: { coach_id: string; client_id: string | null; client_email: string; coach_email: string }[] = [];
+  if (crossAssigned.length > 0) {
+    const { data } = await supabase
+      .from("coach_clients")
+      .select("coach_id, client_id, client_email, coach_email")
+      .or(`coach_id.eq.${userId},client_id.eq.${userId}`);
+    relationships = data ?? [];
+  }
+
   return list.map((program) => {
     const programWeeks = weeksByProgram.get(program.id) ?? [];
     const firstWeek = programWeeks[0];
     const dayCount = firstWeek ? (daysByWeek.get(firstWeek.id) ?? []).length : 0;
-    return { ...program, weekCount: programWeeks.length, dayCount };
+
+    let assignmentLabel: string | null = null;
+    if (program.owner_id !== program.athlete_id) {
+      if (program.owner_id === userId) {
+        const rel = relationships.find((r) => r.coach_id === userId && r.client_id === program.athlete_id);
+        assignmentLabel = rel ? `For ${rel.client_email}` : "For a client";
+      } else {
+        const rel = relationships.find((r) => r.client_id === userId && r.coach_id === program.owner_id);
+        assignmentLabel = rel ? `From ${rel.coach_email}` : "From your coach";
+      }
+    }
+
+    return { ...program, weekCount: programWeeks.length, dayCount, assignmentLabel };
   });
 }
 

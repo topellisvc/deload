@@ -11,6 +11,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { createClient } from "@/lib/supabase/client";
 import { createProgram } from "@/lib/programs/mutations";
 import type { ProgramDiscipline } from "@/lib/programs/types";
+import type { CoachClient } from "@/lib/supabase/types";
 
 const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string }[] = [
   { value: "resistance", label: "Weights" },
@@ -18,17 +19,21 @@ const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string }[] = [
   { value: "hybrid", label: "Hybrid" },
 ];
 
+const MYSELF = "myself";
+
 interface NewProgramDialogProps {
   open: boolean;
   onClose: () => void;
   userId: string;
+  activeClients: CoachClient[];
 }
 
-export function NewProgramDialog({ open, onClose, userId }: NewProgramDialogProps) {
+export function NewProgramDialog({ open, onClose, userId, activeClients }: NewProgramDialogProps) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [discipline, setDiscipline] = useState<ProgramDiscipline>("resistance");
   const [daysPerWeek, setDaysPerWeek] = useState(4);
+  const [forClientId, setForClientId] = useState(MYSELF);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +53,7 @@ export function NewProgramDialog({ open, onClose, userId }: NewProgramDialogProp
       name: name.trim(),
       discipline,
       dayLabels,
+      athleteId: forClientId === MYSELF ? undefined : forClientId,
     });
 
     if (createError || !program) {
@@ -77,6 +83,25 @@ export function NewProgramDialog({ open, onClose, userId }: NewProgramDialogProp
             autoFocus
           />
         </div>
+
+        {activeClients.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="program-for">For</Label>
+            <select
+              id="program-for"
+              value={forClientId}
+              onChange={(e) => setForClientId(e.target.value)}
+              className="h-10 rounded-md border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <option value={MYSELF}>Myself</option>
+              {activeClients.map((client) => (
+                <option key={client.id} value={client.client_id ?? ""}>
+                  {client.client_email}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2">
           <Label>Discipline</Label>

@@ -15,6 +15,18 @@ export interface Profile {
   created_at: string;
 }
 
+export type CoachClientStatus = "pending" | "active";
+
+export interface CoachClient {
+  id: string;
+  coach_id: string;
+  client_id: string | null;
+  client_email: string;
+  coach_email: string;
+  status: CoachClientStatus;
+  created_at: string;
+}
+
 export interface SavedResult {
   id: string;
   user_id: string;

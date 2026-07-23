@@ -81,11 +81,14 @@ export async function createProgram(
     name: string;
     discipline: ProgramDiscipline;
     dayLabels: string[];
+    /** Who this program is for. Defaults to the creator (self-programming). */
+    athleteId?: string;
   }
 ): Promise<{ program: ProgramTree | null; error: string | null }> {
   const programId = newId();
   const weekId = newId();
   const now = new Date().toISOString();
+  const athleteId = params.athleteId ?? params.userId;
 
   const days: DayRow[] = params.dayLabels.map((label, i) => ({
     id: newId(),
@@ -99,7 +102,7 @@ export async function createProgram(
   const { error: programError } = await supabase.from("programs").insert({
     id: programId,
     owner_id: params.userId,
-    athlete_id: params.userId,
+    athlete_id: athleteId,
     name: params.name,
     discipline: params.discipline,
   });
@@ -127,7 +130,7 @@ export async function createProgram(
   const program: ProgramTree = {
     id: programId,
     owner_id: params.userId,
-    athlete_id: params.userId,
+    athlete_id: athleteId,
     name: params.name,
     discipline: params.discipline,
     created_at: now,

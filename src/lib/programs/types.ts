@@ -57,4 +57,7 @@ export interface ProgramTree extends Program {
 export interface ProgramSummary extends Program {
   weekCount: number;
   dayCount: number;
+  /** e.g. "For jane@example.com" or "From coach@example.com" — null when
+   * owner_id === athlete_id (self-programmed, the common case). */
+  assignmentLabel: string | null;
 }

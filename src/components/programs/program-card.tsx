@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, Dumbbell, PersonStanding, Waves } from "lucide-react";
+import { CalendarDays, Dumbbell, PersonStanding, UsersRound, Waves } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import type { ProgramSummary } from "@/lib/programs/types";
 
@@ -28,6 +28,12 @@ export function ProgramCard({ program }: { program: ProgramSummary }) {
             {program.weekCount} {program.weekCount === 1 ? "week" : "weeks"} · {program.dayCount}{" "}
             {program.dayCount === 1 ? "day" : "days"}/week
           </div>
+          {program.assignmentLabel && (
+            <div className="flex items-center gap-1.5 truncate text-xs font-medium text-primary">
+              <UsersRound className="size-3.5 shrink-0" />
+              <span className="truncate">{program.assignmentLabel}</span>
+            </div>
+          )}
         </CardContent>
       </Card>
     </Link>

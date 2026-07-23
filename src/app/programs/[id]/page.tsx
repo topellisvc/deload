@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProgramTree } from "@/lib/programs/queries";
+import { getCoachEmail } from "@/lib/coaching/queries";
 import { ProgramBuilder } from "@/components/programs/program-builder";
+import { ProgramViewer } from "@/components/programs/program-viewer";
 
 export const metadata: Metadata = {
   title: "Program",
@@ -28,6 +30,14 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
   // there's no separate "forbidden" case to handle, just "not found".
   const program = await getProgramTree(supabase, id);
   if (!program) notFound();
+
+  // owner_id === athlete_id for every self-programmed program (the
+  // common case) — only a coach-assigned program can differ, and only the
+  // owner (coach) gets edit access; the athlete gets a read-only view.
+  if (program.owner_id !== user.id) {
+    const assignedByEmail = await getCoachEmail(supabase, { coachId: program.owner_id, clientId: user.id });
+    return <ProgramViewer program={program} assignedByEmail={assignedByEmail} />;
+  }
 
   return <ProgramBuilder initialProgram={program} />;
 }
