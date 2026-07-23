@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Pencil, Plus, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Pencil, Plus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { createSessionLog, deleteSessionLog, updateSessionLogNote } from "@/lib/logging/mutations";
-import type { SessionLog } from "@/lib/supabase/types";
+import type { LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
+import type { BlockRow } from "@/lib/programs/types";
+import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
+import { cn } from "@/lib/utils";
 
 /** Local calendar date (not UTC) — "did I train today" should follow the
  * athlete's own clock, not whatever the server's timezone happens to be. */
@@ -30,22 +33,32 @@ interface DayLogControlProps {
   trainingDayId: string;
   athleteId: string;
   logs: SessionLog[];
+  /** This day's exercise structure — what SessionPerformanceEditor renders
+   * the Prescription section from. Empty/absent blocks (e.g. a day with no
+   * exercises yet) just means there's nothing to expand into. */
+  blocks: BlockRow[];
+  /** Keyed by `${session_log_id}:${block_exercise_id}` — passed straight
+   * through to SessionPerformanceEditor per expanded log entry. */
+  loggedSetsByExercise: Record<string, LoggedSet[]>;
+  /** For prefilling a suggested weight when logging a percent_1rm set. */
+  personalRecords: PersonalRecord[];
 }
 
 /**
  * Every logged session for this day, each editable and deletable — not
  * just today's. A quick "Log today" add-on top when today isn't logged
- * yet. Deliberately not a full workout log (no per-set actual
- * weights/reps) — a session is either logged or it isn't, with an
- * optional free-text note, which is enough to close the loop on "did
- * this happen" without building a second parallel data model.
+ * yet. Each entry expands into a SessionPerformanceEditor for the
+ * Prescription-vs-Performance detail (per-set weights/reps/distance/etc);
+ * collapsed by default so the day column stays scannable when all the
+ * athlete wants to confirm is "yes, this happened."
  */
-export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs }: DayLogControlProps) {
+export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs, blocks, loggedSetsByExercise, personalRecords }: DayLogControlProps) {
   const [logs, setLogs] = useState(initialLogs);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const today = todayDateString();
   const hasTodayLog = logs.some((l) => l.performed_on === today);
@@ -117,6 +130,17 @@ export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs }: D
                   {formatLogDate(log.performed_on, today)}
                 </span>
                 <div className="flex items-center gap-2.5">
+                  {blocks.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId((v) => (v === log.id ? null : log.id))}
+                      aria-label={`${expandedId === log.id ? "Hide" : "Show"} workout details for ${formatLogDate(log.performed_on, today)}`}
+                      className="flex items-center gap-0.5 font-medium text-foreground/70 transition-colors hover:text-foreground"
+                    >
+                      Details
+                      <ChevronDown className={cn("size-3.5 transition-transform", expandedId === log.id && "rotate-180")} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -152,6 +176,17 @@ export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs }: D
                 />
               ) : (
                 log.note && <p className="pl-5 text-muted-foreground">{log.note}</p>
+              )}
+
+              {expandedId === log.id && blocks.length > 0 && (
+                <div className="pl-0.5 pt-1">
+                  <SessionPerformanceEditor
+                    sessionLogId={log.id}
+                    blocks={blocks}
+                    loggedSetsByExercise={loggedSetsByExercise}
+                    personalRecords={personalRecords}
+                  />
+                </div>
               )}
             </li>
           ))}

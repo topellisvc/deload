@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Copy, Plus } from "lucide-react";
-import type { ActivityType, DayRow, SetRow } from "@/lib/programs/types";
+import type { DayRow, ExerciseCategory, PrescriptionType, SetRow } from "@/lib/programs/types";
 import { ExerciseBlockCard } from "@/components/programs/exercise-block-card";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +18,8 @@ interface DayColumnProps {
   onRemoveExerciseFromBlock: (blockId: string, blockExerciseId: string) => void;
   onRoundsChange: (blockId: string, rounds: number) => void;
   onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
-  onActivityTypeChange: (blockId: string, blockExerciseId: string, activityType: ActivityType) => void;
+  onCategoryChange: (blockId: string, blockExerciseId: string, category: ExerciseCategory) => void;
+  onPrescriptionTypeChange: (blockId: string, blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockId: string, blockExerciseId: string) => void;
   onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (blockId: string, blockExerciseId: string, setId: string) => void;
@@ -42,7 +43,8 @@ export function DayColumn({
   onRemoveExerciseFromBlock,
   onRoundsChange,
   onExerciseChange,
-  onActivityTypeChange,
+  onCategoryChange,
+  onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
   onDeleteSet,
@@ -129,7 +131,10 @@ export function DayColumn({
                 onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
                 onRoundsChange={(rounds) => onRoundsChange(block.id, rounds)}
                 onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
-                onActivityTypeChange={(blockExerciseId, activityType) => onActivityTypeChange(block.id, blockExerciseId, activityType)}
+                onCategoryChange={(blockExerciseId, category) => onCategoryChange(block.id, blockExerciseId, category)}
+                onPrescriptionTypeChange={(blockExerciseId, prescriptionType) =>
+                  onPrescriptionTypeChange(block.id, blockExerciseId, prescriptionType)
+                }
                 onAddSet={(blockExerciseId) => onAddSet(block.id, blockExerciseId)}
                 onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
                 onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}

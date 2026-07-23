@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Plus, Repeat, X } from "lucide-react";
-import type { ActivityType, BlockRow, SetRow } from "@/lib/programs/types";
+import type { BlockRow, ExerciseCategory, PrescriptionType, SetRow } from "@/lib/programs/types";
+import { EXERCISE_CATEGORY_LABELS, PRESCRIPTION_TYPES_BY_CATEGORY, defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { ExercisePicker } from "@/components/programs/exercise-picker";
-import { SetRowEditor } from "@/components/programs/set-row-editor";
-import { RunSetRowEditor } from "@/components/programs/run-set-row-editor";
+import { PrescriptionRowEditor } from "@/components/programs/prescription-row-editor";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
 interface ExerciseBlockCardProps {
@@ -19,24 +19,35 @@ interface ExerciseBlockCardProps {
   onRemoveExerciseFromBlock: (blockExerciseId: string) => void;
   onRoundsChange: (rounds: number) => void;
   onExerciseChange: (blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
-  onActivityTypeChange: (blockExerciseId: string, activityType: ActivityType) => void;
+  onCategoryChange: (blockExerciseId: string, category: ExerciseCategory) => void;
+  onPrescriptionTypeChange: (blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockExerciseId: string) => void;
   onSetChange: (blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (blockExerciseId: string, setId: string) => void;
 }
 
-const ACTIVITY_OPTIONS = [
-  { value: "strength" as const, label: "Lift" },
-  { value: "run" as const, label: "Run" },
-];
+const CATEGORY_OPTIONS = (Object.keys(EXERCISE_CATEGORY_LABELS) as ExerciseCategory[]).map((value) => ({
+  value,
+  label: EXERCISE_CATEGORY_LABELS[value],
+}));
 
 /**
  * A block holds one exercise (straight set) or several performed back to
  * back for a set number of rounds (superset/circuit — the UI doesn't
  * distinguish the two, both just mean "2+ exercises, N rounds"). Drop
  * sets don't need separate block-level handling: they're already just
- * multiple set rows on one exercise with decreasing load, which
- * SetRowEditor's "Add set row" already supports.
+ * multiple prescription rows on one exercise with decreasing load, which
+ * PrescriptionRowEditor's "Add row" already supports.
+ *
+ * Each exercise now has Category (Strength/Running/Cardio) and
+ * Prescription Type pickers — the program builder's "Step 1 / Step 2 /
+ * Step 3" flow from the product spec, done inline rather than as a modal
+ * wizard, matching this app's existing philosophy of live, no-dialog
+ * editing everywhere else in the builder (day copying, supersets, week
+ * add-on). The prescription type applies to every row on the exercise at
+ * once (see onPrescriptionTypeChange) — one exercise, one type, matching
+ * "every Strength exercise must have a required field: Prescription
+ * Type" rather than letting individual rows drift to different types.
  *
  * Adding a second exercise via "+ Add exercise to this block" is what
  * turns a straight block into a superset; removing back down to one
@@ -54,7 +65,8 @@ export function ExerciseBlockCard({
   onRemoveExerciseFromBlock,
   onRoundsChange,
   onExerciseChange,
-  onActivityTypeChange,
+  onCategoryChange,
+  onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
   onDeleteSet,
@@ -124,7 +136,10 @@ export function ExerciseBlockCard({
 
       <div className="flex flex-col gap-3">
         {block.exercises.map((exercise) => {
-          const isRun = exercise.activity_type === "run";
+          const category = exercise.exercise_category;
+          const prescriptionType = exercise.sets[0]?.prescription_type ?? defaultPrescriptionType(category);
+          const typeOptions = PRESCRIPTION_TYPES_BY_CATEGORY[category];
+
           return (
             <div
               key={exercise.id}
@@ -132,6 +147,7 @@ export function ExerciseBlockCard({
             >
               <div className="flex items-start gap-2">
                 <ExercisePicker
+                  category={category}
                   exerciseId={exercise.exercise_id}
                   customName={exercise.custom_name}
                   onChange={(patch) => onExerciseChange(exercise.id, patch)}
@@ -149,32 +165,38 @@ export function ExerciseBlockCard({
                 )}
               </div>
 
-              <SegmentedControl
-                aria-label="Exercise type"
-                options={ACTIVITY_OPTIONS}
-                value={exercise.activity_type}
-                onChange={(activityType) => onActivityTypeChange(exercise.id, activityType)}
-                className="w-fit"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <SegmentedControl
+                  aria-label="Exercise category"
+                  options={CATEGORY_OPTIONS}
+                  value={category}
+                  onChange={(newCategory) => onCategoryChange(exercise.id, newCategory)}
+                  className="w-fit"
+                />
+                <select
+                  aria-label="Prescription type"
+                  value={prescriptionType}
+                  onChange={(e) => onPrescriptionTypeChange(exercise.id, e.target.value as PrescriptionType)}
+                  className="h-8 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {typeOptions.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="flex flex-col gap-1.5">
-                {exercise.sets.map((set) =>
-                  isRun ? (
-                    <RunSetRowEditor
-                      key={set.id}
-                      set={set}
-                      onChange={(patch) => onSetChange(exercise.id, set.id, patch)}
-                      onDelete={() => onDeleteSet(exercise.id, set.id)}
-                    />
-                  ) : (
-                    <SetRowEditor
-                      key={set.id}
-                      set={set}
-                      onChange={(patch) => onSetChange(exercise.id, set.id, patch)}
-                      onDelete={() => onDeleteSet(exercise.id, set.id)}
-                    />
-                  )
-                )}
+                {exercise.sets.map((set) => (
+                  <PrescriptionRowEditor
+                    key={set.id}
+                    category={category}
+                    set={set}
+                    onChange={(patch) => onSetChange(exercise.id, set.id, patch)}
+                    onDelete={() => onDeleteSet(exercise.id, set.id)}
+                  />
+                ))}
               </div>
 
               <button
@@ -183,7 +205,7 @@ export function ExerciseBlockCard({
                 className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <Plus className="size-3.5" />
-                {isRun ? "Add run segment" : "Add set row"}
+                Add row
               </button>
             </div>
           );

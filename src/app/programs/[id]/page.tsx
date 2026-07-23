@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProgramTree } from "@/lib/programs/queries";
 import { getCoachEmail, getMyClients } from "@/lib/coaching/queries";
-import { getSessionLogs, groupLogsByDay } from "@/lib/logging/queries";
+import { getSessionLogs, groupLogsByDay, getLoggedSets, groupLoggedSetsByExercise } from "@/lib/logging/queries";
+import { getPersonalRecords } from "@/lib/profile/queries";
 import { ProgramViewer } from "@/components/programs/program-viewer";
 
 export const metadata: Metadata = {
@@ -41,6 +42,19 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
   const logs = await getSessionLogs(supabase, trainingDayIds);
   const logsByDay = groupLogsByDay(logs);
 
+  // Every performed set/segment across every logged session on this
+  // program — fetched once here (not per DayLogControl) and handed down as
+  // a flat map, same batching principle as logs/logsByDay above.
+  const loggedSets = await getLoggedSets(supabase, logs.map((l) => l.id));
+  const loggedSetsByExercise = groupLoggedSetsByExercise(loggedSets);
+
+  // The athlete's current 1RMs — used to prefill a suggested working weight
+  // when logging a 'percent_1rm' set (spec: "Use the athlete's stored 1RM
+  // to calculate a suggested working weight... remain editable"). Always
+  // the *athlete's* PRs regardless of who's viewing, since that's whose
+  // 1RM the percentage is relative to.
+  const personalRecords = await getPersonalRecords(supabase, program.athlete_id);
+
   // Only relevant when the viewer isn't the owner (i.e. is the athlete on
   // a coach-assigned program) — the "Assigned by" banner only ever shows
   // in that case.
@@ -61,6 +75,8 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
       assignedByEmail={assignedByEmail}
       currentUserId={user.id}
       logsByDay={logsByDay}
+      loggedSetsByExercise={loggedSetsByExercise}
+      personalRecords={personalRecords}
       activeClients={activeClients}
     />
   );

@@ -86,7 +86,7 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
                   </div>
                 )}
                 {block.exercises.map((exercise, i) => {
-                  const isRun = exercise.activity_type === "run";
+                  const category = exercise.exercise_category;
                   return (
                     <div
                       key={exercise.id}
@@ -97,7 +97,7 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
                       )}
                     >
                       <div className="flex items-center gap-1.5">
-                        {isRun && <PersonStanding className="size-3.5 shrink-0 text-muted-foreground" />}
+                        {category !== "strength" && <PersonStanding className="size-3.5 shrink-0 text-muted-foreground" />}
                         <span className="text-sm font-medium text-foreground">
                           {exercise.custom_name || exercise.exercise_id}
                         </span>
@@ -105,7 +105,7 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
                       <ul className="flex flex-col gap-1 pl-0.5">
                         {exercise.sets.map((set) => (
                           <li key={set.id}>
-                            <SetDetails set={set} isRun={isRun} />
+                            <SetDetails set={set} category={category} />
                           </li>
                         ))}
                       </ul>

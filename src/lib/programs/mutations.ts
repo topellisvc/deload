@@ -1,16 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
-  ActivityType,
   BlockExerciseRow,
   BlockRow,
   BlockType,
   DayRow,
-  LoadType,
+  ExerciseCategory,
+  PrescriptionType,
   ProgramDiscipline,
   ProgramTree,
   SetRow,
   WeekRow,
 } from "@/lib/programs/types";
+import { defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { getProgramTree } from "@/lib/programs/queries";
 
 /**
@@ -26,49 +27,74 @@ function newId(): string {
 }
 
 /**
- * A block_exercise's `activity_type` determines which columns on its set
- * rows actually mean anything: 'strength' uses sets/reps/load, 'run' uses
- * distance/duration/pace. Both sets of columns exist on every row
- * regardless of type (simpler schema than a second table), so this just
- * picks sensible defaults for whichever type is being created.
+ * Every field a set_prescriptions row can have exists on every row
+ * regardless of category/prescription_type (migration 0012) — same
+ * "wide nullable table" shape the schema already used for run vs strength
+ * columns, just extended to every field the flexible model now supports.
+ * Which columns actually mean anything for a given row is defined once in
+ * lib/programs/prescription-types.ts, not here — this just picks sensible
+ * defaults for a freshly-created row.
  */
 function newSetRow(
   blockExerciseId: string,
   position: number,
-  activityType: ActivityType,
+  category: ExerciseCategory,
+  prescriptionType: PrescriptionType,
   overrides?: Partial<SetRow>
 ): SetRow {
-  const base: SetRow =
-    activityType === "run"
-      ? {
-          id: newId(),
-          block_exercise_id: blockExerciseId,
-          position,
-          sets: 1,
-          reps: null,
-          load_type: "other",
-          load_value: null,
-          rest_seconds: null,
-          notes: null,
-          distance_meters: null,
-          duration_seconds: null,
-          pace_seconds_per_km: null,
-        }
-      : {
-          id: newId(),
-          block_exercise_id: blockExerciseId,
-          position,
-          sets: 3,
-          reps: "8-10",
-          load_type: "weight",
-          load_value: null,
-          rest_seconds: 90,
-          notes: null,
-          distance_meters: null,
-          duration_seconds: null,
-          pace_seconds_per_km: null,
-        };
+  const isStrength = category === "strength";
+  const base: SetRow = {
+    id: newId(),
+    block_exercise_id: blockExerciseId,
+    position,
+    prescription_type: prescriptionType,
+    sets: isStrength ? 3 : 1,
+    reps: isStrength ? "8-10" : null,
+    min_reps: null,
+    max_reps: null,
+    weight_value: null,
+    percent_1rm_value: null,
+    pr_record_type: null,
+    rpe_value: null,
+    rir_value: null,
+    heart_rate_zone: null,
+    calories: null,
+    rest_seconds: isStrength ? 90 : null,
+    notes: null,
+    distance_meters: null,
+    duration_seconds: null,
+    pace_seconds_per_km: null,
+  };
   return { ...base, ...overrides };
+}
+
+/** The full column set for a set_prescriptions insert/select — factored out
+ * so every insert site (addExerciseBlock, addExerciseToBlock, addSetRow,
+ * switchExerciseCategory, addWeek's clone path, copyDayContents) stays in
+ * sync with SetRow's shape in exactly one place. */
+function setRowInsertPayload(set: SetRow) {
+  return {
+    id: set.id,
+    block_exercise_id: set.block_exercise_id,
+    position: set.position,
+    prescription_type: set.prescription_type,
+    sets: set.sets,
+    reps: set.reps,
+    min_reps: set.min_reps,
+    max_reps: set.max_reps,
+    weight_value: set.weight_value,
+    percent_1rm_value: set.percent_1rm_value,
+    pr_record_type: set.pr_record_type,
+    rpe_value: set.rpe_value,
+    rir_value: set.rir_value,
+    heart_rate_zone: set.heart_rate_zone,
+    calories: set.calories,
+    rest_seconds: set.rest_seconds,
+    notes: set.notes,
+    distance_meters: set.distance_meters,
+    duration_seconds: set.duration_seconds,
+    pace_seconds_per_km: set.pace_seconds_per_km,
+  };
 }
 
 // ============================================================
@@ -250,9 +276,10 @@ export async function deactivateProgram(
  * Adds a new week. With no `sourceWeek`, it gets a blank copy of the day
  * skeleton (labels + rest flags) so day counts stay consistent across a
  * program's weeks. With a `sourceWeek`, every block/exercise/set is
- * duplicated too — `progressionPercent` scales `load_value` on rows whose
- * `load_type` is 'weight' or 'percent_1rm' (the only load types where
- * scaling a number makes sense).
+ * duplicated too — `progressionPercent` scales weight-ish values on rows
+ * whose prescription_type is 'fixed_weight' or 'percent_1rm' (the only
+ * types where scaling a number by a percentage still means the same
+ * thing — scaling an RPE target or a pace target doesn't).
  */
 export async function addWeek(
   supabase: SupabaseClient,
@@ -315,42 +342,30 @@ export async function addWeek(
           exercise_id: sourceExercise.exercise_id,
           custom_name: sourceExercise.custom_name,
           notes: sourceExercise.notes,
-          activity_type: sourceExercise.activity_type,
+          exercise_category: sourceExercise.exercise_category,
         });
 
         const newSets: SetRow[] = sourceExercise.sets.map((sourceSet) => {
           const setId = newId();
-          // Progression % only makes sense for strength loads (weight/%1RM)
-          // and for run distances — scaling an RPE target or a pace target
-          // by a percentage doesn't mean the same thing, so those pass
-          // through unchanged.
-          const scaledLoad =
-            sourceSet.load_value != null && (sourceSet.load_type === "weight" || sourceSet.load_type === "percent_1rm")
-              ? Math.round(sourceSet.load_value * scale * 10) / 10
-              : sourceSet.load_value;
+          const scalable = sourceSet.prescription_type === "fixed_weight" || sourceSet.prescription_type === "percent_1rm";
+          const scaledWeight =
+            scalable && sourceSet.weight_value != null ? Math.round(sourceSet.weight_value * scale * 10) / 10 : sourceSet.weight_value;
+          const scaledPercent =
+            scalable && sourceSet.percent_1rm_value != null
+              ? Math.round(sourceSet.percent_1rm_value * scale * 10) / 10
+              : sourceSet.percent_1rm_value;
           const scaledDistance =
             sourceSet.distance_meters != null ? Math.round(sourceSet.distance_meters * scale) : null;
-          setsToInsert.push({
-            id: setId,
-            block_exercise_id: exerciseId,
-            position: sourceSet.position,
-            sets: sourceSet.sets,
-            reps: sourceSet.reps,
-            load_type: sourceSet.load_type,
-            load_value: scaledLoad,
-            rest_seconds: sourceSet.rest_seconds,
-            notes: sourceSet.notes,
-            distance_meters: scaledDistance,
-            duration_seconds: sourceSet.duration_seconds,
-            pace_seconds_per_km: sourceSet.pace_seconds_per_km,
-          });
-          return {
+          const newSet: SetRow = {
             ...sourceSet,
             id: setId,
             block_exercise_id: exerciseId,
-            load_value: scaledLoad,
+            weight_value: scaledWeight,
+            percent_1rm_value: scaledPercent,
             distance_meters: scaledDistance,
           };
+          setsToInsert.push(setRowInsertPayload(newSet));
+          return newSet;
         });
 
         return { ...sourceExercise, id: exerciseId, block_id: blockId, sets: newSets };
@@ -447,26 +462,14 @@ export async function copyDayContents(
         exercise_id: sourceExercise.exercise_id,
         custom_name: sourceExercise.custom_name,
         notes: sourceExercise.notes,
-        activity_type: sourceExercise.activity_type,
+        exercise_category: sourceExercise.exercise_category,
       });
 
       const newSets: SetRow[] = sourceExercise.sets.map((sourceSet) => {
         const setId = newId();
-        setsToInsert.push({
-          id: setId,
-          block_exercise_id: exerciseId,
-          position: sourceSet.position,
-          sets: sourceSet.sets,
-          reps: sourceSet.reps,
-          load_type: sourceSet.load_type,
-          load_value: sourceSet.load_value,
-          rest_seconds: sourceSet.rest_seconds,
-          notes: sourceSet.notes,
-          distance_meters: sourceSet.distance_meters,
-          duration_seconds: sourceSet.duration_seconds,
-          pace_seconds_per_km: sourceSet.pace_seconds_per_km,
-        });
-        return { ...sourceSet, id: setId, block_exercise_id: exerciseId };
+        const newSet: SetRow = { ...sourceSet, id: setId, block_exercise_id: exerciseId };
+        setsToInsert.push(setRowInsertPayload(newSet));
+        return newSet;
       });
 
       return { ...sourceExercise, id: exerciseId, block_id: blockId, sets: newSets };
@@ -501,6 +504,8 @@ export async function addExerciseBlock(
 ): Promise<{ block: BlockRow | null; error: string | null }> {
   const blockId = newId();
   const exerciseId = newId();
+  const category: ExerciseCategory = "strength";
+  const prescriptionType = defaultPrescriptionType(category);
 
   const { error: blockError } = await supabase.from("exercise_blocks").insert({
     id: blockId,
@@ -518,25 +523,12 @@ export async function addExerciseBlock(
     exercise_id: null,
     custom_name: "New exercise",
     notes: null,
-    activity_type: "strength",
+    exercise_category: category,
   });
   if (exerciseError) return { block: null, error: exerciseError.message };
 
-  const set = newSetRow(exerciseId, 1, "strength");
-  const { error: setError } = await supabase.from("set_prescriptions").insert({
-    id: set.id,
-    block_exercise_id: exerciseId,
-    position: set.position,
-    sets: set.sets,
-    reps: set.reps,
-    load_type: set.load_type,
-    load_value: set.load_value,
-    rest_seconds: set.rest_seconds,
-    notes: set.notes,
-    distance_meters: set.distance_meters,
-    duration_seconds: set.duration_seconds,
-    pace_seconds_per_km: set.pace_seconds_per_km,
-  });
+  const set = newSetRow(exerciseId, 1, category, prescriptionType);
+  const { error: setError } = await supabase.from("set_prescriptions").insert(setRowInsertPayload(set));
   if (setError) return { block: null, error: setError.message };
 
   return {
@@ -554,7 +546,7 @@ export async function addExerciseBlock(
           exercise_id: null,
           custom_name: "New exercise",
           notes: null,
-          activity_type: "strength",
+          exercise_category: category,
           sets: [set],
         },
       ],
@@ -581,6 +573,9 @@ export async function addExerciseToBlock(
   params: { blockId: string; position: number }
 ): Promise<{ exercise: BlockExerciseRow | null; error: string | null }> {
   const exerciseId = newId();
+  const category: ExerciseCategory = "strength";
+  const prescriptionType = defaultPrescriptionType(category);
+
   const { error: exerciseError } = await supabase.from("block_exercises").insert({
     id: exerciseId,
     block_id: params.blockId,
@@ -588,25 +583,12 @@ export async function addExerciseToBlock(
     exercise_id: null,
     custom_name: "New exercise",
     notes: null,
-    activity_type: "strength",
+    exercise_category: category,
   });
   if (exerciseError) return { exercise: null, error: exerciseError.message };
 
-  const set = newSetRow(exerciseId, 1, "strength");
-  const { error: setError } = await supabase.from("set_prescriptions").insert({
-    id: set.id,
-    block_exercise_id: exerciseId,
-    position: set.position,
-    sets: set.sets,
-    reps: set.reps,
-    load_type: set.load_type,
-    load_value: set.load_value,
-    rest_seconds: set.rest_seconds,
-    notes: set.notes,
-    distance_meters: set.distance_meters,
-    duration_seconds: set.duration_seconds,
-    pace_seconds_per_km: set.pace_seconds_per_km,
-  });
+  const set = newSetRow(exerciseId, 1, category, prescriptionType);
+  const { error: setError } = await supabase.from("set_prescriptions").insert(setRowInsertPayload(set));
   if (setError) return { exercise: null, error: setError.message };
 
   return {
@@ -617,7 +599,7 @@ export async function addExerciseToBlock(
       exercise_id: null,
       custom_name: "New exercise",
       notes: null,
-      activity_type: "strength",
+      exercise_category: category,
       sets: [set],
     },
     error: null,
@@ -687,21 +669,21 @@ export async function updateBlockExercise(
 }
 
 /**
- * Switches an exercise between 'strength' (sets/reps/load) and 'run'
- * (distance/duration/pace). The two shapes don't share meaningful values
- * — "3 sets of 8 reps" has no equivalent as a distance — so this replaces
- * all of the exercise's existing set rows with a single fresh default row
- * in the new shape rather than trying to convert them. The UI should
- * confirm with the user before calling this if the exercise already has
- * real data entered, since it's destructive.
+ * Switches an exercise between categories (strength/running/cardio). The
+ * three shapes don't share meaningful values — "3 sets of 8 reps" has no
+ * equivalent as a distance — so this replaces all of the exercise's
+ * existing set rows with a single fresh default row in the new category's
+ * default prescription type, rather than trying to convert them. The UI
+ * should confirm with the user before calling this if the exercise already
+ * has real data entered, since it's destructive.
  */
-export async function switchExerciseActivityType(
+export async function switchExerciseCategory(
   supabase: SupabaseClient,
-  params: { blockExerciseId: string; activityType: ActivityType }
+  params: { blockExerciseId: string; category: ExerciseCategory }
 ): Promise<{ set: SetRow | null; error: string | null }> {
   const { error: updateError } = await supabase
     .from("block_exercises")
-    .update({ activity_type: params.activityType })
+    .update({ exercise_category: params.category })
     .eq("id", params.blockExerciseId);
   if (updateError) return { set: null, error: updateError.message };
 
@@ -711,24 +693,32 @@ export async function switchExerciseActivityType(
     .eq("block_exercise_id", params.blockExerciseId);
   if (deleteError) return { set: null, error: deleteError.message };
 
-  const set = newSetRow(params.blockExerciseId, 1, params.activityType);
-  const { error: insertError } = await supabase.from("set_prescriptions").insert({
-    id: set.id,
-    block_exercise_id: set.block_exercise_id,
-    position: set.position,
-    sets: set.sets,
-    reps: set.reps,
-    load_type: set.load_type,
-    load_value: set.load_value,
-    rest_seconds: set.rest_seconds,
-    notes: set.notes,
-    distance_meters: set.distance_meters,
-    duration_seconds: set.duration_seconds,
-    pace_seconds_per_km: set.pace_seconds_per_km,
-  });
+  const prescriptionType = defaultPrescriptionType(params.category);
+  const set = newSetRow(params.blockExerciseId, 1, params.category, prescriptionType);
+  const { error: insertError } = await supabase.from("set_prescriptions").insert(setRowInsertPayload(set));
   if (insertError) return { set: null, error: insertError.message };
 
   return { set, error: null };
+}
+
+/**
+ * Switches every existing set row on an exercise to a new prescription
+ * type *without* touching category or wiping any of the row's field
+ * values — unlike switchExerciseCategory this is non-destructive (e.g.
+ * Fixed Weight -> RPE keeps whatever sets/reps/rest was already entered,
+ * it just changes which fields the UI treats as the "real" ones). Any
+ * previously-entered values on now-irrelevant columns are left in place
+ * rather than nulled out, so toggling back doesn't lose data.
+ */
+export async function updatePrescriptionType(
+  supabase: SupabaseClient,
+  params: { blockExerciseId: string; prescriptionType: PrescriptionType }
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("set_prescriptions")
+    .update({ prescription_type: params.prescriptionType })
+    .eq("block_exercise_id", params.blockExerciseId);
+  return { error: error?.message ?? null };
 }
 
 // ============================================================
@@ -737,38 +727,23 @@ export async function switchExerciseActivityType(
 
 export async function addSetRow(
   supabase: SupabaseClient,
-  params: { blockExerciseId: string; position: number; activityType: ActivityType; copyFrom?: SetRow }
+  params: { blockExerciseId: string; position: number; category: ExerciseCategory; prescriptionType: PrescriptionType; copyFrom?: SetRow }
 ): Promise<{ set: SetRow | null; error: string | null }> {
-  const overrides = params.copyFrom
-    ? params.activityType === "run"
-      ? {
-          distance_meters: params.copyFrom.distance_meters,
-          duration_seconds: params.copyFrom.duration_seconds,
-          pace_seconds_per_km: params.copyFrom.pace_seconds_per_km,
-        }
-      : {
-          sets: params.copyFrom.sets,
-          reps: params.copyFrom.reps,
-          load_type: params.copyFrom.load_type,
-          load_value: params.copyFrom.load_value,
-          rest_seconds: params.copyFrom.rest_seconds,
-        }
-    : undefined;
-  const set = newSetRow(params.blockExerciseId, params.position, params.activityType, overrides);
-  const { error } = await supabase.from("set_prescriptions").insert({
-    id: set.id,
-    block_exercise_id: set.block_exercise_id,
-    position: set.position,
-    sets: set.sets,
-    reps: set.reps,
-    load_type: set.load_type,
-    load_value: set.load_value,
-    rest_seconds: set.rest_seconds,
-    notes: set.notes,
-    distance_meters: set.distance_meters,
-    duration_seconds: set.duration_seconds,
-    pace_seconds_per_km: set.pace_seconds_per_km,
-  });
+  // copyFrom is always an existing row on the *same* exercise, so it
+  // already matches this category — safe to copy every field wholesale
+  // rather than cherry-picking per type. id/position/block_exercise_id/
+  // prescription_type are excluded (not just set to undefined — an
+  // explicit `key: undefined` would still win over newSetRow's own
+  // defaults when spread) so the new row gets its own identity and the
+  // caller's requested prescriptionType, not copyFrom's.
+  let overrides: Partial<SetRow> | undefined;
+  if (params.copyFrom) {
+    const { id: _id, position: _position, block_exercise_id: _blockExerciseId, prescription_type: _prescriptionType, ...rest } =
+      params.copyFrom;
+    overrides = rest;
+  }
+  const set = newSetRow(params.blockExerciseId, params.position, params.category, params.prescriptionType, overrides);
+  const { error } = await supabase.from("set_prescriptions").insert(setRowInsertPayload(set));
   if (error) return { set: null, error: error.message };
   return { set, error: null };
 }
@@ -779,8 +754,15 @@ export async function updateSetRow(
   patch: Partial<{
     sets: number;
     reps: string | null;
-    load_type: LoadType;
-    load_value: number | null;
+    min_reps: number | null;
+    max_reps: number | null;
+    weight_value: number | null;
+    percent_1rm_value: number | null;
+    pr_record_type: string | null;
+    rpe_value: number | null;
+    rir_value: number | null;
+    heart_rate_zone: number | null;
+    calories: number | null;
     rest_seconds: number | null;
     notes: string | null;
     distance_meters: number | null;

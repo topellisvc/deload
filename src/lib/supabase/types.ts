@@ -135,7 +135,16 @@ export interface ExerciseBlock {
   rounds: number;
 }
 
-export type ActivityType = "strength" | "run";
+/**
+ * What kind of exercise this is — determines which prescription types are
+ * even offered (see lib/programs/prescription-types.ts, the single
+ * declarative source of truth for category -> allowed types -> visible
+ * fields). Renamed from the old 'strength' | 'run' activity_type
+ * (migration 0012): 'run' didn't leave room for general conditioning
+ * (bike, row, ski erg, carries...) without either mislabeling it as a
+ * run or bolting on a third ad-hoc flag.
+ */
+export type ExerciseCategory = "strength" | "running" | "cardio";
 
 export interface BlockExercise {
   id: string;
@@ -144,24 +153,87 @@ export interface BlockExercise {
   exercise_id: string | null;
   custom_name: string | null;
   notes: string | null;
-  activity_type: ActivityType;
+  exercise_category: ExerciseCategory;
 }
 
-export type LoadType = "weight" | "percent_1rm" | "rpe" | "bodyweight" | "other";
+export type StrengthPrescriptionType =
+  | "fixed_weight"
+  | "percent_1rm"
+  | "rpe"
+  | "rir"
+  | "rep_range"
+  | "athlete_chooses_weight"
+  | "coach_notes_only";
 
+export type RunningPrescriptionType =
+  | "distance"
+  | "time"
+  | "pace"
+  | "heart_rate_zone"
+  | "rpe"
+  | "intervals"
+  /** Distance + time prescribed together — the shape every running row
+   * already had before this migration (RunSetRowEditor always showed both
+   * fields). Kept as its own type rather than forcing old data into a
+   * single-purpose bucket; new rows can still use plain 'distance' or
+   * 'time' if only one target matters. */
+  | "distance_time"
+  | "coach_notes";
+
+export type CardioPrescriptionType = "time" | "distance" | "calories" | "heart_rate_zone" | "rpe" | "coach_notes";
+
+export type PrescriptionType = StrengthPrescriptionType | RunningPrescriptionType | CardioPrescriptionType;
+
+/**
+ * One planned set/segment — never mutated by what actually happened (see
+ * LoggedSet). `prescription_type` (migration 0012) replaced the old
+ * strength-only `load_type`/`load_value` pair with a value that spans all
+ * three exercise categories, so the columns below are reused across
+ * categories rather than duplicated per category: `rpe_value` serves both
+ * strength's RPE type and running/cardio's RPE type, `distance_meters` /
+ * `duration_seconds` serve running and cardio alike, etc. Which columns a
+ * given prescription_type actually reads is defined once in
+ * lib/programs/prescription-types.ts, not scattered across components.
+ */
 export interface SetPrescription {
   id: string;
   block_exercise_id: string;
   position: number;
+  prescription_type: PrescriptionType;
+  /** Strength "sets" count; doubles as the repeat count for running's
+   * 'intervals' type (e.g. sets=6 + distance_meters=400 == "6x400m"). */
   sets: number;
+  /** Free-text reps for every strength type except 'rep_range' (which uses
+   * min_reps/max_reps instead) — e.g. "8", "8-10", "AMRAP". */
   reps: string | null;
-  load_type: LoadType;
-  load_value: number | null;
+  min_reps: number | null;
+  max_reps: number | null;
+  /** 'fixed_weight' only — the prescribed load. */
+  weight_value: number | null;
+  /** 'percent_1rm' only — the percentage; the suggested kg is computed at
+   * render/log time from the athlete's current PR, never persisted here,
+   * so it can never go stale. */
+  percent_1rm_value: number | null;
+  /** Which personal_records.record_type the percent_1rm suggestion reads
+   * (e.g. 'bench_press') — free text, not a foreign key, since a PR for
+   * that type may not exist yet when the prescription is written. */
+  pr_record_type: string | null;
+  /** Strength 'rpe' type AND running/cardio 'rpe' type — same concept, one column. */
+  rpe_value: number | null;
+  /** Strength 'rir' type only. */
+  rir_value: number | null;
+  /** Running & cardio 'heart_rate_zone' type — 1-5. */
+  heart_rate_zone: number | null;
+  /** Cardio 'calories' type only. */
+  calories: number | null;
   rest_seconds: number | null;
+  /** Primary content for the *_notes types; supplementary guidance for any other type. */
   notes: string | null;
-  /** Run rows only (activity_type === "run"); unused by strength rows. */
+  /** Running (distance/distance_time/intervals) + cardio (distance). */
   distance_meters: number | null;
+  /** Running (time/distance_time/intervals) + cardio (time). */
   duration_seconds: number | null;
+  /** Running 'pace' type only — target pace. */
   pace_seconds_per_km: number | null;
 }
 
@@ -177,5 +249,33 @@ export interface SessionLog {
   athlete_id: string;
   performed_on: string;
   note: string | null;
+  created_at: string;
+}
+
+/**
+ * One performed set/segment — the permanent record of what actually
+ * happened, wholly separate from SetPrescription (migration 0012). Never
+ * written by anything that also writes a prescription; the two only ever
+ * meet by being displayed side by side (see ExercisePerformanceComparison).
+ * `set_prescription_id` is nullable and best-effort provenance only (the
+ * athlete can log more sets than were prescribed, and the prescription
+ * itself can be edited or removed later without invalidating history —
+ * see migration 0012's comment on why that FK is `on delete set null`).
+ */
+export interface LoggedSet {
+  id: string;
+  session_log_id: string;
+  block_exercise_id: string;
+  set_prescription_id: string | null;
+  position: number;
+  performed_weight: number | null;
+  performed_reps: number | null;
+  performed_rpe: number | null;
+  performed_distance_meters: number | null;
+  performed_duration_seconds: number | null;
+  performed_pace_seconds_per_km: number | null;
+  performed_heart_rate: number | null;
+  performed_calories: number | null;
+  notes: string | null;
   created_at: string;
 }

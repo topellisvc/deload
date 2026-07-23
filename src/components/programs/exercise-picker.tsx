@@ -2,30 +2,41 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { EXERCISES } from "@/lib/workout-generator/exercises";
+import { exerciseNamesForCategory } from "@/lib/programs/exercise-catalog";
+import type { ExerciseCategory } from "@/lib/programs/types";
 import { cn } from "@/lib/utils";
 
 interface ExercisePickerProps {
+  category: ExerciseCategory;
   exerciseId: string | null;
   customName: string | null;
   onChange: (patch: { exercise_id: string | null; custom_name: string | null }) => void;
   className?: string;
 }
 
-const NAME_TO_ID = new Map(EXERCISES.map((e) => [e.name.toLowerCase(), e.id]));
-const ID_TO_NAME = new Map(EXERCISES.map((e) => [e.id, e.name]));
+// Only the strength catalog (lib/workout-generator/exercises.ts) has real
+// ids to resolve against — running/cardio names (lib/programs/exercise-catalog.ts)
+// are suggestions only and always land in custom_name, same as any
+// strength name typed that isn't in EXERCISES either.
+const STRENGTH_NAME_TO_ID = new Map(EXERCISES.map((e) => [e.name.toLowerCase(), e.id]));
+const STRENGTH_ID_TO_NAME = new Map(EXERCISES.map((e) => [e.id, e.name]));
 
 /**
- * Free-text exercise name field backed by a <datalist> of the curated
- * exercise database — type to filter, pick a suggestion, or just keep
- * typing a name that isn't in the list at all. On commit (blur / Enter),
- * an exact match against the database resolves to `exercise_id`;
- * anything else is stored as `custom_name`. No custom combobox component
- * needed, and it works the same on mobile as desktop.
+ * Free-text exercise name field backed by a <datalist> of category-relevant
+ * suggestions (see exerciseNamesForCategory) — type to filter, pick a
+ * suggestion, or just keep typing a name that isn't in the list at all. On
+ * commit (blur / Enter), an exact match against the *strength* catalog
+ * resolves to `exercise_id`; every other case (a running/cardio name, or
+ * any name that just isn't in either list) is stored as `custom_name`. No
+ * custom combobox component needed, and it works the same on mobile as
+ * desktop.
  */
-export function ExercisePicker({ exerciseId, customName, onChange, className }: ExercisePickerProps) {
+export function ExercisePicker({ category, exerciseId, customName, onChange, className }: ExercisePickerProps) {
   const listId = useId();
+  const suggestions = useMemo(() => exerciseNamesForCategory(category), [category]);
+
   const initialLabel = useMemo(() => {
-    if (exerciseId) return ID_TO_NAME.get(exerciseId) ?? customName ?? "";
+    if (exerciseId) return STRENGTH_ID_TO_NAME.get(exerciseId) ?? customName ?? "";
     return customName ?? "";
   }, [exerciseId, customName]);
   const [text, setText] = useState(initialLabel);
@@ -41,7 +52,7 @@ export function ExercisePicker({ exerciseId, customName, onChange, className }: 
       return;
     }
     if (trimmed === initialLabel) return;
-    const matchedId = NAME_TO_ID.get(trimmed.toLowerCase());
+    const matchedId = category === "strength" ? STRENGTH_NAME_TO_ID.get(trimmed.toLowerCase()) : undefined;
     if (matchedId) {
       onChange({ exercise_id: matchedId, custom_name: null });
     } else {
@@ -72,8 +83,8 @@ export function ExercisePicker({ exerciseId, customName, onChange, className }: 
         )}
       />
       <datalist id={listId}>
-        {EXERCISES.map((e) => (
-          <option key={e.id} value={e.name} />
+        {suggestions.map((name) => (
+          <option key={name} value={name} />
         ))}
       </datalist>
     </>

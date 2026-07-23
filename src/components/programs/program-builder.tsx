@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { ActivityType, BlockRow, DayRow, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
+import type { BlockRow, DayRow, ExerciseCategory, PrescriptionType, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
+import { defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import * as m from "@/lib/programs/mutations";
 import { DayColumn } from "@/components/programs/day-column";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
@@ -288,10 +289,12 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const exercise = block?.exercises.find((ex) => ex.id === blockExerciseId);
     if (!exercise) return;
     const lastSet = exercise.sets[exercise.sets.length - 1];
+    const prescriptionType = lastSet?.prescription_type ?? defaultPrescriptionType(exercise.exercise_category);
     const { set, error } = await m.addSetRow(supabase, {
       blockExerciseId: exercise.id,
       position: nextPosition(exercise.sets),
-      activityType: exercise.activity_type,
+      category: exercise.exercise_category,
+      prescriptionType,
       copyFrom: lastSet,
     });
     if (error || !set) {
@@ -304,37 +307,54 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     }));
   }
 
-  async function handleActivityTypeChange(dayId: string, blockId: string, blockExerciseId: string, activityType: ActivityType) {
+  async function handleCategoryChange(dayId: string, blockId: string, blockExerciseId: string, category: ExerciseCategory) {
     const day = week.days.find((d) => d.id === dayId);
     const exercise = day?.blocks.find((b) => b.id === blockId)?.exercises.find((ex) => ex.id === blockExerciseId);
-    if (!exercise || exercise.activity_type === activityType) return;
+    if (!exercise || exercise.exercise_category === category) return;
 
-    // Switching wipes the existing set rows (sets/reps/load and
-    // distance/duration aren't convertible), so confirm if there's
-    // anything a user would actually lose.
-    const hasData = exercise.sets.some((s) =>
-      activityType === "run"
-        ? s.load_value != null || (s.reps && s.reps.length > 0)
-        : s.distance_meters != null || s.duration_seconds != null
+    // Switching wipes the existing prescription rows — a strength "3x8 @
+    // weight" has no equivalent as a distance/duration, so confirm if
+    // there's anything a user would actually lose.
+    const hasData = exercise.sets.some(
+      (s) =>
+        s.weight_value != null ||
+        s.percent_1rm_value != null ||
+        s.distance_meters != null ||
+        s.duration_seconds != null ||
+        (s.reps && s.reps.length > 0)
     );
-    if (hasData && !window.confirm(`Switch to ${activityType === "run" ? "Run" : "Lift"}? This clears the set data already entered for this exercise.`)) {
+    if (
+      hasData &&
+      !window.confirm(`Switch to ${category}? This clears the prescription data already entered for this exercise.`)
+    ) {
       return;
     }
 
-    const { set, error } = await m.switchExerciseActivityType(supabase, {
-      blockExerciseId: exercise.id,
-      activityType,
-    });
+    const { set, error } = await m.switchExerciseCategory(supabase, { blockExerciseId: exercise.id, category });
     if (error || !set) {
-      fail(error ?? "Couldn't switch exercise type.");
+      fail(error ?? "Couldn't switch exercise category.");
       return;
     }
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
+      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, exercise_category: category, sets: [set] } : ex)),
+    }));
+  }
+
+  /** Applies to every existing row on the exercise at once — one exercise,
+   * one prescription type, matching "every Strength exercise must have a
+   * required field: Prescription Type" rather than letting rows drift
+   * apart. Non-destructive: existing field values are left as-is (see
+   * updatePrescriptionType's own comment). */
+  async function handlePrescriptionTypeChange(dayId: string, blockId: string, blockExerciseId: string, prescriptionType: PrescriptionType) {
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
       exercises: b.exercises.map((ex) =>
-        ex.id === blockExerciseId ? { ...ex, activity_type: activityType, sets: [set] } : ex
+        ex.id === blockExerciseId ? { ...ex, sets: ex.sets.map((s) => ({ ...s, prescription_type: prescriptionType })) } : ex
       ),
     }));
+    const { error } = await m.updatePrescriptionType(supabase, { blockExerciseId, prescriptionType });
+    if (error) fail(error);
   }
 
   function handleSetChange(dayId: string, blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) {
@@ -475,8 +495,11 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             onExerciseChange={(blockId, blockExerciseId, patch) =>
               handleExerciseChange(day.id, blockId, blockExerciseId, patch)
             }
-            onActivityTypeChange={(blockId, blockExerciseId, activityType) =>
-              handleActivityTypeChange(day.id, blockId, blockExerciseId, activityType)
+            onCategoryChange={(blockId, blockExerciseId, category) =>
+              handleCategoryChange(day.id, blockId, blockExerciseId, category)
+            }
+            onPrescriptionTypeChange={(blockId, blockExerciseId, prescriptionType) =>
+              handlePrescriptionTypeChange(day.id, blockId, blockExerciseId, prescriptionType)
             }
             onAddSet={(blockId, blockExerciseId) => handleAddSet(day.id, blockId, blockExerciseId)}
             onSetChange={(blockId, blockExerciseId, setId, patch) =>

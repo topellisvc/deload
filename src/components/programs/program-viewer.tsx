@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Pencil, PersonStanding, Repeat, Send, UserRound } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Pencil, PersonStanding, Repeat, Send, UserRound } from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree } from "@/lib/programs/types";
-import type { CoachClient, SessionLog } from "@/lib/supabase/types";
+import type { CoachClient, LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
 import { SetDetails } from "@/components/programs/set-details";
+import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -56,12 +57,28 @@ interface ProgramViewerProps {
   assignedByEmail: string | null;
   currentUserId: string;
   logsByDay: Record<string, SessionLog[]>;
+  /** Keyed by `${session_log_id}:${block_exercise_id}` — see
+   * groupLoggedSetsByExercise in lib/logging/queries.ts. Threaded down to
+   * DayLogControl -> SessionPerformanceEditor for the Performance section
+   * of each logged session. */
+  loggedSetsByExercise: Record<string, LoggedSet[]>;
+  /** The athlete's current 1RMs — passed down to DayLogControl so a
+   * percent_1rm set can prefill a suggested working weight when logged. */
+  personalRecords: PersonalRecord[];
   /** For the "Send a copy" dialog's client picker — owner-only feature, so
    * this is only ever non-empty when isOwner. */
   activeClients: CoachClient[];
 }
 
-export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByDay, activeClients }: ProgramViewerProps) {
+export function ProgramViewer({
+  program,
+  assignedByEmail,
+  currentUserId,
+  logsByDay,
+  loggedSetsByExercise,
+  personalRecords,
+  activeClients,
+}: ProgramViewerProps) {
   const [selectedWeekId, setSelectedWeekId] = useState(program.weeks[0]?.id ?? "");
   const week = program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0];
   const today = todayDateString();
@@ -73,6 +90,11 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
   const [settingActive, setSettingActive] = useState(false);
   const [activeError, setActiveError] = useState<string | null>(null);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  // Coach Review: which logged session (by session_log.id) has its
+  // Planned-vs-Performed detail expanded. One id across the whole page is
+  // enough — session_log ids are globally unique, so this doubles as a
+  // simple accordion without needing per-day state.
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   async function handleSetActive() {
     setSettingActive(true);
@@ -201,7 +223,7 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
                             </div>
                           )}
                           {block.exercises.map((exercise, i) => {
-                            const isRun = exercise.activity_type === "run";
+                            const category = exercise.exercise_category;
                             return (
                               <div
                                 key={exercise.id}
@@ -212,7 +234,7 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
                                 )}
                               >
                                 <div className="flex items-center gap-1.5">
-                                  {isRun && <PersonStanding className="size-3.5 shrink-0 text-muted-foreground" />}
+                                  {category !== "strength" && <PersonStanding className="size-3.5 shrink-0 text-muted-foreground" />}
                                   <span className="text-sm font-medium text-foreground">
                                     {exercise.custom_name || exercise.exercise_id}
                                   </span>
@@ -220,7 +242,7 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
                                 <ul className="flex flex-col gap-1 pl-0.5">
                                   {exercise.sets.map((set) => (
                                     <li key={set.id}>
-                                      <SetDetails set={set} isRun={isRun} />
+                                      <SetDetails set={set} category={category} />
                                     </li>
                                   ))}
                                 </ul>
@@ -234,16 +256,51 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
                 )}
 
                 {!day.is_rest_day && isAthlete && (
-                  <DayLogControl trainingDayId={day.id} athleteId={currentUserId} logs={logsByDay[day.id] ?? []} />
+                  <DayLogControl
+                    trainingDayId={day.id}
+                    athleteId={currentUserId}
+                    logs={logsByDay[day.id] ?? []}
+                    blocks={day.blocks}
+                    loggedSetsByExercise={loggedSetsByExercise}
+                    personalRecords={personalRecords}
+                  />
                 )}
 
                 {!day.is_rest_day && !isAthlete && isOwner && (() => {
                   const dayLogs = logsByDay[day.id] ?? [];
                   if (dayLogs.length === 0) return null;
                   return (
-                    <p className="border-t border-border pt-2.5 text-xs font-medium text-muted-foreground">
-                      Logged {dayLogs.length}× · last {formatLogDate(dayLogs[0]!.performed_on, today)}
-                    </p>
+                    <div className="flex flex-col gap-2 border-t border-border pt-2.5 text-xs">
+                      <span className="font-medium text-muted-foreground">
+                        Logged {dayLogs.length}× · last {formatLogDate(dayLogs[0]!.performed_on, today)}
+                      </span>
+                      <ul className="flex flex-col gap-1.5">
+                        {dayLogs.map((log) => (
+                          <li key={log.id} className="flex flex-col gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedLogId((v) => (v === log.id ? null : log.id))}
+                              className="flex items-center gap-1 self-start font-medium text-foreground/80 transition-colors hover:text-foreground"
+                            >
+                              {formatLogDate(log.performed_on, today)}
+                              <ChevronDown className={cn("size-3.5 transition-transform", expandedLogId === log.id && "rotate-180")} />
+                            </button>
+                            {expandedLogId === log.id && (
+                              // Planned vs Performed, side by side per set — the coach's
+                              // review view. Same SessionPerformanceEditor the athlete logs
+                              // into, just readOnly, so the two can never render differently.
+                              <SessionPerformanceEditor
+                                sessionLogId={log.id}
+                                blocks={day.blocks}
+                                loggedSetsByExercise={loggedSetsByExercise}
+                                personalRecords={personalRecords}
+                                readOnly
+                              />
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   );
                 })()}
               </div>
