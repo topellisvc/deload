@@ -78,6 +78,34 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
     router.refresh();
   }
 
+  // A program's assignmentLabel starts with "For " exactly when the viewer
+  // owns it but someone else (a client) is the athlete — see
+  // getProgramSummaries. Everything else (self-programmed, or a "From "
+  // program where the viewer IS the athlete on a coach-assigned plan) is
+  // "the viewer's own" for this page's purposes: it's what THEY train on,
+  // regardless of who built it.
+  const ownPrograms = programs.filter((p) => !p.assignmentLabel?.startsWith("For "));
+  const clientPrograms = programs.filter((p) => p.assignmentLabel?.startsWith("For "));
+
+  function renderGrid(list: ProgramSummary[]) {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {list.map((program) => (
+          <ProgramCard
+            key={program.id}
+            program={program}
+            canSetActive={program.owner_id === userId}
+            settingActive={settingActiveId === program.id}
+            onSetActive={handleSetActive}
+            canSend={program.owner_id === userId}
+            sendingCopy={loadingSendId === program.id}
+            onSend={handleSend}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-16">
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -112,19 +140,26 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {programs.map((program) => (
-            <ProgramCard
-              key={program.id}
-              program={program}
-              canSetActive={program.owner_id === userId}
-              settingActive={settingActiveId === program.id}
-              onSetActive={handleSetActive}
-              canSend={program.owner_id === userId}
-              sendingCopy={loadingSendId === program.id}
-              onSend={handleSend}
-            />
-          ))}
+        <div className="flex flex-col gap-10">
+          {/* Own programs get their own section even for someone who's
+              purely a coach with no self-programmed plans (an empty section
+              would look broken) — so this only renders when there's at
+              least one to show, same as the client section below. */}
+          {ownPrograms.length > 0 && (
+            <section>
+              {clientPrograms.length > 0 && (
+                <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">Your programs</h2>
+              )}
+              {renderGrid(ownPrograms)}
+            </section>
+          )}
+
+          {clientPrograms.length > 0 && (
+            <section>
+              <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">Client programs</h2>
+              {renderGrid(clientPrograms)}
+            </section>
+          )}
         </div>
       )}
 
