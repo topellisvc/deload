@@ -85,6 +85,24 @@ export async function getCoachEmail(
 }
 
 /**
+ * Most recent date this client trained, for the /clients/[id] detail page.
+ * No coachId filter needed: the session_logs read policy ("readable by the
+ * program's owner or athlete") already limits what comes back to logs on
+ * programs the calling coach actually owns, so a self-programmed or
+ * other-coach's log for this same client simply won't be visible here.
+ */
+export async function getClientLastActivity(supabase: SupabaseClient, clientId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("session_logs")
+    .select("performed_on")
+    .eq("athlete_id", clientId)
+    .order("performed_on", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ performed_on: string }>();
+  return data?.performed_on ?? null;
+}
+
+/**
  * Minimal display info for a linked coach/client. Relies on the profiles
  * RLS exception (0003_coach_clients.sql) that only opens a profile up to
  * someone with an existing coach_clients row naming both of them — so this

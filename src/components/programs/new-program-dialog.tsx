@@ -26,14 +26,17 @@ interface NewProgramDialogProps {
   onClose: () => void;
   userId: string;
   activeClients: CoachClient[];
+  /** Pre-selects the "For" dropdown — used by the client detail page so
+   * "New program" there defaults to that client instead of "Myself". */
+  defaultAthleteId?: string;
 }
 
-export function NewProgramDialog({ open, onClose, userId, activeClients }: NewProgramDialogProps) {
+export function NewProgramDialog({ open, onClose, userId, activeClients, defaultAthleteId }: NewProgramDialogProps) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [discipline, setDiscipline] = useState<ProgramDiscipline>("resistance");
   const [daysPerWeek, setDaysPerWeek] = useState(4);
-  const [forClientId, setForClientId] = useState(MYSELF);
+  const [forClientId, setForClientId] = useState(defaultAthleteId ?? MYSELF);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

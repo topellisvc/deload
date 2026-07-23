@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, Mail, Trash2, UserPlus, Users } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CheckCircle2, ChevronRight, Clock, Mail, Trash2, UserPlus, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { inviteClient, removeClient } from "@/lib/coaching/mutations";
 import type { CoachClient } from "@/lib/supabase/types";
-import { cn } from "@/lib/utils";
 
 interface ClientsManagerProps {
   clients: CoachClient[];
@@ -142,22 +142,29 @@ export function ClientsManager({ clients, coachId, coachEmail }: ClientsManagerP
             <li key={client.id}>
               <Card>
                 <CardContent className="flex items-center justify-between gap-3 p-4">
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="truncate text-sm font-medium text-foreground">{client.client_email}</span>
-                    <span
-                      className={cn(
-                        "flex items-center gap-1 text-xs",
-                        client.status === "active" ? "text-success" : "text-muted-foreground"
-                      )}
+                  {client.status === "active" && client.client_id ? (
+                    <Link
+                      href={`/clients/${client.client_id}`}
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
-                      {client.status === "active" ? (
-                        <CheckCircle2 className="size-3.5" />
-                      ) : (
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-sm font-medium text-foreground">{client.client_email}</span>
+                        <span className="flex items-center gap-1 text-xs text-success">
+                          <CheckCircle2 className="size-3.5" />
+                          Active
+                        </span>
+                      </div>
+                      <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
+                    </Link>
+                  ) : (
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate text-sm font-medium text-foreground">{client.client_email}</span>
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Clock className="size-3.5" />
-                      )}
-                      {client.status === "active" ? "Active" : "Invited — waiting for them to accept"}
-                    </span>
-                  </div>
+                        Invited — waiting for them to accept
+                      </span>
+                    </div>
+                  )}
                   <Button
                     type="button"
                     variant="outline"
@@ -165,6 +172,7 @@ export function ClientsManager({ clients, coachId, coachEmail }: ClientsManagerP
                     onClick={() => handleRemove(client.id)}
                     disabled={removingId === client.id}
                     aria-label={`Remove ${client.client_email}`}
+                    className="shrink-0"
                   >
                     <Trash2 className="size-4" />
                   </Button>

@@ -107,20 +107,20 @@ export async function getProgramTree(
   return { ...program, weeks: weekRows };
 }
 
-export async function getProgramSummaries(
+/**
+ * Shared by getProgramSummaries and getProgramsForClient — both need
+ * "how many weeks, and how many days in the first week" per program
+ * without pulling the whole tree, just fetched from different `programs`
+ * queries. Factored out so the two flat-query-and-stitch queries
+ * (program_weeks, training_days) only live in one place.
+ */
+async function getWeekDayCounts(
   supabase: SupabaseClient,
-  userId: string
-): Promise<ProgramSummary[]> {
-  const { data: programs } = await supabase
-    .from("programs")
-    .select("*")
-    .or(`owner_id.eq.${userId},athlete_id.eq.${userId}`)
-    .order("updated_at", { ascending: false });
+  programIds: string[]
+): Promise<Map<string, { weekCount: number; dayCount: number }>> {
+  const counts = new Map<string, { weekCount: number; dayCount: number }>();
+  if (programIds.length === 0) return counts;
 
-  const list = (programs ?? []) as Program[];
-  if (list.length === 0) return [];
-
-  const programIds = list.map((p) => p.id);
   const { data: weeksData } = await supabase
     .from("program_weeks")
     .select("id, program_id")
@@ -135,6 +135,30 @@ export async function getProgramSummaries(
 
   const weeksByProgram = groupBy(weeks, (w) => w.program_id);
   const daysByWeek = groupBy(days, (d) => d.week_id);
+
+  for (const programId of programIds) {
+    const programWeeks = weeksByProgram.get(programId) ?? [];
+    const firstWeek = programWeeks[0];
+    const dayCount = firstWeek ? (daysByWeek.get(firstWeek.id) ?? []).length : 0;
+    counts.set(programId, { weekCount: programWeeks.length, dayCount });
+  }
+  return counts;
+}
+
+export async function getProgramSummaries(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<ProgramSummary[]> {
+  const { data: programs } = await supabase
+    .from("programs")
+    .select("*")
+    .or(`owner_id.eq.${userId},athlete_id.eq.${userId}`)
+    .order("updated_at", { ascending: false });
+
+  const list = (programs ?? []) as Program[];
+  if (list.length === 0) return [];
+
+  const counts = await getWeekDayCounts(supabase, list.map((p) => p.id));
 
   // Resolve a human-readable "for <client>" / "from <coach>" label for any
   // programs where owner_id !== athlete_id, using the coach_clients
@@ -151,9 +175,7 @@ export async function getProgramSummaries(
   }
 
   return list.map((program) => {
-    const programWeeks = weeksByProgram.get(program.id) ?? [];
-    const firstWeek = programWeeks[0];
-    const dayCount = firstWeek ? (daysByWeek.get(firstWeek.id) ?? []).length : 0;
+    const { weekCount, dayCount } = counts.get(program.id) ?? { weekCount: 0, dayCount: 0 };
 
     let assignmentLabel: string | null = null;
     if (program.owner_id !== program.athlete_id) {
@@ -166,7 +188,37 @@ export async function getProgramSummaries(
       }
     }
 
-    return { ...program, weekCount: programWeeks.length, dayCount, assignmentLabel };
+    return { ...program, weekCount, dayCount, assignmentLabel };
+  });
+}
+
+/**
+ * Every program a coach has assigned to one specific client — the data
+ * behind the new /clients/[id] detail page ("click into a client, see and
+ * edit what they're on"). No assignmentLabel needed here (the page already
+ * knows who it's for), unlike getProgramSummaries's mixed "my programs
+ * from every angle" list.
+ */
+export async function getProgramsForClient(
+  supabase: SupabaseClient,
+  coachId: string,
+  clientId: string
+): Promise<ProgramSummary[]> {
+  const { data: programs } = await supabase
+    .from("programs")
+    .select("*")
+    .eq("owner_id", coachId)
+    .eq("athlete_id", clientId)
+    .order("updated_at", { ascending: false });
+
+  const list = (programs ?? []) as Program[];
+  if (list.length === 0) return [];
+
+  const counts = await getWeekDayCounts(supabase, list.map((p) => p.id));
+
+  return list.map((program) => {
+    const { weekCount, dayCount } = counts.get(program.id) ?? { weekCount: 0, dayCount: 0 };
+    return { ...program, weekCount, dayCount, assignmentLabel: null };
   });
 }
 
