@@ -3,6 +3,7 @@ import type {
   ActivityType,
   BlockExerciseRow,
   BlockRow,
+  BlockType,
   DayRow,
   LoadType,
   ProgramDiscipline,
@@ -480,6 +481,89 @@ export async function addExerciseBlock(
 
 export async function deleteBlock(supabase: SupabaseClient, blockId: string): Promise<{ error: string | null }> {
   const { error } = await supabase.from("exercise_blocks").delete().eq("id", blockId);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Adds another exercise into an existing block — this is what turns a
+ * straight block into a superset. The caller is responsible for flipping
+ * `block_type` to 'superset' once the block has 2+ exercises (and back to
+ * 'straight' if it drops to 1 via removeExerciseFromBlock) via
+ * updateBlockType; this function only inserts the exercise + its default
+ * set row.
+ */
+export async function addExerciseToBlock(
+  supabase: SupabaseClient,
+  params: { blockId: string; position: number }
+): Promise<{ exercise: BlockExerciseRow | null; error: string | null }> {
+  const exerciseId = newId();
+  const { error: exerciseError } = await supabase.from("block_exercises").insert({
+    id: exerciseId,
+    block_id: params.blockId,
+    position: params.position,
+    exercise_id: null,
+    custom_name: "New exercise",
+    notes: null,
+    activity_type: "strength",
+  });
+  if (exerciseError) return { exercise: null, error: exerciseError.message };
+
+  const set = newSetRow(exerciseId, 1, "strength");
+  const { error: setError } = await supabase.from("set_prescriptions").insert({
+    id: set.id,
+    block_exercise_id: exerciseId,
+    position: set.position,
+    sets: set.sets,
+    reps: set.reps,
+    load_type: set.load_type,
+    load_value: set.load_value,
+    rest_seconds: set.rest_seconds,
+    notes: set.notes,
+    distance_meters: set.distance_meters,
+    duration_seconds: set.duration_seconds,
+    pace_seconds_per_km: set.pace_seconds_per_km,
+  });
+  if (setError) return { exercise: null, error: setError.message };
+
+  return {
+    exercise: {
+      id: exerciseId,
+      block_id: params.blockId,
+      position: params.position,
+      exercise_id: null,
+      custom_name: "New exercise",
+      notes: null,
+      activity_type: "strength",
+      sets: [set],
+    },
+    error: null,
+  };
+}
+
+/** Removes one exercise from a (superset/circuit) block, cascading its set rows. Does not delete the block itself — see deleteBlock for that. */
+export async function removeExerciseFromBlock(
+  supabase: SupabaseClient,
+  blockExerciseId: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("block_exercises").delete().eq("id", blockExerciseId);
+  return { error: error?.message ?? null };
+}
+
+export async function updateBlockRounds(
+  supabase: SupabaseClient,
+  blockId: string,
+  rounds: number
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("exercise_blocks").update({ rounds }).eq("id", blockId);
+  return { error: error?.message ?? null };
+}
+
+export async function updateBlockType(
+  supabase: SupabaseClient,
+  blockId: string,
+  blockType: BlockType
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("exercise_blocks").update({ block_type: blockType }).eq("id", blockId);
   return { error: error?.message ?? null };
 }
 

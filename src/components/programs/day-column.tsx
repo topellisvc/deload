@@ -14,11 +14,14 @@ interface DayColumnProps {
   onAddBlock: () => void;
   onDeleteBlock: (blockId: string) => void;
   onMoveBlock: (blockId: string, direction: "up" | "down") => void;
-  onExerciseChange: (blockId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
-  onActivityTypeChange: (blockId: string, activityType: ActivityType) => void;
-  onAddSet: (blockId: string) => void;
-  onSetChange: (blockId: string, setId: string, patch: Partial<SetRow>) => void;
-  onDeleteSet: (blockId: string, setId: string) => void;
+  onAddExerciseToBlock: (blockId: string) => void;
+  onRemoveExerciseFromBlock: (blockId: string, blockExerciseId: string) => void;
+  onRoundsChange: (blockId: string, rounds: number) => void;
+  onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
+  onActivityTypeChange: (blockId: string, blockExerciseId: string, activityType: ActivityType) => void;
+  onAddSet: (blockId: string, blockExerciseId: string) => void;
+  onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
+  onDeleteSet: (blockId: string, blockExerciseId: string, setId: string) => void;
 }
 
 /**
@@ -35,6 +38,9 @@ export function DayColumn({
   onAddBlock,
   onDeleteBlock,
   onMoveBlock,
+  onAddExerciseToBlock,
+  onRemoveExerciseFromBlock,
+  onRoundsChange,
   onExerciseChange,
   onActivityTypeChange,
   onAddSet,
@@ -119,11 +125,14 @@ export function DayColumn({
                 onMoveUp={() => onMoveBlock(block.id, "up")}
                 onMoveDown={() => onMoveBlock(block.id, "down")}
                 onDeleteBlock={() => onDeleteBlock(block.id)}
-                onExerciseChange={(patch) => onExerciseChange(block.id, patch)}
-                onActivityTypeChange={(activityType) => onActivityTypeChange(block.id, activityType)}
-                onAddSet={() => onAddSet(block.id)}
-                onSetChange={(setId, patch) => onSetChange(block.id, setId, patch)}
-                onDeleteSet={(setId) => onDeleteSet(block.id, setId)}
+                onAddExerciseToBlock={() => onAddExerciseToBlock(block.id)}
+                onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
+                onRoundsChange={(rounds) => onRoundsChange(block.id, rounds)}
+                onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
+                onActivityTypeChange={(blockExerciseId, activityType) => onActivityTypeChange(block.id, blockExerciseId, activityType)}
+                onAddSet={(blockExerciseId) => onAddSet(block.id, blockExerciseId)}
+                onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
+                onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}
               />
             ))}
           </div>

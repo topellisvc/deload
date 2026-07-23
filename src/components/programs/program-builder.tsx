@@ -193,27 +193,82 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     );
   }
 
-  // ---- exercise + sets ----
-  function handleExerciseChange(
-    dayId: string,
-    blockId: string,
-    patch: { exercise_id: string | null; custom_name: string | null }
-  ) {
+  // ---- superset/circuit grouping ----
+  async function handleAddExerciseToBlock(dayId: string, blockId: string) {
+    const day = week.days.find((d) => d.id === dayId);
+    const block = day?.blocks.find((b) => b.id === blockId);
+    if (!block) return;
+    const { exercise, error } = await m.addExerciseToBlock(supabase, {
+      blockId,
+      position: block.exercises.length + 1,
+    });
+    if (error || !exercise) {
+      fail(error ?? "Couldn't add exercise.");
+      return;
+    }
+    const becomesGrouped = block.exercises.length + 1 === 2;
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
-      exercises: b.exercises.map((ex, i) => (i === 0 ? { ...ex, ...patch } : ex)),
+      exercises: [...b.exercises, exercise],
+      block_type: becomesGrouped ? "superset" : b.block_type,
     }));
-    const exerciseId = week.days.find((d) => d.id === dayId)?.blocks.find((b) => b.id === blockId)?.exercises[0]?.id;
-    if (!exerciseId) return;
-    m.updateBlockExercise(supabase, exerciseId, patch).then(({ error }) => {
+    if (becomesGrouped) {
+      m.updateBlockType(supabase, blockId, "superset").then(({ error: e }) => {
+        if (e) fail(e);
+      });
+    }
+  }
+
+  async function handleRemoveExerciseFromBlock(dayId: string, blockId: string, blockExerciseId: string) {
+    const day = week.days.find((d) => d.id === dayId);
+    const block = day?.blocks.find((b) => b.id === blockId);
+    // Removing the block's only exercise should delete the whole block
+    // instead (via the block's own delete button) — this button is
+    // hidden in the UI until there are 2+ exercises, but guard here too.
+    if (!block || block.exercises.length <= 1) return;
+    const becomesUngrouped = block.exercises.length - 1 === 1;
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.filter((ex) => ex.id !== blockExerciseId),
+      block_type: becomesUngrouped ? "straight" : b.block_type,
+    }));
+    m.removeExerciseFromBlock(supabase, blockExerciseId).then(({ error }) => {
+      if (error) fail(error);
+    });
+    if (becomesUngrouped) {
+      m.updateBlockType(supabase, blockId, "straight").then(({ error }) => {
+        if (error) fail(error);
+      });
+    }
+  }
+
+  function handleRoundsChange(dayId: string, blockId: string, rounds: number) {
+    updateBlock(week.id, dayId, blockId, (b) => ({ ...b, rounds }));
+    m.updateBlockRounds(supabase, blockId, rounds).then(({ error }) => {
       if (error) fail(error);
     });
   }
 
-  async function handleAddSet(dayId: string, blockId: string) {
+  // ---- exercise + sets ----
+  function handleExerciseChange(
+    dayId: string,
+    blockId: string,
+    blockExerciseId: string,
+    patch: { exercise_id: string | null; custom_name: string | null }
+  ) {
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, ...patch } : ex)),
+    }));
+    m.updateBlockExercise(supabase, blockExerciseId, patch).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
+  async function handleAddSet(dayId: string, blockId: string, blockExerciseId: string) {
     const day = week.days.find((d) => d.id === dayId);
     const block = day?.blocks.find((b) => b.id === blockId);
-    const exercise = block?.exercises[0];
+    const exercise = block?.exercises.find((ex) => ex.id === blockExerciseId);
     if (!exercise) return;
     const lastSet = exercise.sets[exercise.sets.length - 1];
     const { set, error } = await m.addSetRow(supabase, {
@@ -228,13 +283,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     }
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
-      exercises: b.exercises.map((ex, i) => (i === 0 ? { ...ex, sets: [...ex.sets, set] } : ex)),
+      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, sets: [...ex.sets, set] } : ex)),
     }));
   }
 
-  async function handleActivityTypeChange(dayId: string, blockId: string, activityType: ActivityType) {
+  async function handleActivityTypeChange(dayId: string, blockId: string, blockExerciseId: string, activityType: ActivityType) {
     const day = week.days.find((d) => d.id === dayId);
-    const exercise = day?.blocks.find((b) => b.id === blockId)?.exercises[0];
+    const exercise = day?.blocks.find((b) => b.id === blockId)?.exercises.find((ex) => ex.id === blockExerciseId);
     if (!exercise || exercise.activity_type === activityType) return;
 
     // Switching wipes the existing set rows (sets/reps/load and
@@ -259,30 +314,30 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     }
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
-      exercises: b.exercises.map((ex, i) => (i === 0 ? { ...ex, activity_type: activityType, sets: [set] } : ex)),
+      exercises: b.exercises.map((ex) =>
+        ex.id === blockExerciseId ? { ...ex, activity_type: activityType, sets: [set] } : ex
+      ),
     }));
   }
 
-  function handleSetChange(dayId: string, blockId: string, setId: string, patch: Partial<SetRow>) {
+  function handleSetChange(dayId: string, blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) {
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
-      exercises: b.exercises.map((ex, i) => ({
-        ...ex,
-        sets: i === 0 ? ex.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)) : ex.sets,
-      })),
+      exercises: b.exercises.map((ex) =>
+        ex.id === blockExerciseId ? { ...ex, sets: ex.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)) } : ex
+      ),
     }));
     m.updateSetRow(supabase, setId, patch).then(({ error }) => {
       if (error) fail(error);
     });
   }
 
-  function handleDeleteSet(dayId: string, blockId: string, setId: string) {
+  function handleDeleteSet(dayId: string, blockId: string, blockExerciseId: string, setId: string) {
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
-      exercises: b.exercises.map((ex, i) => ({
-        ...ex,
-        sets: i === 0 ? ex.sets.filter((s) => s.id !== setId) : ex.sets,
-      })),
+      exercises: b.exercises.map((ex) =>
+        ex.id === blockExerciseId ? { ...ex, sets: ex.sets.filter((s) => s.id !== setId) } : ex
+      ),
     }));
     m.deleteSetRow(supabase, setId).then(({ error }) => {
       if (error) fail(error);
@@ -387,11 +442,22 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             onAddBlock={() => handleAddBlock(day.id)}
             onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
             onMoveBlock={(blockId, direction) => handleMoveBlock(day.id, blockId, direction)}
-            onExerciseChange={(blockId, patch) => handleExerciseChange(day.id, blockId, patch)}
-            onActivityTypeChange={(blockId, activityType) => handleActivityTypeChange(day.id, blockId, activityType)}
-            onAddSet={(blockId) => handleAddSet(day.id, blockId)}
-            onSetChange={(blockId, setId, patch) => handleSetChange(day.id, blockId, setId, patch)}
-            onDeleteSet={(blockId, setId) => handleDeleteSet(day.id, blockId, setId)}
+            onAddExerciseToBlock={(blockId) => handleAddExerciseToBlock(day.id, blockId)}
+            onRemoveExerciseFromBlock={(blockId, blockExerciseId) =>
+              handleRemoveExerciseFromBlock(day.id, blockId, blockExerciseId)
+            }
+            onRoundsChange={(blockId, rounds) => handleRoundsChange(day.id, blockId, rounds)}
+            onExerciseChange={(blockId, blockExerciseId, patch) =>
+              handleExerciseChange(day.id, blockId, blockExerciseId, patch)
+            }
+            onActivityTypeChange={(blockId, blockExerciseId, activityType) =>
+              handleActivityTypeChange(day.id, blockId, blockExerciseId, activityType)
+            }
+            onAddSet={(blockId, blockExerciseId) => handleAddSet(day.id, blockId, blockExerciseId)}
+            onSetChange={(blockId, blockExerciseId, setId, patch) =>
+              handleSetChange(day.id, blockId, blockExerciseId, setId, patch)
+            }
+            onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
           />
         ))}
       </div>
