@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, ChevronDown, Pencil, PersonStanding, Repeat, Send, UserRound } from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient, LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
@@ -79,6 +80,7 @@ export function ProgramViewer({
   personalRecords,
   activeClients,
 }: ProgramViewerProps) {
+  const router = useRouter();
   const [selectedWeekId, setSelectedWeekId] = useState(program.weeks[0]?.id ?? "");
   const week = program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0];
   const today = todayDateString();
@@ -107,6 +109,14 @@ export function ProgramViewer({
       return;
     }
     setIsActive(true);
+    // The previously-active program's own page (and the dashboard/programs
+    // list) are separate routes that Next.js may have already prefetched
+    // and cached before this mutation ran — this call bypasses Server
+    // Actions entirely (a direct Supabase RPC), so nothing else tells the
+    // router those cached payloads are now stale. router.refresh() clears
+    // that cache and forces a fresh server fetch, so the switch shows up
+    // everywhere without a manual hard reload.
+    router.refresh();
   }
 
   return (

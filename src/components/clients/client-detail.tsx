@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, CalendarClock, ClipboardList, Mail, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ function formatDate(iso: string): string {
  * all inside one shared max-width container.
  */
 export function ClientDetail({ coachId, client, programs: initialPrograms, lastActivityOn, activeClients }: ClientDetailProps) {
+  const router = useRouter();
   const [programs, setPrograms] = useState(initialPrograms);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
@@ -67,7 +69,12 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
     if (error) {
       setPrograms(previous);
       setActiveError(error);
+      return;
     }
+    // Same reasoning as ProgramsList/ProgramViewer — this mutation bypasses
+    // Server Actions, so other routes (this client's dashboard-equivalent
+    // views, their own program pages) need an explicit cache-bust.
+    router.refresh();
   }
 
   async function handleSend(programId: string) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, ClipboardList, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ interface ProgramsListProps {
 /** Invitations and the coach roster used to render at the top of this
  * page — both moved to /coaching as part of the Coaching hub. */
 export function ProgramsList({ programs: initialPrograms, userId, activeClients }: ProgramsListProps) {
+  const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [programs, setPrograms] = useState(initialPrograms);
   const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
@@ -67,7 +69,13 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
     if (error) {
       setPrograms(previous);
       setActiveError(error);
+      return;
     }
+    // This page's own cards are already right (optimistic update above),
+    // but other routes (dashboard, the programs' own detail pages) may
+    // have cached RSC payloads from before this switch — refresh() clears
+    // that so they're not left showing the old active program.
+    router.refresh();
   }
 
   return (
