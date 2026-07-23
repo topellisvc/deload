@@ -2,29 +2,29 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Dumbbell, Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthStatus } from "@/components/auth/auth-status";
-import { CoachingNavLink } from "@/components/coaching-nav-link";
-import { DashboardNavLink } from "@/components/dashboard-nav-link";
-import { HistoryNavLink } from "@/components/history-nav-link";
-import { ProfileNavLink } from "@/components/profile-nav-link";
-
-const navLinkClassName =
-  "rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+import { AuthNavLink } from "@/components/auth-nav-link";
+import { isActivePath, navLinkActiveClassName, navLinkClassName } from "@/lib/nav";
+import { cn } from "@/lib/utils";
 
 /**
  * Dashboard, Programs, History, Coaching, Tools, Profile, plus auth status
  * and the theme toggle — eight items total once everything's auth-gated in,
  * too many to stay inline once the viewport narrows. Collapses into a
  * hamburger below `lg` (1024px); at `lg` and above it's the same flat row
- * as before. `"use client"` (was previously a plain server component) is
- * required now purely for the open/close toggle's local state — none of
- * the nav items themselves needed a client boundary here, they already
- * manage their own auth checks.
+ * as before. Every item — auth-gated ones via AuthNavLink, the two static
+ * ones (Programs, Tools) inline here — highlights itself as the current
+ * page via lib/nav.ts's isActivePath, so it's always clear where you are.
  */
 export function SiteHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+
+  const programsActive = isActivePath(pathname, "/programs");
+  const toolsActive = isActivePath(pathname, "/tools");
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
@@ -41,16 +41,16 @@ export function SiteHeader() {
         {/* Desktop nav — Dashboard/Coaching/Profile are auth-gated islands
             (hidden when signed out); Tools and Programs are static links. */}
         <nav className="hidden items-center gap-1 lg:flex">
-          <DashboardNavLink />
-          <Link href="/programs" className={navLinkClassName}>
+          <AuthNavLink href="/dashboard" label="Dashboard" />
+          <Link href="/programs" aria-current={programsActive ? "page" : undefined} className={cn(navLinkClassName, programsActive && navLinkActiveClassName)}>
             Programs
           </Link>
-          <HistoryNavLink />
-          <CoachingNavLink />
-          <Link href="/tools" className={navLinkClassName}>
+          <AuthNavLink href="/history" label="History" />
+          <AuthNavLink href="/coaching" label="Coaching" />
+          <Link href="/tools" aria-current={toolsActive ? "page" : undefined} className={cn(navLinkClassName, toolsActive && navLinkActiveClassName)}>
             Tools
           </Link>
-          <ProfileNavLink />
+          <AuthNavLink href="/profile" label="Profile" />
           <AuthStatus />
           <ThemeToggle />
         </nav>
@@ -72,22 +72,21 @@ export function SiteHeader() {
 
       {mobileOpen && (
         // A flex-col container stretches its children to fill the cross
-        // axis by default (align-items: stretch), so the existing nav-link
-        // components render as full-width tap targets here with no changes
-        // needed to their own className — same components, same styling,
-        // just stacked instead of inline. Clicking anywhere in the panel
-        // (including a link, before navigation completes) closes it.
+        // axis by default (align-items: stretch), so these render as
+        // full-width tap targets with no extra styling needed. Clicking
+        // anywhere in the panel (including a link, before navigation
+        // completes) closes it.
         <nav onClick={() => setMobileOpen(false)} className="flex flex-col gap-0.5 border-t border-border bg-background px-4 py-3 lg:hidden">
-          <DashboardNavLink />
-          <Link href="/programs" className={navLinkClassName}>
+          <AuthNavLink href="/dashboard" label="Dashboard" />
+          <Link href="/programs" aria-current={programsActive ? "page" : undefined} className={cn(navLinkClassName, programsActive && navLinkActiveClassName)}>
             Programs
           </Link>
-          <HistoryNavLink />
-          <CoachingNavLink />
-          <Link href="/tools" className={navLinkClassName}>
+          <AuthNavLink href="/history" label="History" />
+          <AuthNavLink href="/coaching" label="Coaching" />
+          <Link href="/tools" aria-current={toolsActive ? "page" : undefined} className={cn(navLinkClassName, toolsActive && navLinkActiveClassName)}>
             Tools
           </Link>
-          <ProfileNavLink />
+          <AuthNavLink href="/profile" label="Profile" />
           <div className="mt-2 border-t border-border pt-2">
             <AuthStatus />
           </div>
