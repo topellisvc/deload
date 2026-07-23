@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProgramTree } from "@/lib/programs/queries";
-import { getCoachEmail } from "@/lib/coaching/queries";
+import { getCoachEmail, getMyClients } from "@/lib/coaching/queries";
 import { getSessionLogs, groupLogsByDay } from "@/lib/logging/queries";
 import { ProgramViewer } from "@/components/programs/program-viewer";
 
@@ -49,12 +49,19 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
       ? await getCoachEmail(supabase, { coachId: program.owner_id, clientId: user.id })
       : null;
 
+  // Only used by the owner-only "Send a copy" dialog's client picker, but
+  // cheap enough (and RLS-scoped to this user regardless) to just always
+  // fetch rather than branch on isOwner here.
+  const clients = await getMyClients(supabase, user.id);
+  const activeClients = clients.filter((c) => c.status === "active");
+
   return (
     <ProgramViewer
       program={program}
       assignedByEmail={assignedByEmail}
       currentUserId={user.id}
       logsByDay={logsByDay}
+      activeClients={activeClients}
     />
   );
 }

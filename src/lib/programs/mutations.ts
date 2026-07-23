@@ -11,6 +11,7 @@ import type {
   SetRow,
   WeekRow,
 } from "@/lib/programs/types";
+import { getProgramTree } from "@/lib/programs/queries";
 
 /**
  * Every row in the program tree gets its id generated here on the client
@@ -140,6 +141,53 @@ export async function createProgram(
   };
 
   return { program, error: null };
+}
+
+/**
+ * Deep-copies an entire program (every week/day/block/exercise/set) into a
+ * brand-new program row for `athleteId` — this, not a "program shared with
+ * many athletes" schema change, is how the same program gets sent to
+ * multiple clients: each recipient gets their own independent copy they
+ * can log against (session_logs/RLS already key off a program's single
+ * athlete_id, so a fresh row is what makes that "just work") and the coach
+ * can edit separately from the original without affecting anyone else's
+ * copy. Reuses addWeek's existing sourceWeek deep-clone path — the same
+ * logic that already powers "copy week with progression" — once per week,
+ * rather than a second copy of that batched-insert logic.
+ */
+export async function cloneProgram(
+  supabase: SupabaseClient,
+  params: { sourceProgram: ProgramTree; ownerId: string; athleteId: string; name: string }
+): Promise<{ program: ProgramTree | null; error: string | null }> {
+  const programId = newId();
+
+  const { error: programError } = await supabase.from("programs").insert({
+    id: programId,
+    owner_id: params.ownerId,
+    athlete_id: params.athleteId,
+    name: params.name,
+    discipline: params.sourceProgram.discipline,
+  });
+  if (programError) return { program: null, error: programError.message };
+
+  // Sequential rather than Promise.all: each week is several batched
+  // inserts (days, blocks, exercises, sets) on its own, and cloning is a
+  // low-frequency action where simplicity matters more than shaving off
+  // the extra round trips.
+  for (const week of params.sourceProgram.weeks) {
+    const { error: weekError } = await addWeek(supabase, {
+      programId,
+      position: week.position,
+      dayTemplate: [],
+      sourceWeek: week,
+    });
+    if (weekError) return { program: null, error: weekError };
+  }
+
+  const cloned = await getProgramTree(supabase, programId);
+  return cloned
+    ? { program: cloned, error: null }
+    : { program: null, error: "Program was cloned, but couldn't be loaded back." };
 }
 
 export async function updateProgram(

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CheckCircle2, Dumbbell, PersonStanding, UsersRound, Waves } from "lucide-react";
+import { CalendarDays, CheckCircle2, Dumbbell, PersonStanding, Send, UsersRound, Waves } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,9 +20,22 @@ interface ProgramCardProps {
   canSetActive: boolean;
   settingActive: boolean;
   onSetActive: (programId: string) => void;
+  /** Same owner-only gating as canSetActive — sending a copy edits/creates
+   * a program, so only the owner can do it. */
+  canSend: boolean;
+  sendingCopy: boolean;
+  onSend: (programId: string) => void;
 }
 
-export function ProgramCard({ program, canSetActive, settingActive, onSetActive }: ProgramCardProps) {
+export function ProgramCard({
+  program,
+  canSetActive,
+  settingActive,
+  onSetActive,
+  canSend,
+  sendingCopy,
+  onSend,
+}: ProgramCardProps) {
   const { label, Icon } = DISCIPLINE_META[program.discipline];
 
   return (
@@ -57,22 +70,41 @@ export function ProgramCard({ program, canSetActive, settingActive, onSetActive 
               <span className="min-w-0 flex-1 truncate">{program.assignmentLabel}</span>
             </div>
           )}
-          {canSetActive && !program.is_active && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={settingActive}
-              onClick={(e) => {
-                // Card is wrapped in a Link (navigate to the program) — this
-                // button needs to act without triggering that navigation.
-                e.preventDefault();
-                e.stopPropagation();
-                onSetActive(program.id);
-              }}
-              className="mt-1 self-start"
-            >
-              {settingActive ? "Setting active…" : "Set as active"}
-            </Button>
+          {(canSetActive || canSend) && (
+            <div className="mt-1 flex flex-wrap gap-2">
+              {canSetActive && !program.is_active && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={settingActive}
+                  onClick={(e) => {
+                    // Card is wrapped in a Link (navigate to the program) —
+                    // these buttons need to act without triggering that
+                    // navigation.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSetActive(program.id);
+                  }}
+                >
+                  {settingActive ? "Setting active…" : "Set as active"}
+                </Button>
+              )}
+              {canSend && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={sendingCopy}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSend(program.id);
+                  }}
+                >
+                  <Send className="size-3.5" />
+                  {sendingCopy ? "Loading…" : "Send a copy"}
+                </Button>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

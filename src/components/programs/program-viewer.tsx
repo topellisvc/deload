@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Pencil, PersonStanding, Repeat, UserRound } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Pencil, PersonStanding, Repeat, Send, UserRound } from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree } from "@/lib/programs/types";
-import type { SessionLog } from "@/lib/supabase/types";
+import type { CoachClient, SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
 import { SetDetails } from "@/components/programs/set-details";
+import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { setActiveProgram } from "@/lib/programs/mutations";
@@ -55,9 +56,12 @@ interface ProgramViewerProps {
   assignedByEmail: string | null;
   currentUserId: string;
   logsByDay: Record<string, SessionLog[]>;
+  /** For the "Send a copy" dialog's client picker — owner-only feature, so
+   * this is only ever non-empty when isOwner. */
+  activeClients: CoachClient[];
 }
 
-export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByDay }: ProgramViewerProps) {
+export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByDay, activeClients }: ProgramViewerProps) {
   const [selectedWeekId, setSelectedWeekId] = useState(program.weeks[0]?.id ?? "");
   const week = program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0];
   const today = todayDateString();
@@ -68,6 +72,7 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
   const [isActive, setIsActive] = useState(program.is_active);
   const [settingActive, setSettingActive] = useState(false);
   const [activeError, setActiveError] = useState<string | null>(null);
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
 
   async function handleSetActive() {
     setSettingActive(true);
@@ -108,10 +113,16 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-wrap items-center gap-2 self-start">
           {isOwner && !isActive && (
             <Button variant="outline" size="sm" disabled={settingActive} onClick={handleSetActive}>
               {settingActive ? "Setting active…" : "Set as active"}
+            </Button>
+          )}
+          {isOwner && (
+            <Button variant="outline" size="sm" onClick={() => setSendDialogOpen(true)}>
+              <Send className="size-3.5" />
+              Send a copy
             </Button>
           )}
           {isOwner && (
@@ -131,6 +142,16 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
           <p className="text-sm text-foreground">{activeError}</p>
         </div>
+      )}
+
+      {isOwner && (
+        <SendProgramDialog
+          open={sendDialogOpen}
+          onClose={() => setSendDialogOpen(false)}
+          program={program}
+          currentUserId={currentUserId}
+          activeClients={activeClients}
+        />
       )}
 
       {week && (

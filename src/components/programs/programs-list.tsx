@@ -6,11 +6,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
+import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { PendingInvites } from "@/components/programs/pending-invites";
 import { MyCoaches } from "@/components/programs/my-coaches";
 import { createClient } from "@/lib/supabase/client";
 import { setActiveProgram } from "@/lib/programs/mutations";
-import type { ProgramSummary } from "@/lib/programs/types";
+import { getProgramTree } from "@/lib/programs/queries";
+import type { ProgramSummary, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
 
 interface ProgramsListProps {
@@ -26,6 +28,25 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
   const [programs, setPrograms] = useState(initialPrograms);
   const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
   const [activeError, setActiveError] = useState<string | null>(null);
+  const [loadingSendId, setLoadingSendId] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendTarget, setSendTarget] = useState<ProgramTree | null>(null);
+
+  // ProgramCard only has the lightweight ProgramSummary shape (no nested
+  // tree — see getProgramSummaries), so sending a copy from the list needs
+  // a one-time fetch of the full tree before the dialog can clone it.
+  async function handleSend(programId: string) {
+    setSendError(null);
+    setLoadingSendId(programId);
+    const supabase = createClient();
+    const tree = await getProgramTree(supabase, programId);
+    setLoadingSendId(null);
+    if (!tree) {
+      setSendError("Couldn't load this program to copy it.");
+      return;
+    }
+    setSendTarget(tree);
+  }
 
   async function handleSetActive(programId: string) {
     const target = programs.find((p) => p.id === programId);
@@ -70,10 +91,10 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
         </Button>
       </div>
 
-      {activeError && (
+      {(activeError || sendError) && (
         <div className="mb-6 flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-          <p className="text-sm text-foreground">{activeError}</p>
+          <p className="text-sm text-foreground">{activeError || sendError}</p>
         </div>
       )}
 
@@ -96,6 +117,9 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
               canSetActive={program.owner_id === userId}
               settingActive={settingActiveId === program.id}
               onSetActive={handleSetActive}
+              canSend={program.owner_id === userId}
+              sendingCopy={loadingSendId === program.id}
+              onSend={handleSend}
             />
           ))}
         </div>
@@ -107,6 +131,16 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
         userId={userId}
         activeClients={activeClients}
       />
+
+      {sendTarget && (
+        <SendProgramDialog
+          open={!!sendTarget}
+          onClose={() => setSendTarget(null)}
+          program={sendTarget}
+          currentUserId={userId}
+          activeClients={activeClients}
+        />
+      )}
     </div>
   );
 }
