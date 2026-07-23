@@ -79,6 +79,9 @@ export interface Program {
   athlete_id: string;
   name: string;
   discipline: ProgramDiscipline;
+  /** At most one true per athlete_id, enforced by a partial unique index
+   * (migration 0010) — the program that drives /dashboard. */
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Clock3, Pencil, PersonStanding, Repeat, UserRound } from "lucide-react";
-import type { BlockRow, ProgramDiscipline, ProgramTree, SetRow } from "@/lib/programs/types";
+import { AlertTriangle, CheckCircle2, Pencil, PersonStanding, Repeat, UserRound } from "lucide-react";
+import type { BlockRow, ProgramDiscipline, ProgramTree } from "@/lib/programs/types";
 import type { SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
+import { SetDetails } from "@/components/programs/set-details";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
+import { setActiveProgram } from "@/lib/programs/mutations";
 import { cn } from "@/lib/utils";
 
 const DISCIPLINE_LABEL: Record<ProgramDiscipline, string> = {
@@ -13,13 +17,6 @@ const DISCIPLINE_LABEL: Record<ProgramDiscipline, string> = {
   running: "Running",
   hybrid: "Hybrid",
 };
-
-function formatDuration(totalSeconds: number | null): string {
-  if (totalSeconds == null) return "";
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
 
 /** Local calendar date (not UTC) so "today" matches the viewer's own clock. */
 function todayDateString(): string {
@@ -36,63 +33,6 @@ function formatLogDate(isoDate: string, today: string): string {
     day: "numeric",
     timeZone: "UTC",
   });
-}
-
-/**
- * One prescription row, rendered as a scannable strip rather than a single
- * run-on sentence: the sets×reps (or run distance/duration) stands out in
- * bold, load and rest are secondary pills off to the side. Exercises with
- * more than one prescription row (e.g. a working set and a back-off set)
- * end up as a small aligned stack instead of two near-identical sentences.
- */
-function SetDetails({ set, isRun }: { set: SetRow; isRun: boolean }) {
-  if (isRun) {
-    const distance = set.distance_meters != null ? `${set.distance_meters / 1000}km` : null;
-    const duration = set.duration_seconds != null ? formatDuration(set.duration_seconds) : null;
-    if (!distance && !duration) {
-      return <span className="text-muted-foreground">—</span>;
-    }
-    return (
-      <span className="flex items-baseline gap-1.5">
-        {distance && <span className="text-sm font-semibold tabular-nums text-foreground">{distance}</span>}
-        {distance && duration && <span className="text-[11px] text-muted-foreground">in</span>}
-        {duration && <span className="text-sm font-semibold tabular-nums text-foreground">{duration}</span>}
-      </span>
-    );
-  }
-
-  const loadLabel =
-    set.load_value != null
-      ? `${set.load_value}${set.load_type === "percent_1rm" ? "%" : set.load_type === "weight" ? "kg" : ""}`
-      : set.load_type !== "weight"
-        ? set.load_type.replace("_", " ")
-        : null;
-
-  return (
-    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-      <span className="flex items-baseline gap-2.5">
-        <span className="flex items-baseline gap-1">
-          <span className="text-sm font-semibold tabular-nums text-foreground">{set.sets}</span>
-          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">sets</span>
-        </span>
-        <span className="flex items-baseline gap-1">
-          <span className="text-sm font-semibold tabular-nums text-foreground">{set.reps || "?"}</span>
-          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">reps</span>
-        </span>
-      </span>
-      {loadLabel && (
-        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium tabular-nums text-foreground/80">
-          {loadLabel}
-        </span>
-      )}
-      {set.rest_seconds != null && (
-        <span className="flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
-          <Clock3 className="size-3" />
-          {set.rest_seconds}s
-        </span>
-      )}
-    </span>
-  );
 }
 
 /**
@@ -125,6 +65,23 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
   const isOwner = program.owner_id === currentUserId;
   const isAthlete = program.athlete_id === currentUserId;
 
+  const [isActive, setIsActive] = useState(program.is_active);
+  const [settingActive, setSettingActive] = useState(false);
+  const [activeError, setActiveError] = useState<string | null>(null);
+
+  async function handleSetActive() {
+    setSettingActive(true);
+    setActiveError(null);
+    const supabase = createClient();
+    const { error } = await setActiveProgram(supabase, program.id);
+    setSettingActive(false);
+    if (error) {
+      setActiveError(error);
+      return;
+    }
+    setIsActive(true);
+  }
+
   return (
     <div className="mx-auto flex max-w-[100rem] flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
       {!isOwner && (
@@ -139,20 +96,42 @@ export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByD
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-1 flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{program.name}</h1>
-          <span className="w-fit rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-            {DISCIPLINE_LABEL[program.discipline]}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="w-fit rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {DISCIPLINE_LABEL[program.discipline]}
+            </span>
+            {isActive && (
+              <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                <CheckCircle2 className="size-3.5" />
+                Active program
+              </span>
+            )}
+          </div>
         </div>
-        {isOwner && (
-          <Link
-            href={`/programs/${program.id}/edit`}
-            className="flex items-center gap-1.5 self-start rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <Pencil className="size-3.5" />
-            Edit program
-          </Link>
-        )}
+        <div className="flex items-center gap-2 self-start">
+          {isOwner && !isActive && (
+            <Button variant="outline" size="sm" disabled={settingActive} onClick={handleSetActive}>
+              {settingActive ? "Setting active…" : "Set as active"}
+            </Button>
+          )}
+          {isOwner && (
+            <Link
+              href={`/programs/${program.id}/edit`}
+              className="flex items-center gap-1.5 self-start rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <Pencil className="size-3.5" />
+              Edit program
+            </Link>
+          )}
+        </div>
       </div>
+
+      {activeError && (
+        <div className="flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
+          <p className="text-sm text-foreground">{activeError}</p>
+        </div>
+      )}
 
       {week && (
         <>

@@ -170,6 +170,44 @@ export async function getProgramSummaries(
   });
 }
 
+// ============================================================
+// Active program
+// ============================================================
+
+/**
+ * Lightweight lookup for callers that only need to know *which* program is
+ * active (e.g. to decide whether to show an empty state) without paying for
+ * the full tree fetch. `athlete_id`, not `owner_id` — see migration 0010:
+ * this is about which program someone is currently *following*.
+ */
+export async function getActiveProgramId(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("programs")
+    .select("id")
+    .eq("athlete_id", userId)
+    .eq("is_active", true)
+    .maybeSingle<{ id: string }>();
+  return data?.id ?? null;
+}
+
+/**
+ * Resolves the caller's active program id, then reuses getProgramTree —
+ * the dashboard needs the same full nested shape the program viewer/editor
+ * already build, so there's no separate "dashboard program" query to keep
+ * in sync with that one.
+ */
+export async function getActiveProgram(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<ProgramTree | null> {
+  const activeId = await getActiveProgramId(supabase, userId);
+  if (!activeId) return null;
+  return getProgramTree(supabase, activeId);
+}
+
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
   const map = new Map<K, T[]>();
   for (const item of items) {

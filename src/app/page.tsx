@@ -3,6 +3,7 @@ import { ArrowRight, Calculator, ClipboardList, Users } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ToolCard } from "@/components/tool-card";
+import { HomeRedirect } from "@/components/home-redirect";
 import { TOOLS } from "@/lib/tools-registry";
 
 const FEATURED_TOOL_SLUGS = ["one-rep-max", "running-pace-calculator", "quick-workout"];
@@ -41,6 +42,8 @@ export default function HomePage() {
 
   return (
     <>
+      <HomeRedirect />
+
       <section className="mx-auto max-w-6xl px-6 py-24 sm:py-32">
         <div className="mx-auto flex max-w-2xl flex-col items-center gap-6 text-center">
           <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">

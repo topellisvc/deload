@@ -3,6 +3,7 @@ import { Dumbbell } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthStatus } from "@/components/auth/auth-status";
 import { CoachNavLink } from "@/components/coach-nav-link";
+import { DashboardNavLink } from "@/components/dashboard-nav-link";
 
 export function SiteHeader() {
   return (
@@ -16,6 +17,7 @@ export function SiteHeader() {
           Deload
         </Link>
         <nav className="flex items-center gap-1">
+          <DashboardNavLink />
           <Link
             href="/tools"
             className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

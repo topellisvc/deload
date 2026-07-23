@@ -133,6 +133,7 @@ export async function createProgram(
     athlete_id: athleteId,
     name: params.name,
     discipline: params.discipline,
+    is_active: false,
     created_at: now,
     updated_at: now,
     weeks: [{ id: weekId, program_id: programId, position: 1, label: "Week 1", based_on_week_id: null, created_at: now, days }],
@@ -158,6 +159,38 @@ export async function deleteProgram(
   programId: string
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("programs").delete().eq("id", programId);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Makes `programId` the athlete's one active program, deactivating
+ * whatever was active before it. Goes through the `set_active_program`
+ * Postgres function (migration 0010) rather than two separate client
+ * updates, so there's never a window with zero or two active programs —
+ * see that migration's comments for why this needs to be atomic. Still
+ * fully RLS-scoped: the function is `security invoker`, so this only
+ * succeeds for programs the caller owns.
+ */
+export async function setActiveProgram(
+  supabase: SupabaseClient,
+  programId: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc("set_active_program", { p_program_id: programId });
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Turns off a program's active flag without making another one active —
+ * "I don't want a dashboard right now" rather than "switch to a different
+ * program." No RPC needed: unlike activating, deactivating can't collide
+ * with the one-active-per-athlete constraint, so a plain RLS-scoped update
+ * is enough.
+ */
+export async function deactivateProgram(
+  supabase: SupabaseClient,
+  programId: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("programs").update({ is_active: false }).eq("id", programId);
   return { error: error?.message ?? null };
 }
 

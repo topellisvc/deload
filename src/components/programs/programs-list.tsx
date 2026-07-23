@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Plus } from "lucide-react";
+import { AlertTriangle, ClipboardList, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import { PendingInvites } from "@/components/programs/pending-invites";
 import { MyCoaches } from "@/components/programs/my-coaches";
+import { createClient } from "@/lib/supabase/client";
+import { setActiveProgram } from "@/lib/programs/mutations";
 import type { ProgramSummary } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
 
@@ -19,8 +21,35 @@ interface ProgramsListProps {
   myCoaches: CoachClient[];
 }
 
-export function ProgramsList({ programs, userId, activeClients, pendingInvites, myCoaches }: ProgramsListProps) {
+export function ProgramsList({ programs: initialPrograms, userId, activeClients, pendingInvites, myCoaches }: ProgramsListProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [programs, setPrograms] = useState(initialPrograms);
+  const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
+  const [activeError, setActiveError] = useState<string | null>(null);
+
+  async function handleSetActive(programId: string) {
+    const target = programs.find((p) => p.id === programId);
+    if (!target) return;
+
+    const previous = programs;
+    setActiveError(null);
+    setSettingActiveId(programId);
+    // Optimistic: only one program per athlete can be active, so flip every
+    // other program that shares this one's athlete_id to inactive.
+    setPrograms((current) =>
+      current.map((p) =>
+        p.id === programId ? { ...p, is_active: true } : p.athlete_id === target.athlete_id ? { ...p, is_active: false } : p
+      )
+    );
+
+    const supabase = createClient();
+    const { error } = await setActiveProgram(supabase, programId);
+    setSettingActiveId(null);
+    if (error) {
+      setPrograms(previous);
+      setActiveError(error);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-16">
@@ -41,6 +70,13 @@ export function ProgramsList({ programs, userId, activeClients, pendingInvites, 
         </Button>
       </div>
 
+      {activeError && (
+        <div className="mb-6 flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
+          <p className="text-sm text-foreground">{activeError}</p>
+        </div>
+      )}
+
       {programs.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
@@ -54,7 +90,13 @@ export function ProgramsList({ programs, userId, activeClients, pendingInvites, 
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {programs.map((program) => (
-            <ProgramCard key={program.id} program={program} />
+            <ProgramCard
+              key={program.id}
+              program={program}
+              canSetActive={program.owner_id === userId}
+              settingActive={settingActiveId === program.id}
+              onSetActive={handleSetActive}
+            />
           ))}
         </div>
       )}
