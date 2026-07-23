@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProgramSummaries } from "@/lib/programs/queries";
-import { getMyClients, getPendingInvitesForMe } from "@/lib/coaching/queries";
+import { getMyClients, getMyCoaches, getPendingInvitesForMe } from "@/lib/coaching/queries";
 import { ProgramsList } from "@/components/programs/programs-list";
 
 export const metadata: Metadata = {
@@ -24,6 +24,7 @@ export default async function ProgramsPage() {
   const clients = await getMyClients(supabase, user.id);
   const activeClients = clients.filter((c) => c.status === "active");
   const pendingInvites = await getPendingInvitesForMe(supabase);
+  const myCoaches = await getMyCoaches(supabase, user.id);
 
   return (
     <ProgramsList
@@ -31,6 +32,7 @@ export default async function ProgramsPage() {
       userId={user.id}
       activeClients={activeClients}
       pendingInvites={pendingInvites}
+      myCoaches={myCoaches}
     />
   );
 }

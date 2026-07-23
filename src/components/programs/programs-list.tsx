@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import { PendingInvites } from "@/components/programs/pending-invites";
+import { MyCoaches } from "@/components/programs/my-coaches";
 import type { ProgramSummary } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
 
@@ -15,14 +16,16 @@ interface ProgramsListProps {
   userId: string;
   activeClients: CoachClient[];
   pendingInvites: CoachClient[];
+  myCoaches: CoachClient[];
 }
 
-export function ProgramsList({ programs, userId, activeClients, pendingInvites }: ProgramsListProps) {
+export function ProgramsList({ programs, userId, activeClients, pendingInvites, myCoaches }: ProgramsListProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-16">
       <PendingInvites invites={pendingInvites} userId={userId} />
+      <MyCoaches coaches={myCoaches} />
 
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-2">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { SetRow } from "@/lib/programs/types";
+import { cn } from "@/lib/utils";
 
 interface RunSetRowEditorProps {
   set: SetRow;
@@ -40,19 +41,46 @@ function parseDuration(text: string): number | null {
 export function RunSetRowEditor({ set, onChange, onDelete }: RunSetRowEditorProps) {
   const [distance, setDistance] = useState(set.distance_meters != null ? String(set.distance_meters / 1000) : "");
   const [duration, setDuration] = useState(formatDuration(set.duration_seconds));
+  const [distanceInvalid, setDistanceInvalid] = useState(false);
+  const [durationInvalid, setDurationInvalid] = useState(false);
 
   useEffect(() => setDistance(set.distance_meters != null ? String(set.distance_meters / 1000) : ""), [set.distance_meters]);
   useEffect(() => setDuration(formatDuration(set.duration_seconds)), [set.duration_seconds]);
 
+  // Unparsable input used to silently commit as null (duration even reset
+  // the visible field to blank immediately, before any prop round-trip) —
+  // now it's left alone with a red border until fixed, matching
+  // SetRowEditor's load/rest fields.
   function commitDistance() {
     const trimmed = distance.trim();
-    const km = trimmed === "" ? null : Number(trimmed);
-    const meters = km != null && Number.isFinite(km) ? Math.round(km * 1000) : null;
+    if (trimmed === "") {
+      setDistanceInvalid(false);
+      if (set.distance_meters !== null) onChange({ distance_meters: null });
+      return;
+    }
+    const km = Number(trimmed);
+    if (!Number.isFinite(km)) {
+      setDistanceInvalid(true);
+      return;
+    }
+    setDistanceInvalid(false);
+    const meters = Math.round(km * 1000);
     if (meters !== set.distance_meters) onChange({ distance_meters: meters });
   }
 
   function commitDuration() {
-    const parsed = parseDuration(duration);
+    const trimmed = duration.trim();
+    if (trimmed === "") {
+      setDurationInvalid(false);
+      if (set.duration_seconds !== null) onChange({ duration_seconds: null });
+      return;
+    }
+    const parsed = parseDuration(trimmed);
+    if (parsed === null) {
+      setDurationInvalid(true);
+      return;
+    }
+    setDurationInvalid(false);
     setDuration(formatDuration(parsed));
     if (parsed !== set.duration_seconds) onChange({ duration_seconds: parsed });
   }
@@ -62,23 +90,37 @@ export function RunSetRowEditor({ set, onChange, onDelete }: RunSetRowEditorProp
       <div className="flex items-center gap-1">
         <input
           aria-label="Distance (km)"
+          aria-invalid={distanceInvalid}
           value={distance}
-          onChange={(e) => setDistance(e.target.value)}
+          onChange={(e) => {
+            setDistance(e.target.value);
+            if (distanceInvalid) setDistanceInvalid(false);
+          }}
           onBlur={commitDistance}
           placeholder="0"
           inputMode="decimal"
-          className="h-8 w-16 shrink-0 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className={cn(
+            "h-8 w-16 shrink-0 rounded-md border bg-surface px-2 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            distanceInvalid ? "border-danger" : "border-border"
+          )}
         />
         <span className="text-xs text-muted-foreground">km</span>
       </div>
       <div className="flex items-center gap-1">
         <input
           aria-label="Duration (minutes:seconds)"
+          aria-invalid={durationInvalid}
           value={duration}
-          onChange={(e) => setDuration(e.target.value)}
+          onChange={(e) => {
+            setDuration(e.target.value);
+            if (durationInvalid) setDurationInvalid(false);
+          }}
           onBlur={commitDuration}
           placeholder="mm:ss"
-          className="h-8 w-20 shrink-0 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className={cn(
+            "h-8 w-20 shrink-0 rounded-md border bg-surface px-2 text-center text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            durationInvalid ? "border-danger" : "border-border"
+          )}
         />
         <span className="text-xs text-muted-foreground">time</span>
       </div>

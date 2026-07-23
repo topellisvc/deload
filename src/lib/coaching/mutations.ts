@@ -7,6 +7,17 @@ function authCallbackUrl(redirectTo: string): string {
 }
 
 /**
+ * Maps a raw Postgres/PostgREST error to something worth showing someone
+ * who isn't debugging the database — used by every coaching mutation
+ * below except inviteClient (which already special-cases its own most
+ * likely failure, a duplicate invite).
+ */
+function friendlyError(error: { message: string } | null, fallback: string): string | null {
+  if (!error) return null;
+  return fallback;
+}
+
+/**
  * Invites someone to be this coach's client.
  *
  * There's no admin API available here (no Supabase service-role key
@@ -65,7 +76,7 @@ export async function inviteClient(
  */
 export async function upgradeToCoach(supabase: SupabaseClient, userId: string): Promise<{ error: string | null }> {
   const { error } = await supabase.from("profiles").update({ role: "coach" }).eq("id", userId);
-  return { error: error?.message ?? null };
+  return { error: friendlyError(error, "Couldn't upgrade your account. Try again.") };
 }
 
 export async function removeClient(
@@ -73,7 +84,7 @@ export async function removeClient(
   coachClientId: string
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("coach_clients").delete().eq("id", coachClientId);
-  return { error: error?.message ?? null };
+  return { error: friendlyError(error, "Couldn't remove this client. Try again.") };
 }
 
 /**
@@ -91,7 +102,7 @@ export async function acceptInvite(
     .update({ client_id: params.userId, status: "active" })
     .eq("id", params.coachClientId)
     .is("client_id", null);
-  return { error: error?.message ?? null };
+  return { error: friendlyError(error, "Couldn't accept this invite. Try again.") };
 }
 
 /**
@@ -105,5 +116,5 @@ export async function declineInvite(
   coachClientId: string
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("coach_clients").delete().eq("id", coachClientId);
-  return { error: error?.message ?? null };
+  return { error: friendlyError(error, "Couldn't decline this invite. Try again.") };
 }

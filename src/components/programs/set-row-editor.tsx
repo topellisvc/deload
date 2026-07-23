@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { LoadType, SetRow } from "@/lib/programs/types";
+import { cn } from "@/lib/utils";
 
 const LOAD_TYPE_META: Record<LoadType, { label: string; unit: string | null }> = {
   weight: { label: "Weight", unit: "kg" },
@@ -33,6 +34,8 @@ export function SetRowEditor({ set, onChange, onDelete }: SetRowEditorProps) {
   const [reps, setReps] = useState(set.reps ?? "");
   const [loadValue, setLoadValue] = useState(set.load_value != null ? String(set.load_value) : "");
   const [rest, setRest] = useState(set.rest_seconds != null ? String(set.rest_seconds) : "");
+  const [loadInvalid, setLoadInvalid] = useState(false);
+  const [restInvalid, setRestInvalid] = useState(false);
 
   useEffect(() => setSets(String(set.sets)), [set.sets]);
   useEffect(() => setReps(set.reps ?? ""), [set.reps]);
@@ -53,16 +56,41 @@ export function SetRowEditor({ set, onChange, onDelete }: SetRowEditorProps) {
     if (trimmed !== (set.reps ?? "")) onChange({ reps: trimmed || null });
   }
 
+  // Unparsable input used to silently commit as null — the field would go
+  // blank on blur with no explanation, which reads as "did that just get
+  // cleared, or did I mishit something?". Now it's left alone (not
+  // committed, not cleared) with a red border until fixed, same as any
+  // other form validation error.
   function commitLoadValue() {
     const trimmed = loadValue.trim();
-    const n = trimmed === "" ? null : Number(trimmed);
-    if (n !== set.load_value) onChange({ load_value: Number.isFinite(n) ? n : null });
+    if (trimmed === "") {
+      setLoadInvalid(false);
+      if (set.load_value !== null) onChange({ load_value: null });
+      return;
+    }
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) {
+      setLoadInvalid(true);
+      return;
+    }
+    setLoadInvalid(false);
+    if (n !== set.load_value) onChange({ load_value: n });
   }
 
   function commitRest() {
     const trimmed = rest.trim();
-    const n = trimmed === "" ? null : Math.max(0, Math.round(Number(trimmed)));
-    if (n !== set.rest_seconds) onChange({ rest_seconds: Number.isFinite(n) ? n : null });
+    if (trimmed === "") {
+      setRestInvalid(false);
+      if (set.rest_seconds !== null) onChange({ rest_seconds: null });
+      return;
+    }
+    const n = Math.max(0, Math.round(Number(trimmed)));
+    if (!Number.isFinite(n)) {
+      setRestInvalid(true);
+      return;
+    }
+    setRestInvalid(false);
+    if (n !== set.rest_seconds) onChange({ rest_seconds: n });
   }
 
   return (
@@ -112,11 +140,18 @@ export function SetRowEditor({ set, onChange, onDelete }: SetRowEditorProps) {
         <div className="flex items-center gap-1">
           <input
             aria-label={`Load (${loadOption.unit})`}
+            aria-invalid={loadInvalid}
             value={loadValue}
-            onChange={(e) => setLoadValue(e.target.value)}
+            onChange={(e) => {
+              setLoadValue(e.target.value);
+              if (loadInvalid) setLoadInvalid(false);
+            }}
             onBlur={commitLoadValue}
             inputMode="decimal"
-            className="h-8 w-14 shrink-0 rounded-md border border-border bg-surface px-1.5 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className={cn(
+              "h-8 w-14 shrink-0 rounded-md border bg-surface px-1.5 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+              loadInvalid ? "border-danger" : "border-border"
+            )}
           />
           <span className="shrink-0 text-xs text-muted-foreground">{loadOption.unit}</span>
         </div>
@@ -124,11 +159,18 @@ export function SetRowEditor({ set, onChange, onDelete }: SetRowEditorProps) {
       <div className="flex items-center gap-1">
         <input
           aria-label="Rest (seconds)"
+          aria-invalid={restInvalid}
           value={rest}
-          onChange={(e) => setRest(e.target.value)}
+          onChange={(e) => {
+            setRest(e.target.value);
+            if (restInvalid) setRestInvalid(false);
+          }}
           onBlur={commitRest}
           inputMode="numeric"
-          className="h-8 w-16 shrink-0 rounded-md border border-border bg-surface px-2 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className={cn(
+            "h-8 w-16 shrink-0 rounded-md border bg-surface px-2 text-center text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            restInvalid ? "border-danger" : "border-border"
+          )}
         />
         <span className="shrink-0 text-xs text-muted-foreground">rest sec</span>
       </div>

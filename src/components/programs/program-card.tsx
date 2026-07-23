@@ -29,9 +29,13 @@ export function ProgramCard({ program }: { program: ProgramSummary }) {
             {program.dayCount === 1 ? "day" : "days"}/week
           </div>
           {program.assignmentLabel && (
-            <div className="flex items-center gap-1.5 truncate text-xs font-medium text-primary">
+            <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-primary">
               <UsersRound className="size-3.5 shrink-0" />
-              <span className="truncate">{program.assignmentLabel}</span>
+              {/* flex items don't shrink below their content width by default
+                  (min-width: auto), so `truncate` alone does nothing here
+                  without min-w-0 on the span too — a long client email would
+                  otherwise overflow the card instead of ellipsizing. */}
+              <span className="min-w-0 flex-1 truncate">{program.assignmentLabel}</span>
             </div>
           )}
         </CardContent>
