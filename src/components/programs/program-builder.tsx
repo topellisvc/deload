@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { ActivityType, BlockRow, DayRow, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
+import type { SessionLog } from "@/lib/supabase/types";
 import * as m from "@/lib/programs/mutations";
 import { DayColumn } from "@/components/programs/day-column";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
@@ -20,6 +21,8 @@ const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string }[] = [
 
 interface ProgramBuilderProps {
   initialProgram: ProgramTree;
+  currentUserId: string;
+  logsByDay: Record<string, SessionLog[]>;
 }
 
 /**
@@ -31,10 +34,13 @@ interface ProgramBuilderProps {
  * already enforcing access and the network being the main realistic
  * failure mode, a visible retry-or-refresh prompt is enough for now.
  */
-export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
+export function ProgramBuilder({ initialProgram, currentUserId, logsByDay }: ProgramBuilderProps) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [program, setProgram] = useState(initialProgram);
+  // Only the athlete logs their own training — a coach editing a client's
+  // program structure isn't who did (or didn't) do the workout.
+  const loggingAthleteId = program.athlete_id === currentUserId ? currentUserId : undefined;
   const [selectedWeekId, setSelectedWeekId] = useState(initialProgram.weeks[0]?.id ?? "");
   const [addWeekOpen, setAddWeekOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -458,6 +464,8 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
               handleSetChange(day.id, blockId, blockExerciseId, setId, patch)
             }
             onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
+            loggingAthleteId={loggingAthleteId}
+            logs={logsByDay[day.id]}
           />
         ))}
       </div>

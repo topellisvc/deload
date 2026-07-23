@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { PersonStanding, Repeat, UserRound } from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree, SetRow } from "@/lib/programs/types";
+import type { SessionLog } from "@/lib/supabase/types";
+import { DayLogControl } from "@/components/programs/day-log-control";
 import { cn } from "@/lib/utils";
 
 const DISCIPLINE_LABEL: Record<ProgramDiscipline, string> = {
@@ -46,7 +48,18 @@ function describeSet(set: SetRow, isRun: boolean): string {
  * text. RLS already prevents any write from this page regardless — this
  * component just doesn't render the affordances to try.
  */
-export function ProgramViewer({ program, assignedByEmail }: { program: ProgramTree; assignedByEmail: string | null }) {
+interface ProgramViewerProps {
+  program: ProgramTree;
+  assignedByEmail: string | null;
+  /** Always the signed-in viewer's own id — this component only ever
+   * renders for the program's athlete (see programs/[id]/page.tsx), so
+   * logging is always available here, unlike ProgramBuilder where the
+   * viewer might be the coach instead. */
+  currentUserId: string;
+  logsByDay: Record<string, SessionLog[]>;
+}
+
+export function ProgramViewer({ program, assignedByEmail, currentUserId, logsByDay }: ProgramViewerProps) {
   const [selectedWeekId, setSelectedWeekId] = useState(program.weeks[0]?.id ?? "");
   const week = program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0];
 
@@ -141,6 +154,10 @@ export function ProgramViewer({ program, assignedByEmail }: { program: ProgramTr
                       );
                     })}
                   </div>
+                )}
+
+                {!day.is_rest_day && (
+                  <DayLogControl trainingDayId={day.id} athleteId={currentUserId} logs={logsByDay[day.id] ?? []} />
                 )}
               </div>
             ))}

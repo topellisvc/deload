@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Plus } from "lucide-react";
+import { CheckCircle2, Copy, Plus } from "lucide-react";
 import type { ActivityType, DayRow, SetRow } from "@/lib/programs/types";
+import type { SessionLog } from "@/lib/supabase/types";
 import { ExerciseBlockCard } from "@/components/programs/exercise-block-card";
+import { DayLogControl } from "@/components/programs/day-log-control";
 import { cn } from "@/lib/utils";
 
 interface DayColumnProps {
@@ -22,6 +24,11 @@ interface DayColumnProps {
   onAddSet: (blockId: string, blockExerciseId: string) => void;
   onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (blockId: string, blockExerciseId: string, setId: string) => void;
+  /** Only set when the signed-in user is this program's athlete — a coach
+   * editing a client's program structure shouldn't see a log control for
+   * themselves, since logging what happened is inherently self-reported. */
+  loggingAthleteId?: string;
+  logs?: SessionLog[];
 }
 
 /**
@@ -46,6 +53,8 @@ export function DayColumn({
   onAddSet,
   onSetChange,
   onDeleteSet,
+  loggingAthleteId,
+  logs,
 }: DayColumnProps) {
   const [label, setLabel] = useState(day.label ?? "");
 
@@ -147,6 +156,33 @@ export function DayColumn({
           </button>
         </>
       )}
+
+      {!day.is_rest_day && loggingAthleteId && (
+        <DayLogControl trainingDayId={day.id} athleteId={loggingAthleteId} logs={logs ?? []} />
+      )}
+
+      {/* Coach viewing a client's program: read-only, since logging what
+          happened is the athlete's own report, not something a coach sets
+          on their behalf. Only shown once there's something to show. */}
+      {!day.is_rest_day && !loggingAthleteId && logs && logs.length > 0 && (
+        <div className="flex items-center gap-1.5 border-t border-border pt-2.5 text-xs text-muted-foreground">
+          <CheckCircle2 className="size-3.5 text-success" />
+          Logged {logs.length}× · last {formatLogDate(logs[0]!.performed_on)}
+        </div>
+      )}
     </div>
   );
+}
+
+function formatLogDate(isoDate: string): string {
+  // performed_on is a plain date ("2026-07-23"), not a timestamp — parsing
+  // it as UTC and formatting in UTC keeps the displayed date matching what
+  // was stored, regardless of the viewer's own timezone offset.
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (year === undefined || month === undefined || day === undefined) return isoDate;
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }

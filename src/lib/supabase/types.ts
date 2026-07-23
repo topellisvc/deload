@@ -103,3 +103,18 @@ export interface SetPrescription {
   duration_seconds: number | null;
   pace_seconds_per_km: number | null;
 }
+
+/**
+ * A logged training session: the existence of a row IS "this day was
+ * done" — no separate completed flag. One training_day can have several
+ * of these over time (repeating a program for a second cycle), each with
+ * its own performed_on date.
+ */
+export interface SessionLog {
+  id: string;
+  training_day_id: string;
+  athlete_id: string;
+  performed_on: string;
+  note: string | null;
+  created_at: string;
+}

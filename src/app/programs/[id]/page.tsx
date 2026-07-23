@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getProgramTree } from "@/lib/programs/queries";
 import { getCoachEmail } from "@/lib/coaching/queries";
+import { getSessionLogs, groupLogsByDay } from "@/lib/logging/queries";
 import { ProgramBuilder } from "@/components/programs/program-builder";
 import { ProgramViewer } from "@/components/programs/program-viewer";
 
@@ -31,13 +32,24 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
   const program = await getProgramTree(supabase, id);
   if (!program) notFound();
 
+  const trainingDayIds = program.weeks.flatMap((w) => w.days.map((d) => d.id));
+  const logs = await getSessionLogs(supabase, trainingDayIds);
+  const logsByDay = groupLogsByDay(logs);
+
   // owner_id === athlete_id for every self-programmed program (the
   // common case) — only a coach-assigned program can differ, and only the
   // owner (coach) gets edit access; the athlete gets a read-only view.
   if (program.owner_id !== user.id) {
     const assignedByEmail = await getCoachEmail(supabase, { coachId: program.owner_id, clientId: user.id });
-    return <ProgramViewer program={program} assignedByEmail={assignedByEmail} />;
+    return (
+      <ProgramViewer
+        program={program}
+        assignedByEmail={assignedByEmail}
+        currentUserId={user.id}
+        logsByDay={logsByDay}
+      />
+    );
   }
 
-  return <ProgramBuilder initialProgram={program} />;
+  return <ProgramBuilder initialProgram={program} currentUserId={user.id} logsByDay={logsByDay} />;
 }
