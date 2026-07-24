@@ -89,7 +89,7 @@ export default async function CoachingPage() {
             return (
               <div key={coach.id} className="flex flex-col gap-6">
                 <YourCoachCard coach={coach} profile={linkedProfile} activeProgramCount={activeProgramCount} />
-                <SharedProgramsSection programs={sharedPrograms} />
+                <SharedProgramsSection programs={sharedPrograms} userId={user.id} />
                 <RecentFeedbackSection messages={messages} coachId={coach.coach_id} />
                 <MessageThread
                   coachClientId={coach.id}
