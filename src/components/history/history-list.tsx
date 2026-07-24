@@ -5,7 +5,7 @@ import { ChevronDown, SkipForward } from "lucide-react";
 import type { SessionHistoryEntry } from "@/lib/logging/queries";
 import type { LoggedSet } from "@/lib/supabase/types";
 import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
-import { formatLogDate, todayDateString } from "@/lib/dates";
+import { formatLogDate, formatLogTime, todayDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 interface HistoryListProps {
@@ -49,6 +49,9 @@ export function HistoryList({ entries, loggedSetsByExercise }: HistoryListProps)
                   {entry.log.skipped && <SkipForward className="size-3.5 shrink-0 text-muted-foreground" />}
                   {formatLogDate(entry.log.performed_on, today, { includeYear: true })}
                   {entry.log.skipped && <span className="font-normal text-muted-foreground">· Skipped</span>}
+                  {!entry.log.skipped && entry.log.completed_at && (
+                    <span className="font-normal text-muted-foreground">· {formatLogTime(entry.log.completed_at)}</span>
+                  )}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {entry.programName} · {entry.dayLabel}

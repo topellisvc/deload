@@ -9,6 +9,11 @@ interface RestScreenProps {
   initialSeconds: number;
   nextSetLabel: string | null;
   nextTarget: SetPrescription | null;
+  /** Set only when the upcoming turn belongs to a different exercise than
+   * the one just finished (a superset/circuit partner) — surfaced so the
+   * athlete knows to switch exercises, not just which set is next. Null
+   * for the common case of resting between two sets of the same exercise. */
+  nextExerciseName: string | null;
   category: ExerciseCategory;
   onSkip: () => void;
   onContinue: () => void;
@@ -25,7 +30,7 @@ function formatClock(totalSeconds: number): string {
  * navigation anywhere — "the athlete can continue whenever they are ready"
  * (spec) — it just stops counting and waits for Continue.
  */
-export function RestScreen({ initialSeconds, nextSetLabel, nextTarget, category, onSkip, onContinue }: RestScreenProps) {
+export function RestScreen({ initialSeconds, nextSetLabel, nextTarget, nextExerciseName, category, onSkip, onContinue }: RestScreenProps) {
   const [remaining, setRemaining] = useState(initialSeconds);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -53,7 +58,9 @@ export function RestScreen({ initialSeconds, nextSetLabel, nextTarget, category,
 
       {nextTarget && (
         <div className="flex flex-col items-center gap-1.5 rounded-xl bg-muted/50 px-5 py-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Next Set</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Next Set{nextExerciseName ? ` · ${nextExerciseName}` : ""}
+          </span>
           <SetDetails set={nextTarget} category={category} />
         </div>
       )}

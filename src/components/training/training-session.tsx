@@ -74,6 +74,11 @@ export function TrainingSession({
 }: TrainingSessionProps) {
   const router = useRouter();
   const sequence = useMemo(() => buildExerciseSequence(blocks), [blocks]);
+  // Distinct exercises, not sequence.length — since buildExerciseSequence
+  // now emits one step per SET/turn (to interleave supersets), its length
+  // is a turn count, not an exercise count. The Overview screen's "X
+  // Exercises" badge and the in-workout progress bar both need the latter.
+  const totalExerciseCount = useMemo(() => blocks.reduce((n, b) => n + b.exercises.length, 0), [blocks]);
   const estimatedSeconds = useMemo(() => estimateWorkoutDurationSeconds(blocks), [blocks]);
   const coachNoteTexts = useMemo(
     () => blocks.flatMap((b) => b.exercises).filter((e) => e.notes).map((e) => `${getExerciseDisplayName(e)}: ${e.notes}`),
@@ -145,20 +150,36 @@ export function TrainingSession({
     if (sequence.length === 0) setCompletedAt(new Date().toISOString());
   }
 
-  function advanceToNextExercise() {
-    setPhase("exercise-complete");
-    transitionTimeout.current = setTimeout(() => {
-      setStepIndex((prev) => {
-        const next = prev + 1;
-        if (next >= sequence.length) {
-          setCompletedAt(new Date().toISOString());
-          setPhase("summary");
-        } else {
-          setPhase("exercise");
-        }
-        return next;
-      });
-    }, 1100);
+  // Moves the sequence pointer to whatever step is next — this is now the
+  // only place stepIndex changes. Under the interleaved sequence (one step
+  // per set/turn, see buildExerciseSequence), "next step" might be another
+  // turn of the same exercise (a straight block) or a superset partner's
+  // turn (a grouped block) — this function doesn't need to know which,
+  // since sequence[] already encodes the correct order either way.
+  function commitAdvance() {
+    setStepIndex((prev) => {
+      const next = prev + 1;
+      if (next >= sequence.length) {
+        setCompletedAt(new Date().toISOString());
+        setPhase("summary");
+      } else {
+        setPhase("exercise");
+      }
+      return next;
+    });
+  }
+
+  // showCompleteTransition is true only when the just-finished turn was
+  // this exercise's LAST turn anywhere in the sequence (not just the last
+  // one before a rest) — see the exerciseFinished checks in
+  // handleCompleteSet/handleCardioFinish.
+  function advanceStep(showCompleteTransition: boolean) {
+    if (showCompleteTransition) {
+      setPhase("exercise-complete");
+      transitionTimeout.current = setTimeout(commitAdvance, 1100);
+    } else {
+      commitAdvance();
+    }
   }
 
   async function handleCompleteSet(payload: { weight: number | null; reps: number | null; notes: string | null }) {
@@ -193,12 +214,21 @@ export function TrainingSession({
 
     const newCount = loggedCount + 1;
     if (newCount < targets.length) {
+      // This exercise still has turns left later in the sequence
+      // (possibly after a superset partner's turn in between, if this is
+      // a grouped block). Rest if this set prescribes it, then move on to
+      // whatever the next step actually is — same exercise again for a
+      // straight block, the partner exercise for a superset.
       if (target.rest_seconds != null && target.rest_seconds > 0) {
         setRestSeconds(target.rest_seconds);
         setPhase("rest");
+      } else {
+        commitAdvance();
       }
     } else {
-      advanceToNextExercise();
+      // This exercise's last turn, anywhere in the sequence — celebrate,
+      // then move on.
+      advanceStep(true);
     }
   }
 
@@ -234,11 +264,17 @@ export function TrainingSession({
     setSaving(true);
     await persist({ draftSets: next });
     setSaving(false);
-    advanceToNextExercise();
+    // Cardio/running exercises always contribute exactly one turn (see
+    // turnCount in sequence.ts), so finishing one is always its last turn.
+    advanceStep(true);
   }
 
+  // Rest now always sits BETWEEN two distinct sequence entries rather than
+  // "inside" a single exercise's step (see commitAdvance) — so finishing a
+  // rest period always means moving the sequence pointer forward, same as
+  // any other step transition.
   function handleRestDone() {
-    setPhase("exercise");
+    commitAdvance();
   }
 
   function handleExerciseNoteChange(text: string) {
@@ -309,6 +345,29 @@ export function TrainingSession({
 
   const elapsedSeconds = startedAt && completedAt ? Math.max(0, Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000)) : 0;
 
+  // "X of Y Exercises" needs a count of DISTINCT exercises, not sequence
+  // position — sequence[] is now one entry per set/turn (see
+  // buildExerciseSequence), so raw stepIndex/sequence.length would count
+  // individual sets instead once a superset interleaves. Reusing the
+  // existing stepIndex/totalSteps prop names on ExerciseScreen (which just
+  // forwards them to WorkoutProgressBar) keeps that component untouched.
+  const exercisesSeenSoFar = new Set(sequence.slice(0, stepIndex + 1).map((s) => s.blockExercise.id)).size;
+  const progressIndex = Math.max(0, exercisesSeenSoFar - 1);
+
+  // The rest screen's "Next Set" preview is the literal next sequence
+  // entry, which — for a superset — may belong to a different exercise
+  // than the one just finished. Only shown once currentStep exists (i.e.
+  // we're actually resting between two exercise steps).
+  const nextStep = sequence[stepIndex + 1];
+  const nextIsStrength = nextStep?.blockExercise.exercise_category === "strength";
+  const restNextTarget =
+    nextStep && nextIsStrength
+      ? buildSetTargets(nextStep.blockExercise.sets)[loggedSetCounts.get(nextStep.blockExercise.id) ?? 0] ?? null
+      : null;
+  const restNextExerciseName = nextStep ? getExerciseDisplayName(nextStep.blockExercise) : null;
+  const restNextLabel = nextStep && !nextIsStrength ? `Next: ${restNextExerciseName}` : null;
+  const restShowExerciseName = !!(currentStep && nextStep && nextStep.blockExercise.id !== currentStep.blockExercise.id);
+
   return (
     <div className="min-h-screen">
       {phase === "overview" && (
@@ -320,7 +379,7 @@ export function TrainingSession({
           totalWeeks={totalWeeks}
           dayLabel={dayLabel}
           coachEmail={coachEmail}
-          exerciseCount={sequence.length}
+          exerciseCount={totalExerciseCount}
           estimatedSeconds={estimatedSeconds}
           blocks={blocks}
           onBegin={handleBegin}
@@ -334,8 +393,8 @@ export function TrainingSession({
         <ExerciseScreen
           key={currentStep.blockExercise.id}
           step={currentStep}
-          stepIndex={stepIndex}
-          totalSteps={sequence.length}
+          stepIndex={progressIndex}
+          totalSteps={totalExerciseCount}
           loggedSetCount={loggedSetCounts.get(currentStep.blockExercise.id) ?? 0}
           draftSets={draftSets}
           personalRecords={personalRecords}
@@ -353,9 +412,10 @@ export function TrainingSession({
         <RestScreen
           key={`${currentStep.blockExercise.id}-${loggedSetCounts.get(currentStep.blockExercise.id) ?? 0}`}
           initialSeconds={restSeconds}
-          nextSetLabel={null}
-          nextTarget={buildSetTargets(currentStep.blockExercise.sets)[loggedSetCounts.get(currentStep.blockExercise.id) ?? 0] ?? null}
-          category={currentStep.blockExercise.exercise_category}
+          nextSetLabel={restNextLabel}
+          nextTarget={restNextTarget}
+          nextExerciseName={restShowExerciseName ? restNextExerciseName : null}
+          category={nextStep?.blockExercise.exercise_category ?? currentStep.blockExercise.exercise_category}
           onSkip={handleRestDone}
           onContinue={handleRestDone}
         />

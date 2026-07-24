@@ -17,6 +17,20 @@ export interface TodayWorkout {
   day: DayRow;
   completedToday: boolean;
   completedAt: string | null;
+  /** True if the athlete has an in-progress Training Mode draft for this
+   * exact day — the Hero/day buttons read "Continue training" instead of
+   * "Start workout" when this is set. */
+  hasDraft: boolean;
+  /** False when this object represents a day the athlete has browsed to via
+   * the dashboard's prev/next arrows rather than the auto-resolved "today"
+   * pointer (see resolveTodayWorkout in queries.ts). completionPercent,
+   * consistencyPercent, and upcoming are always anchored to the real today
+   * regardless of what's being browsed. */
+  isRealToday: boolean;
+  /** Adjacent scheduled days for the dashboard's browse arrows — null at
+   * either end of the program. */
+  prevDayId: string | null;
+  nextDayId: string | null;
 }
 
 export interface UpcomingSession {

@@ -5,6 +5,7 @@ import { getProgramTree } from "@/lib/programs/queries";
 import { getCoachEmail, getMyClients } from "@/lib/coaching/queries";
 import { getSessionLogs, groupLogsByDay, getLoggedSets, groupLoggedSetsByExercise } from "@/lib/logging/queries";
 import { getPersonalRecords } from "@/lib/profile/queries";
+import { getDraftSessionDayIds } from "@/lib/training/queries";
 import { ProgramViewer } from "@/components/programs/program-viewer";
 
 export const metadata: Metadata = {
@@ -46,7 +47,9 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
   // round-trip to Supabase, stacking latency for no reason. Running them
   // concurrently means this page's total wait is roughly the slowest single
   // branch instead of the sum of all of them.
-  const [{ logs, loggedSets }, personalRecords, assignedByEmail, clients] = await Promise.all([
+  const isAthlete = program.athlete_id === user.id;
+
+  const [{ logs, loggedSets }, personalRecords, assignedByEmail, clients, draftDayIds] = await Promise.all([
     (async () => {
       const logs = await getSessionLogs(supabase, trainingDayIds);
       // Every performed set/segment across every logged session on this
@@ -71,6 +74,10 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
     // but cheap enough (and RLS-scoped to this user regardless) to just
     // always fetch rather than branch on isOwner here.
     getMyClients(supabase, user.id),
+    // Which days already have an in-progress Training Mode draft, so their
+    // Start Workout button reads "Continue Training" instead. Only the
+    // athlete ever sees that button, so skip the query entirely otherwise.
+    isAthlete ? getDraftSessionDayIds(supabase, trainingDayIds, user.id) : Promise.resolve(new Set<string>()),
   ]);
 
   const logsByDay = groupLogsByDay(logs);
@@ -86,6 +93,7 @@ export default async function ProgramPage({ params }: ProgramPageProps) {
       loggedSetsByExercise={loggedSetsByExercise}
       personalRecords={personalRecords}
       activeClients={activeClients}
+      draftDayIds={Array.from(draftDayIds)}
     />
   );
 }

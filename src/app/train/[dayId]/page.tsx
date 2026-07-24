@@ -45,6 +45,11 @@ export default async function TrainPage({ params }: TrainPageProps) {
   }
 
   const sequence = buildExerciseSequence(detail.day.blocks);
+  // sequence[] now has one entry per set/turn (see buildExerciseSequence),
+  // so a superset exercise appears multiple times — dedupe by
+  // block_exercise before building the previous-performance lookup rather
+  // than fetching/looking up the same exercise's history several times.
+  const distinctSteps = Array.from(new Map(sequence.map((step) => [step.blockExercise.id, step])).values());
 
   const [draft, personalRecords, coachEmail, previousPerformance] = await Promise.all([
     getDraftSession(supabase, dayId, user.id),
@@ -53,7 +58,7 @@ export default async function TrainPage({ params }: TrainPageProps) {
     getPreviousPerformanceForExercises(
       supabase,
       user.id,
-      sequence.map((step) => ({
+      distinctSteps.map((step) => ({
         blockExerciseId: step.blockExercise.id,
         exerciseId: step.blockExercise.exercise_id,
         customName: step.blockExercise.custom_name,

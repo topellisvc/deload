@@ -61,6 +61,11 @@ interface ProgramViewerProps {
   /** For the "Send a copy" dialog's client picker — owner-only feature, so
    * this is only ever non-empty when isOwner. */
   activeClients: CoachClient[];
+  /** training_day ids that currently have an in-progress Training Mode
+   * draft for this athlete — swaps a day's "Start Workout" button to
+   * "Continue Training" (see getDraftSessionDayIds). Empty for non-athlete
+   * viewers, who never see the Start/Continue button at all. */
+  draftDayIds: string[];
 }
 
 export function ProgramViewer({
@@ -71,7 +76,9 @@ export function ProgramViewer({
   loggedSetsByExercise,
   personalRecords,
   activeClients,
+  draftDayIds,
 }: ProgramViewerProps) {
+  const draftDaySet = new Set(draftDayIds);
   const router = useRouter();
   const [selectedWeekId, setSelectedWeekId] = useState(program.weeks[0]?.id ?? "");
   const week = program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0];
@@ -261,7 +268,7 @@ export function ProgramViewer({
                   <Link href={`/train/${day.id}`}>
                     <Button size="sm" className="w-full">
                       <PlayCircle className="size-3.5" />
-                      Start Workout
+                      {draftDaySet.has(day.id) ? "Continue Training" : "Start Workout"}
                     </Button>
                   </Link>
                 )}

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createLoggedSet, createSessionLog } from "@/lib/logging/mutations";
+import { completeSessionLog, createLoggedSet, createSessionLog } from "@/lib/logging/mutations";
 import { todayDateString } from "@/lib/dates";
 import type { DraftSet, TrainingModeSession, TrainingModeSessionRow } from "@/lib/training/types";
 import { mapTrainingModeSessionRow } from "@/lib/training/types";
@@ -53,18 +53,43 @@ export async function deleteDraftSession(supabase: SupabaseClient, trainingDayId
  * does"), so nothing downstream (Coach Review, History, dashboard stats)
  * needs to know Training Mode was involved at all. The draft row is deleted
  * only after this succeeds, so a failure here never strands progress.
+ *
+ * If the athlete skipped today's day earlier and has now come back and
+ * actually trained it, there's already a session_logs row for
+ * (training_day_id, athlete_id, today) — the unique constraint means a
+ * plain insert would fail with "Already logged for this date." Reusing
+ * that row (turning it from skipped into completed) is what "going back
+ * and completing a skipped workout" needs, so this checks for one first.
  */
 export async function finishWorkout(
   supabase: SupabaseClient,
   params: DraftSessionParams
 ): Promise<{ sessionLogId: string | null; error: string | null }> {
-  const { log, error: logError } = await createSessionLog(supabase, {
-    trainingDayId: params.trainingDayId,
-    athleteId: params.athleteId,
-    performedOn: todayDateString(),
-    note: params.workoutNote,
-  });
-  if (logError || !log) return { sessionLogId: null, error: logError ?? "Couldn't save this workout. Try again." };
+  const performedOn = todayDateString();
+
+  const { data: existing } = await supabase
+    .from("session_logs")
+    .select("id")
+    .eq("training_day_id", params.trainingDayId)
+    .eq("athlete_id", params.athleteId)
+    .eq("performed_on", performedOn)
+    .maybeSingle<{ id: string }>();
+
+  let sessionLogId: string;
+  if (existing) {
+    const { error: completeError } = await completeSessionLog(supabase, existing.id, params.workoutNote);
+    if (completeError) return { sessionLogId: null, error: completeError };
+    sessionLogId = existing.id;
+  } else {
+    const { log, error: logError } = await createSessionLog(supabase, {
+      trainingDayId: params.trainingDayId,
+      athleteId: params.athleteId,
+      performedOn,
+      note: params.workoutNote,
+    });
+    if (logError || !log) return { sessionLogId: null, error: logError ?? "Couldn't save this workout. Try again." };
+    sessionLogId = log.id;
+  }
 
   const maxPositionByExercise = new Map<string, number>();
   for (const s of params.draftSets) {
@@ -73,7 +98,7 @@ export async function finishWorkout(
 
   const writes = params.draftSets.map((s) =>
     createLoggedSet(supabase, {
-      sessionLogId: log.id,
+      sessionLogId,
       blockExerciseId: s.blockExerciseId,
       setPrescriptionId: s.setPrescriptionId,
       position: s.position,
@@ -99,7 +124,7 @@ export async function finishWorkout(
     if (!trimmed) continue;
     writes.push(
       createLoggedSet(supabase, {
-        sessionLogId: log.id,
+        sessionLogId,
         blockExerciseId,
         setPrescriptionId: null,
         position: (maxPositionByExercise.get(blockExerciseId) ?? 0) + 1,
@@ -110,5 +135,5 @@ export async function finishWorkout(
 
   await Promise.all(writes);
   await deleteDraftSession(supabase, params.trainingDayId, params.athleteId);
-  return { sessionLogId: log.id, error: null };
+  return { sessionLogId, error: null };
 }

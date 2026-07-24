@@ -33,7 +33,14 @@ export const metadata: Metadata = {
  * getActiveProgramContext) plus the same stats/records infrastructure
  * /profile already uses — nothing here is tracked twice.
  */
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  /** `?day=<training_day_id>` — set by the Hero's prev/next browse arrows
+   * (see resolveViewedDay usage in HeroSection/getActiveProgramContext).
+   * Absent for the normal "today" view. */
+  searchParams: Promise<{ day?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -43,6 +50,8 @@ export default async function DashboardPage() {
     redirect("/sign-in?redirect_to=/dashboard");
   }
 
+  const { day: viewedDayId } = await searchParams;
+
   // profile and activeContext are independent of each other (both only
   // need user.id) but both feed the Promise.all below (getDashboardStats
   // needs profile.role and activeContext together, computed once here
@@ -50,7 +59,7 @@ export default async function DashboardPage() {
   // hero/today's-workout sections could disagree about what "today" is).
   const [profile, activeContext] = await Promise.all([
     getMyProfileDetails(supabase, user.id),
-    getActiveProgramContext(supabase, user.id),
+    getActiveProgramContext(supabase, user.id, viewedDayId ?? null),
   ]);
 
   const [stats, recentSessionActivity, records, recentActivity, coachingData] = await Promise.all([

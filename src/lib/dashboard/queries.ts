@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getActiveProgram } from "@/lib/programs/queries";
 import type { DayRow, WeekRow } from "@/lib/programs/types";
 import { getMyStats } from "@/lib/profile/queries";
+import { getDraftSessionDayIds } from "@/lib/training/queries";
 import type { UserRole } from "@/lib/supabase/types";
 import type {
   ActiveProgramContext,
@@ -67,7 +68,14 @@ function flattenProgramDays(weeks: WeekRow[]): { week: WeekRow; day: DayRow }[] 
  */
 export async function getActiveProgramContext(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  /** A specific training day to display instead of the auto-resolved
+   * "today" — set when the athlete uses the dashboard's prev/next browse
+   * arrows (see resolveViewedDay/ProgramNavArrows). Ignored if it doesn't
+   * belong to the active program. completionPercent/consistencyPercent/
+   * upcoming are always computed from the real today, never the browsed
+   * day, so browsing never skews stats. */
+  viewedDayId?: string | null
 ): Promise<ActiveProgramContext | null> {
   const program = await getActiveProgram(supabase, userId);
   if (!program) return null;
@@ -80,11 +88,17 @@ export async function getActiveProgramContext(
   const dayIds = flat.map((f) => f.day.id);
   const { data: logsData } = await supabase
     .from("session_logs")
-    .select("training_day_id, performed_on, created_at, skipped")
+    .select("training_day_id, performed_on, created_at, completed_at, skipped")
     .in("training_day_id", dayIds)
     .order("performed_on", { ascending: false })
     .order("created_at", { ascending: false });
-  const logs = (logsData ?? []) as { training_day_id: string; performed_on: string; created_at: string; skipped: boolean }[];
+  const logs = (logsData ?? []) as {
+    training_day_id: string;
+    performed_on: string;
+    created_at: string;
+    completed_at: string | null;
+    skipped: boolean;
+  }[];
 
   const today = todayDateString();
   const mostRecentLog = logs[0] ?? null;
@@ -101,28 +115,53 @@ export async function getActiveProgramContext(
   // point of skipping is to move on right now, not to wait for the
   // calendar date to change (migration 0015).
   let todayIndex: number;
-  let completedToday = false;
-  let completedAt: string | null = null;
   if (mostRecentLog && mostRecentLog.performed_on === today && !mostRecentLog.skipped) {
     todayIndex = mostRecentIndex;
-    completedToday = true;
-    completedAt = mostRecentLog.created_at;
   } else if (mostRecentIndex >= 0) {
     todayIndex = Math.min(mostRecentIndex + 1, flat.length - 1);
   } else {
     todayIndex = 0;
   }
 
-  const todayEntry = flat[todayIndex];
-  const todayWorkout: TodayWorkout | null = todayEntry
+  // The day actually being DISPLAYED — either the auto-resolved pointer
+  // above, or a day the athlete has browsed to via the dashboard's
+  // prev/next arrows. Falls back to the auto pointer if the requested id
+  // isn't in this program (e.g. stale link after switching programs).
+  const viewedIndex = viewedDayId ? flat.findIndex((f) => f.day.id === viewedDayId) : -1;
+  const displayIndex = viewedIndex >= 0 ? viewedIndex : todayIndex;
+  const displayEntry = flat[displayIndex];
+
+  // "Completed" state for the displayed day specifically — its own most
+  // recent non-skipped log, whatever date that landed on (not necessarily
+  // today's calendar date, since a browsed day can be any day in the
+  // program). For the auto-resolved today pointer this reduces to exactly
+  // the old logic, since that day only ever has a log if it was logged
+  // today (todayIndex advances past any day with an earlier log).
+  let completedToday = false;
+  let completedAt: string | null = null;
+  if (displayEntry) {
+    const mostRecentForDisplay = logs.find((l) => l.training_day_id === displayEntry.day.id) ?? null;
+    if (mostRecentForDisplay && !mostRecentForDisplay.skipped) {
+      completedToday = true;
+      completedAt = mostRecentForDisplay.completed_at ?? mostRecentForDisplay.created_at;
+    }
+  }
+
+  const draftDayIds = await getDraftSessionDayIds(supabase, dayIds, userId);
+
+  const todayWorkout: TodayWorkout | null = displayEntry
     ? {
-        weekId: todayEntry.week.id,
-        weekLabel: todayEntry.week.label || `Week ${todayEntry.week.position}`,
-        weekPosition: todayEntry.week.position,
+        weekId: displayEntry.week.id,
+        weekLabel: displayEntry.week.label || `Week ${displayEntry.week.position}`,
+        weekPosition: displayEntry.week.position,
         totalWeeks: program.weeks.length,
-        day: todayEntry.day,
+        day: displayEntry.day,
         completedToday,
         completedAt,
+        hasDraft: draftDayIds.has(displayEntry.day.id),
+        isRealToday: displayIndex === todayIndex,
+        prevDayId: flat[displayIndex - 1]?.day.id ?? null,
+        nextDayId: flat[displayIndex + 1]?.day.id ?? null,
       }
     : null;
 

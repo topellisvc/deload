@@ -25,3 +25,11 @@ export function formatLogDate(isoDate: string, today: string, options?: { includ
     timeZone: "UTC",
   });
 }
+
+/** Wall-clock time (viewer's own timezone, unlike formatLogDate's UTC —
+ * this is a real timestamptz, not a date-only column) for a completed
+ * session's completed_at. e.g. "6:42 PM". Consolidated from what used to
+ * be an inline copy in hero-section.tsx. */
+export function formatLogTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}

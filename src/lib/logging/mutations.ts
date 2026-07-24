@@ -16,6 +16,7 @@ export async function createSessionLog(
   supabase: SupabaseClient,
   params: { trainingDayId: string; athleteId: string; performedOn: string; note?: string | null; skipped?: boolean }
 ): Promise<{ log: SessionLog | null; error: string | null }> {
+  const skipped = params.skipped ?? false;
   const { data, error } = await supabase
     .from("session_logs")
     .insert({
@@ -23,7 +24,8 @@ export async function createSessionLog(
       athlete_id: params.athleteId,
       performed_on: params.performedOn,
       note: params.note ?? null,
-      skipped: params.skipped ?? false,
+      skipped,
+      completed_at: skipped ? null : new Date().toISOString(),
     })
     .select()
     .single();
@@ -42,6 +44,27 @@ export async function updateSessionLogNote(
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("session_logs").update({ note }).eq("id", logId);
   return { error: error ? "Couldn't save that note. Try again." : null };
+}
+
+/**
+ * Turns an existing (typically skipped) session_logs row into a real
+ * completed one — used when the athlete goes back and actually trains a day
+ * they'd earlier skipped (see finishWorkout in lib/training/mutations.ts).
+ * Reusing the same row rather than inserting a second one is what the
+ * unique (training_day_id, athlete_id, performed_on) constraint requires
+ * anyway; completed_at is set to right now, not left at whatever it was
+ * when the row was first created (skipped or not).
+ */
+export async function completeSessionLog(
+  supabase: SupabaseClient,
+  logId: string,
+  note: string | null
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("session_logs")
+    .update({ skipped: false, note, completed_at: new Date().toISOString() })
+    .eq("id", logId);
+  return { error: error ? "Couldn't save this workout. Try again." : null };
 }
 
 export async function deleteSessionLog(supabase: SupabaseClient, logId: string): Promise<{ error: string | null }> {

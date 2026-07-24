@@ -59,6 +59,83 @@ describe("buildExerciseSequence", () => {
   it("returns an empty sequence for a day with no exercises", () => {
     expect(buildExerciseSequence([])).toEqual([]);
   });
+
+  it("interleaves a superset round-robin (A1, B1, A2, B2...) instead of finishing one exercise before the next", () => {
+    const blocks: BlockRow[] = [
+      makeBlock({
+        id: "block-1",
+        day_id: "day-1",
+        position: 1,
+        block_type: "superset",
+        rounds: 3,
+        exercises: [
+          {
+            id: "ex-a",
+            block_id: "block-1",
+            position: 1,
+            exercise_id: "a",
+            custom_name: null,
+            notes: null,
+            exercise_category: "strength",
+            sets: [makeSet({ id: "s-a", block_exercise_id: "ex-a", position: 1, sets: 3 })],
+          },
+          {
+            id: "ex-b",
+            block_id: "block-1",
+            position: 2,
+            exercise_id: "b",
+            custom_name: null,
+            notes: null,
+            exercise_category: "strength",
+            sets: [makeSet({ id: "s-b", block_exercise_id: "ex-b", position: 1, sets: 3 })],
+          },
+        ],
+      }),
+    ];
+
+    const sequence = buildExerciseSequence(blocks);
+    expect(sequence.map((s) => s.blockExercise.id)).toEqual(["ex-a", "ex-b", "ex-a", "ex-b", "ex-a", "ex-b"]);
+    expect(sequence.map((s) => s.roundNumber)).toEqual([0, 0, 1, 1, 2, 2]);
+  });
+
+  it("drops an exercise out of later rounds once its own turns are used up, without blocking its partner", () => {
+    const blocks: BlockRow[] = [
+      makeBlock({
+        id: "block-1",
+        day_id: "day-1",
+        position: 1,
+        block_type: "superset",
+        rounds: 1,
+        exercises: [
+          {
+            id: "ex-a",
+            block_id: "block-1",
+            position: 1,
+            exercise_id: "a",
+            custom_name: null,
+            notes: null,
+            exercise_category: "strength",
+            sets: [makeSet({ id: "s-a", block_exercise_id: "ex-a", position: 1, sets: 3 })],
+          },
+          {
+            id: "ex-b",
+            block_id: "block-1",
+            position: 2,
+            exercise_id: "b",
+            custom_name: null,
+            notes: null,
+            // Cardio/running always contributes exactly one turn, regardless
+            // of its partner's set count.
+            exercise_category: "cardio",
+            sets: [makeSet({ id: "s-b", block_exercise_id: "ex-b", position: 1, sets: 1 })],
+          },
+        ],
+      }),
+    ];
+
+    const sequence = buildExerciseSequence(blocks);
+    expect(sequence.map((s) => s.blockExercise.id)).toEqual(["ex-a", "ex-b", "ex-a", "ex-a"]);
+  });
 });
 
 describe("buildSetTargets", () => {
@@ -123,5 +200,44 @@ describe("findResumeStepIndex", () => {
 
   it("returns null once every exercise is fully logged", () => {
     expect(findResumeStepIndex(sequence, new Map([["ex-1", 3], ["ex-2", 2]]))).toBeNull();
+  });
+
+  it("resumes at the next unlogged turn, not an exercise's first occurrence, once interleaving is underway", () => {
+    // ex-1: 3 sets, ex-2: 3 sets, round-robin -> [ex-1, ex-2, ex-1, ex-2, ex-1, ex-2]
+    const interleaved = buildExerciseSequence([
+      makeBlock({
+        id: "block-1",
+        day_id: "day-1",
+        position: 1,
+        exercises: [
+          {
+            id: "ex-1",
+            block_id: "block-1",
+            position: 1,
+            exercise_id: "a",
+            custom_name: null,
+            notes: null,
+            exercise_category: "strength",
+            sets: [makeSet({ id: "s1", block_exercise_id: "ex-1", position: 1, sets: 3 })],
+          },
+          {
+            id: "ex-2",
+            block_id: "block-1",
+            position: 2,
+            exercise_id: "b",
+            custom_name: null,
+            notes: null,
+            exercise_category: "strength",
+            sets: [makeSet({ id: "s2", block_exercise_id: "ex-2", position: 1, sets: 3 })],
+          },
+        ],
+      }),
+    ]);
+
+    // Athlete has done A1, B1, A2 (ex-1 logged twice, ex-2 logged once) and
+    // is about to do B2 — the next unlogged turn is index 3 (the second
+    // ex-2 step), not index 0 (ex-1's first step, which the old
+    // one-step-per-exercise logic would have incorrectly sent them back to).
+    expect(findResumeStepIndex(interleaved, new Map([["ex-1", 2], ["ex-2", 1]]))).toBe(3);
   });
 });

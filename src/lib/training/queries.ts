@@ -100,6 +100,27 @@ export async function getDraftSession(supabase: SupabaseClient, trainingDayId: s
 }
 
 /**
+ * Which of these training days currently have an in-progress draft for this
+ * athlete — a single batched existence check (id column only) so callers
+ * that need to label a whole list of days (dashboard, program view) don't
+ * issue one query per day. Used to swap "Start workout" for "Continue
+ * training" wherever the athlete exited mid-session.
+ */
+export async function getDraftSessionDayIds(
+  supabase: SupabaseClient,
+  trainingDayIds: string[],
+  athleteId: string
+): Promise<Set<string>> {
+  if (trainingDayIds.length === 0) return new Set();
+  const { data } = await supabase
+    .from("training_mode_sessions")
+    .select("training_day_id")
+    .eq("athlete_id", athleteId)
+    .in("training_day_id", trainingDayIds);
+  return new Set(((data ?? []) as { training_day_id: string }[]).map((r) => r.training_day_id));
+}
+
+/**
  * The athlete's most recent *performed* occurrence of each given exercise —
  * "Last Session" comparisons never look at the programmed target (spec: "Do
  * not compare against the programmed workout"). Matched by exercise identity

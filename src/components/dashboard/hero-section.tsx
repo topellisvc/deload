@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { CalendarClock, Dumbbell, Moon, PlusCircle } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Dumbbell, Moon, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkipWorkoutButton } from "@/components/dashboard/skip-workout-button";
+import { formatLogTime } from "@/lib/dates";
 import type { ActiveProgramContext } from "@/lib/dashboard/types";
 
 /** Server-rendered, so this reflects the server's clock rather than the
@@ -51,13 +52,17 @@ function WorkoutHero({ context, athleteId }: { context: ActiveProgramContext; at
 
   return (
     <div className="mt-4 flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-primary">
-          {program.name} · {today.weekLabel}
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-          {today.day.label || `Day ${today.day.position}`}
-        </h1>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-primary">
+            {program.name} · {today.weekLabel}
+            {!today.isRealToday && <span className="ml-1 normal-case text-muted-foreground">(browsing)</span>}
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {today.day.label || `Day ${today.day.position}`}
+          </h1>
+        </div>
+        <DayNavArrows prevDayId={today.prevDayId} nextDayId={today.nextDayId} isRealToday={today.isRealToday} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -77,20 +82,65 @@ function WorkoutHero({ context, athleteId }: { context: ActiveProgramContext; at
             <Button variant="outline">View workout</Button>
           </Link>
           <span className="text-xs text-muted-foreground">
-            Completed{" "}
-            {today.completedAt
-              ? new Date(today.completedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-              : "today"}
+            Completed{today.completedAt ? ` ${formatLogTime(today.completedAt)}` : ""}
           </span>
         </div>
       ) : (
         <div className="flex items-center gap-2">
           <Link href={`/train/${today.day.id}`} className="w-fit">
-            <Button>Start workout</Button>
+            <Button>{today.hasDraft ? "Continue training" : "Start workout"}</Button>
           </Link>
           <SkipWorkoutButton trainingDayId={today.day.id} athleteId={athleteId} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** Browse adjacent scheduled days from the dashboard without leaving it —
+ * pushes `?day=<id>`, which getActiveProgramContext resolves to display
+ * that specific day's hero/today's-workout content while completion %,
+ * consistency %, and upcoming stay anchored to the real today. */
+function DayNavArrows({
+  prevDayId,
+  nextDayId,
+  isRealToday,
+}: {
+  prevDayId: string | null;
+  nextDayId: string | null;
+  isRealToday: boolean;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <Link
+        href={prevDayId ? `/dashboard?day=${prevDayId}` : "#"}
+        aria-disabled={!prevDayId}
+        aria-label="Previous day"
+        className={!prevDayId ? "pointer-events-none" : undefined}
+        tabIndex={!prevDayId ? -1 : undefined}
+      >
+        <Button variant="outline" size="sm" disabled={!prevDayId} className="w-8 px-0">
+          <ChevronLeft className="size-4" />
+        </Button>
+      </Link>
+      {!isRealToday && (
+        <Link href="/dashboard">
+          <Button variant="outline" size="sm">
+            Today
+          </Button>
+        </Link>
+      )}
+      <Link
+        href={nextDayId ? `/dashboard?day=${nextDayId}` : "#"}
+        aria-disabled={!nextDayId}
+        aria-label="Next day"
+        className={!nextDayId ? "pointer-events-none" : undefined}
+        tabIndex={!nextDayId ? -1 : undefined}
+      >
+        <Button variant="outline" size="sm" disabled={!nextDayId} className="w-8 px-0">
+          <ChevronRight className="size-4" />
+        </Button>
+      </Link>
     </div>
   );
 }
@@ -100,9 +150,13 @@ function RestDayHero({ context }: { context: ActiveProgramContext }) {
   if (!today) return null;
   return (
     <div className="mt-4 flex flex-col gap-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-primary">
-        {program.name} · {today.weekLabel}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-primary">
+          {program.name} · {today.weekLabel}
+          {!today.isRealToday && <span className="ml-1 normal-case text-muted-foreground">(browsing)</span>}
+        </p>
+        <DayNavArrows prevDayId={today.prevDayId} nextDayId={today.nextDayId} isRealToday={today.isRealToday} />
+      </div>
       <div className="flex items-center gap-2">
         <Moon className="size-5 text-primary" />
         <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Rest day</h1>

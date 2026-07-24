@@ -7,7 +7,7 @@ import { createSessionLog, deleteSessionLog, updateSessionLogNote } from "@/lib/
 import type { LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
 import type { BlockRow } from "@/lib/programs/types";
 import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
-import { formatLogDate, todayDateString } from "@/lib/dates";
+import { formatLogDate, formatLogTime, todayDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 interface DayLogControlProps {
@@ -144,6 +144,7 @@ export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs, blo
                   <span className="flex items-center gap-1.5 font-medium text-success">
                     <CheckCircle2 className="size-3.5" />
                     {formatLogDate(log.performed_on, today)}
+                    {log.completed_at && <span className="font-normal text-muted-foreground">· {formatLogTime(log.completed_at)}</span>}
                   </span>
                 )}
                 <div className="flex items-center gap-2.5">

@@ -254,6 +254,12 @@ export interface SessionLog {
    * from completion %, consistency %, and streak calculations, but still
    * used to advance which training day counts as "today". */
   skipped: boolean;
+  /** When this became a real completed session — null while skipped is
+   * true. Set explicitly (not just read off created_at) because a skipped
+   * row can later be turned into a completed one (see finishWorkout in
+   * lib/training/mutations.ts) without created_at changing — migration
+   * 0016. */
+  completed_at: string | null;
   created_at: string;
 }
 

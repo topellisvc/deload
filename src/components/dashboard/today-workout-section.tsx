@@ -3,6 +3,7 @@ import { CalendarX2, ClipboardCheck, Dumbbell, Moon, PersonStanding, Repeat } fr
 import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
+import { formatLogTime } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { ActiveProgramContext } from "@/lib/dashboard/types";
 
@@ -29,10 +30,12 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
 
   const { program, today } = context;
 
+  const sectionTitle = today.isRealToday ? "Today's workout" : today.weekLabel;
+
   if (today.day.is_rest_day) {
     return (
       <div className="rounded-2xl border border-border bg-surface p-6">
-        <h2 className="mb-1 text-sm font-medium uppercase tracking-wide text-muted-foreground">Today&apos;s workout</h2>
+        <h2 className="mb-1 text-sm font-medium uppercase tracking-wide text-muted-foreground">{sectionTitle}</h2>
         <div className="flex items-center gap-2 py-6">
           <Moon className="size-5 text-muted-foreground" />
           <p className="text-sm text-foreground">Rest day — nothing scheduled.</p>
@@ -42,17 +45,18 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
   }
 
   const exerciseCount = today.day.blocks.reduce((n, b) => n + b.exercises.length, 0);
+  const openLabel = today.completedToday ? "View workout" : today.hasDraft ? "Continue training" : "Open workout";
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-6">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Today&apos;s workout</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">{sectionTitle}</h2>
           <p className="mt-1 text-lg font-semibold text-foreground">{today.day.label || `Day ${today.day.position}`}</p>
         </div>
         <Link href={today.completedToday ? `/programs/${program.id}` : `/train/${today.day.id}`}>
           <Button variant={today.completedToday ? "outline" : "primary"} size="sm">
-            {today.completedToday ? "View workout" : "Open workout"}
+            {openLabel}
           </Button>
         </Link>
       </div>
@@ -65,10 +69,7 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
         {today.completedToday && (
           <span className="flex items-center gap-1.5 text-primary">
             <ClipboardCheck className="size-3.5" />
-            Completed{" "}
-            {today.completedAt
-              ? new Date(today.completedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-              : "today"}
+            Completed{today.completedAt ? ` ${formatLogTime(today.completedAt)}` : ""}
           </span>
         )}
       </div>

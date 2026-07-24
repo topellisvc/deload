@@ -67,11 +67,13 @@ export function mapTrainingModeSessionRow(row: TrainingModeSessionRow): Training
 }
 
 /**
- * One exercise's turn in the guided flow — one per block_exercise, in
- * (block position, exercise position) order. Block context (type/rounds) is
- * carried along for display and future use, but v1 doesn't interleave
- * superset/circuit rounds (see sequence.ts) — that's the "Future Proofing"
- * spec section's superset/circuit workflow, not required for launch.
+ * One turn at one exercise in the guided flow. A straight block's single
+ * exercise contributes one step per prescribed set; a superset/circuit
+ * block's exercises interleave round-robin (A1, B1, A2, B2...) rather than
+ * each running to completion before the next starts — see
+ * buildExerciseSequence in sequence.ts. `roundNumber` (0-based) is which
+ * round of its block this particular turn belongs to, e.g. to label "Round
+ * 2 of 3" in a grouped block's UI.
  */
 export interface ExerciseStep {
   blockExercise: BlockExerciseRow;
@@ -79,6 +81,7 @@ export interface ExerciseStep {
   blockType: BlockType;
   blockRounds: number;
   stepIndex: number;
+  roundNumber: number;
 }
 
 /** The single day Training Mode runs — enough program/week context for the
