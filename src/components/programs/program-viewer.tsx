@@ -24,8 +24,9 @@ import { SetDetails } from "@/components/programs/set-details";
 import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
-import { deleteProgram, setActiveProgram } from "@/lib/programs/mutations";
+import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
 import { formatLogDate as formatLogDateShared, todayDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
@@ -98,13 +99,18 @@ export function ProgramViewer({
 
   const isOwner = program.owner_id === currentUserId;
   const isAthlete = program.athlete_id === currentUserId;
+  const removedByAthlete = Boolean(program.removed_by_athlete_at);
 
   // Either side of a coach-assigned program can activate/delete it now
   // (migration 0017) — a coach manages anything they built, and an athlete
   // manages their own copy (including one a coach sent them). Since a sent
   // program is always its own independent row, the athlete deleting theirs
-  // never touches the coach's original or another client's copy.
-  const canManage = isOwner || isAthlete;
+  // never touches the coach's original or another client's copy. Once the
+  // athlete has removed their copy (removed_by_athlete_at set — see
+  // removeAssignedProgram), reaching this page again (e.g. a stale link)
+  // shouldn't offer to manage it further; the coach can still see and fully
+  // delete their own row regardless.
+  const canManage = isOwner || (isAthlete && !removedByAthlete);
 
   const [isActive, setIsActive] = useState(program.is_active);
   const [settingActive, setSettingActive] = useState(false);
@@ -112,6 +118,7 @@ export function ProgramViewer({
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   // Coach Review: which logged session (by session_log.id) has its
   // Planned-vs-Performed detail expanded. One id across the whole page is
   // enough — session_log ids are globally unique, so this doubles as a
@@ -140,15 +147,15 @@ export function ProgramViewer({
   }
 
   async function handleDelete() {
-    const confirmMessage = isOwner
-      ? `Delete "${program.name}"? This removes every week, day, and logged session in it — this can't be undone.`
-      : `Remove "${program.name}"? This only removes your own copy — it won't affect your coach's original.`;
-    if (!window.confirm(confirmMessage)) return;
-
     setDeleting(true);
     setDeleteError(null);
     const supabase = createClient();
-    const { error } = await deleteProgram(supabase, program.id);
+    // Owner: a real delete — every week/day/log in the program is gone.
+    // Athlete: soft — removeAssignedProgram just marks this row as removed
+    // and deactivates it, so the coach still sees it (with a "removed by
+    // client" note) instead of it silently disappearing from their side.
+    const { error } = isOwner ? await deleteProgram(supabase, program.id) : await removeAssignedProgram(supabase, program.id);
+    setConfirmDeleteOpen(false);
     if (error) {
       setDeleting(false);
       setDeleteError(error);
@@ -169,6 +176,15 @@ export function ProgramViewer({
         </div>
       )}
 
+      {isOwner && removedByAthlete && (
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-4">
+          <UserRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <p className="text-sm text-foreground">
+            The assigned athlete removed this from their own list on {new Date(program.removed_by_athlete_at!).toLocaleDateString()} — they&apos;re no longer training on it. This copy is still yours; delete it to clean it up, or send a fresh copy if they should pick it back up.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-1 flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{program.name}</h1>
@@ -185,7 +201,7 @@ export function ProgramViewer({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">
-          {canManage && !isActive && (
+          {canManage && !isActive && !removedByAthlete && (
             <Button variant="outline" size="sm" disabled={settingActive} onClick={handleSetActive}>
               {settingActive ? "Setting active…" : "Set as active"}
             </Button>
@@ -211,7 +227,7 @@ export function ProgramViewer({
               size="sm"
               disabled={deleting}
               className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
-              onClick={handleDelete}
+              onClick={() => setConfirmDeleteOpen(true)}
             >
               <Trash2 className="size-3.5" />
               {deleting ? "Removing…" : isOwner ? "Delete" : "Remove"}
@@ -236,6 +252,19 @@ export function ProgramViewer({
           activeClients={activeClients}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title={isOwner ? "Delete program?" : "Remove program?"}
+        description={
+          isOwner
+            ? `Delete "${program.name}"? This removes every week, day, and logged session in it — this can't be undone.`
+            : `Remove "${program.name}"? This only removes your own copy — it won't affect your coach's original.`
+        }
+        confirmLabel={isOwner ? "Delete" : "Remove"}
+      />
 
       {week && (
         <>

@@ -104,6 +104,13 @@ export interface Program {
   /** At most one true per athlete_id, enforced by a partial unique index
    * (migration 0010) — the program that drives /dashboard. */
   is_active: boolean;
+  /** Set when the assigned athlete has removed their copy of a
+   * coach-assigned program (migration 0018's remove_assigned_program) —
+   * a soft delete, not a real row delete, so the coach still sees it
+   * (with a "removed" note) instead of it silently disappearing from
+   * their Client programs list. Null for a program still active on both
+   * sides, and never set at all for a self-programmed row. */
+  removed_by_athlete_at: string | null;
   created_at: string;
   updated_at: string;
 }

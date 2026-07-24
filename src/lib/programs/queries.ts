@@ -155,7 +155,12 @@ export async function getProgramSummaries(
     .or(`owner_id.eq.${userId},athlete_id.eq.${userId}`)
     .order("updated_at", { ascending: false });
 
-  const list = (programs ?? []) as Program[];
+  // A program the viewer removed as its assigned athlete (migration 0018)
+  // shouldn't reappear in their own list — that's the whole point of
+  // "remove" from their side. It stays visible to the coach (owner_id ===
+  // userId below), just with a different label, so this can't be a
+  // blanket filter on removed_by_athlete_at.
+  const list = ((programs ?? []) as Program[]).filter((p) => !(p.athlete_id === userId && p.removed_by_athlete_at));
   if (list.length === 0) return [];
 
   const counts = await getWeekDayCounts(supabase, list.map((p) => p.id));

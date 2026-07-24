@@ -5,6 +5,7 @@ import { ChevronDown, SkipForward, Trash2 } from "lucide-react";
 import type { SessionHistoryEntry } from "@/lib/logging/queries";
 import type { LoggedSet } from "@/lib/supabase/types";
 import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { deleteSessionLog } from "@/lib/logging/mutations";
 import { formatLogDate, formatLogTime, todayDateString } from "@/lib/dates";
@@ -38,15 +39,16 @@ export function HistoryList({ entries: initialEntries, loggedSetsByExercise }: H
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmLogId, setConfirmLogId] = useState<string | null>(null);
   const today = todayDateString();
 
   async function handleDelete(logId: string) {
-    if (!window.confirm("Delete this session? This can't be undone.")) return;
     setBusyId(logId);
     setError(null);
     const supabase = createClient();
     const { error: deleteError } = await deleteSessionLog(supabase, logId);
     setBusyId(null);
+    setConfirmLogId(null);
     if (deleteError) {
       setError(deleteError);
       return;
@@ -107,7 +109,7 @@ export function HistoryList({ entries: initialEntries, loggedSetsByExercise }: H
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDelete(entry.log.id)}
+                  onClick={() => setConfirmLogId(entry.log.id)}
                   disabled={busyId === entry.log.id}
                   aria-label={`Delete session from ${formatLogDate(entry.log.performed_on, today, { includeYear: true })}`}
                   className="shrink-0 text-muted-foreground transition-colors hover:text-danger disabled:opacity-50"
@@ -133,6 +135,15 @@ export function HistoryList({ entries: initialEntries, loggedSetsByExercise }: H
           );
         })}
       </ul>
+
+      <ConfirmDialog
+        open={confirmLogId !== null}
+        onClose={() => setConfirmLogId(null)}
+        onConfirm={() => handleDelete(confirmLogId!)}
+        title="Delete session?"
+        description="This can't be undone."
+        confirmLabel="Delete"
+      />
     </div>
   );
 }

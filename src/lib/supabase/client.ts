@@ -14,5 +14,20 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      // A plain fetch is aborted the instant the page unloads — found live
+      // while testing Training Mode: click Complete Set, then immediately
+      // navigate away (switch apps, follow a link, close the tab) before
+      // that autosave resolves, and the set silently never reaches the
+      // database, with no error shown since the page is already gone.
+      // `keepalive` tells the browser to let the request finish in the
+      // background instead of cancelling it on unload — the same mechanism
+      // `navigator.sendBeacon` uses, just via fetch so every existing
+      // mutation gets it for free. Every write from this client is a small
+      // JSON body (a draft session, a logged set, a program edit), well
+      // under the ~64KB keepalive limit browsers enforce.
+      fetch: (input, init) => fetch(input, { ...init, keepalive: true }),
+    },
+  });
 }

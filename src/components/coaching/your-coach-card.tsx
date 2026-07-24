@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CalendarCheck, ClipboardList, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { declineInvite } from "@/lib/coaching/mutations";
 import { getInitials } from "@/lib/utils";
@@ -32,20 +33,19 @@ export function YourCoachCard({ coach, profile, activeProgramCount }: YourCoachC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [left, setLeft] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const name = profile?.display_name || coach.coach_email;
   const initials = getInitials(profile?.display_name, coach.coach_email);
   const since = coach.accepted_at ?? coach.created_at;
 
   async function handleLeave() {
-    if (!window.confirm(`Stop being coached by ${coach.coach_email}? You'll lose access to any programs they assigned you.`)) {
-      return;
-    }
     setBusy(true);
     setError(null);
     const supabase = createClient();
     const { error: leaveError } = await declineInvite(supabase, coach.id);
     setBusy(false);
+    setConfirmOpen(false);
     if (leaveError) {
       setError(leaveError);
       return;
@@ -88,7 +88,7 @@ export function YourCoachCard({ coach, profile, activeProgramCount }: YourCoachC
             <UserRound className="size-3.5" />
             View Profile
           </Button>
-          <Button variant="outline" size="sm" onClick={handleLeave} disabled={busy}>
+          <Button variant="outline" size="sm" onClick={() => setConfirmOpen(true)} disabled={busy}>
             {busy ? "Leaving…" : "Leave"}
           </Button>
         </div>
@@ -100,6 +100,15 @@ export function YourCoachCard({ coach, profile, activeProgramCount }: YourCoachC
           <p className="text-sm text-foreground">{error}</p>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleLeave}
+        title="Leave this coach?"
+        description={`Stop being coached by ${coach.coach_email}? You'll lose access to any programs they assigned you.`}
+        confirmLabel="Leave"
+      />
     </div>
   );
 }

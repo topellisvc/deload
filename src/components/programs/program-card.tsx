@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CheckCircle2, Dumbbell, PersonStanding, Send, Trash2, UsersRound, Waves } from "lucide-react";
+import { CalendarDays, CheckCircle2, Dumbbell, PersonStanding, Send, Trash2, UserX, UsersRound, Waves } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -99,6 +99,25 @@ export function ProgramCard({
                   without min-w-0 on the span too — a long client email would
                   otherwise overflow the card instead of ellipsizing. */}
               <span className="min-w-0 flex-1 truncate">{program.assignmentLabel}</span>
+            </div>
+          )}
+          {/* Both callers that can render a removed row (getProgramSummaries,
+              getProgramsForClient) already scope it to the coach — a
+              removed program is filtered out of the athlete's own list
+              entirely (see getProgramSummaries), so reaching this point at
+              all means the viewer is the owner looking at their own client
+              assignment. Softens "the client removed this" into a visible
+              note instead of the row just quietly disappearing on them
+              (migration 0018). */}
+          {program.removed_by_athlete_at && (
+            <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <UserX className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                {program.assignmentLabel?.startsWith("For ")
+                  ? `Removed by ${program.assignmentLabel.slice(4)}`
+                  : "Removed by the assigned athlete"}{" "}
+                on {new Date(program.removed_by_athlete_at).toLocaleDateString()}
+              </span>
             </div>
           )}
           {(canSetActive || canSend || canDelete) && (

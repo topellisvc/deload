@@ -20,6 +20,7 @@ import { RestScreen } from "@/components/training/rest-screen";
 import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-screen";
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
 import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Phase = "overview" | "exercise" | "rest" | "exercise-complete" | "summary" | "program-complete";
 
@@ -108,11 +109,30 @@ export function TrainingSession({
   const [finishing, setFinishing] = useState(false);
   const [skippingWorkout, setSkippingWorkout] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmSkipOpen, setConfirmSkipOpen] = useState(false);
 
   const transitionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (transitionTimeout.current) clearTimeout(transitionTimeout.current);
   }, []);
+
+  // Belt-and-suspenders alongside createClient()'s keepalive fetch: warns
+  // on a hard navigation (tab close, refresh, typing a new URL) while a
+  // set/finish/skip write is actually in flight, rather than letting
+  // someone walk away thinking they're done when the save hasn't landed
+  // yet. Doesn't fire for in-app router.push navigation (there's no real
+  // unload to hook), but that's the smaller risk here — nothing in this
+  // component navigates away *during* an unawaited save.
+  const persisting = saving || finishing || skippingWorkout || starting;
+  useEffect(() => {
+    if (!persisting) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [persisting]);
 
   const currentStep = sequence[stepIndex];
   const loggedSetCounts = useMemo(() => draftSetCounts(draftSets), [draftSets]);
@@ -291,13 +311,7 @@ export function TrainingSession({
     void persist({ workoutNote: text || null });
   }
 
-  async function handleSkipWorkout() {
-    // Skipping from the Overview loses nothing (nothing's logged yet), but
-    // skipping mid-workout discards any sets already completed — worth a
-    // confirmation there, since it's not undoable.
-    if (draftSets.length > 0 && !window.confirm("Skip this workout? The sets you've already logged won't be saved.")) {
-      return;
-    }
+  async function performSkipWorkout() {
     setSkippingWorkout(true);
     setError(null);
     const supabase = createClient();
@@ -309,6 +323,7 @@ export function TrainingSession({
     });
     if (skipError) {
       setSkippingWorkout(false);
+      setConfirmSkipOpen(false);
       setError(skipError);
       return;
     }
@@ -316,8 +331,20 @@ export function TrainingSession({
     // rather than leaving something to resume into later.
     await deleteDraftSession(supabase, trainingDayId, athleteId);
     setSkippingWorkout(false);
+    setConfirmSkipOpen(false);
     router.refresh();
     router.push("/dashboard");
+  }
+
+  function handleSkipWorkout() {
+    // Skipping from the Overview loses nothing (nothing's logged yet), but
+    // skipping mid-workout discards any sets already completed — worth a
+    // confirmation there, since it's not undoable.
+    if (draftSets.length > 0) {
+      setConfirmSkipOpen(true);
+      return;
+    }
+    void performSkipWorkout();
   }
 
   async function handleFinish() {
@@ -459,6 +486,15 @@ export function TrainingSession({
       )}
 
       {phase === "program-complete" && <ProgramCompleteScreen programName={programName} onDone={goToDashboard} />}
+
+      <ConfirmDialog
+        open={confirmSkipOpen}
+        onClose={() => setConfirmSkipOpen(false)}
+        onConfirm={performSkipWorkout}
+        title="Skip this workout?"
+        description="The sets you've already logged won't be saved."
+        confirmLabel="Skip"
+      />
     </div>
   );
 }

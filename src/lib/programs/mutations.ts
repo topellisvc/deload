@@ -161,6 +161,7 @@ export async function createProgram(
     name: params.name,
     discipline: params.discipline,
     is_active: false,
+    removed_by_athlete_at: null,
     created_at: now,
     updated_at: now,
     weeks: [{ id: weekId, program_id: programId, position: 1, label: "Week 1", based_on_week_id: null, created_at: now, days }],
@@ -229,17 +230,39 @@ export async function updateProgram(
 }
 
 /**
- * Deletes a program row outright — RLS (schema.sql + migration 0017)
- * allows this for the program's owner OR its assigned athlete. Since every
- * coach-assigned program is already its own independent copy (see
- * cloneProgram below), an athlete deleting their own copy can never affect
- * the coach's original or any other client's copy — it's just their row.
+ * Deletes a program row outright — RLS (schema.sql) allows this for the
+ * program's owner only. An assigned athlete can no longer reach this: 0017
+ * briefly let them run this same hard delete on their own copy, but that
+ * made a coach-assigned program vanish from the coach's Client programs
+ * list with no trace (see removeAssignedProgram, which replaced it in
+ * 0018). Call sites should route the athlete's own "delete/remove" action
+ * through removeAssignedProgram instead — this one's for the owner
+ * clearing out a program (theirs or a leftover removed client copy) for
+ * real.
  */
 export async function deleteProgram(
   supabase: SupabaseClient,
   programId: string
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("programs").delete().eq("id", programId);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * The athlete-side counterpart to deleteProgram: soft-removes their own
+ * copy of a coach-assigned program (migration 0018's remove_assigned_program
+ * function) instead of deleting the row. Since it's a SECURITY DEFINER
+ * function with its own auth.uid() = athlete_id check (same pattern as
+ * set_active_program), this can only ever touch the caller's own assigned
+ * copy — never the coach's original or another client's copy, same
+ * guarantee deleteProgram had, just without erasing the coach's visibility
+ * into the assignment.
+ */
+export async function removeAssignedProgram(
+  supabase: SupabaseClient,
+  programId: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc("remove_assigned_program", { p_program_id: programId });
   return { error: error?.message ?? null };
 }
 

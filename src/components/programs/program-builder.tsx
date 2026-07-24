@@ -11,8 +11,22 @@ import * as m from "@/lib/programs/mutations";
 import { DayColumn } from "@/components/programs/day-column";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
+
+/** One shared confirm dialog for this whole builder rather than a
+ * separate open/target state per confirmable action (delete program,
+ * delete week, switch category — each with a different message and a
+ * different thing to actually do on confirm) — simplest way to replace
+ * window.confirm() at three unrelated call sites without three near-copies
+ * of the same open/close/submitting plumbing. */
+interface PendingConfirm {
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  onConfirm: () => void | Promise<void>;
+}
 
 const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string }[] = [
   { value: "resistance", label: "Weights" },
@@ -58,6 +72,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState(initialProgram.name);
   const [deleting, setDeleting] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
 
   useEffect(() => setNameDraft(program.name), [program.name]);
 
@@ -102,16 +117,23 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     if (error) fail(error);
   }
 
-  async function handleDeleteProgram() {
-    if (!window.confirm(`Delete "${program.name}"? This can't be undone.`)) return;
-    setDeleting(true);
-    const { error } = await m.deleteProgram(supabase, program.id);
-    if (error) {
-      setDeleting(false);
-      fail(error);
-      return;
-    }
-    router.push("/programs");
+  function handleDeleteProgram() {
+    setPendingConfirm({
+      title: "Delete program?",
+      description: `Delete "${program.name}"? This can't be undone.`,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        setDeleting(true);
+        const { error } = await m.deleteProgram(supabase, program.id);
+        setPendingConfirm(null);
+        if (error) {
+          setDeleting(false);
+          fail(error);
+          return;
+        }
+        router.push("/programs");
+      },
+    });
   }
 
   // ---- weeks ----
@@ -132,17 +154,23 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     return null;
   }
 
-  async function handleDeleteWeek(weekId: string) {
+  function handleDeleteWeek(weekId: string) {
     if (program.weeks.length <= 1) return;
     const target = program.weeks.find((w) => w.id === weekId);
     if (!target) return;
-    if (!window.confirm(`Delete ${target.label || `Week ${target.position}`}? This can't be undone.`)) return;
-
-    const remaining = program.weeks.filter((w) => w.id !== weekId);
-    setProgram((p) => ({ ...p, weeks: remaining }));
-    if (selectedWeekId === weekId) setSelectedWeekId(remaining[0]?.id ?? "");
-    const { error } = await m.deleteWeek(supabase, weekId);
-    if (error) fail(error);
+    setPendingConfirm({
+      title: "Delete week?",
+      description: `Delete ${target.label || `Week ${target.position}`}? This can't be undone.`,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        const remaining = program.weeks.filter((w) => w.id !== weekId);
+        setProgram((p) => ({ ...p, weeks: remaining }));
+        if (selectedWeekId === weekId) setSelectedWeekId(remaining[0]?.id ?? "");
+        setPendingConfirm(null);
+        const { error } = await m.deleteWeek(supabase, weekId);
+        if (error) fail(error);
+      },
+    });
   }
 
   // ---- days ----
@@ -307,7 +335,19 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     }));
   }
 
-  async function handleCategoryChange(dayId: string, blockId: string, blockExerciseId: string, category: ExerciseCategory) {
+  async function performCategoryChange(dayId: string, blockId: string, blockExerciseId: string, category: ExerciseCategory) {
+    const { set, error } = await m.switchExerciseCategory(supabase, { blockExerciseId, category });
+    if (error || !set) {
+      fail(error ?? "Couldn't switch exercise category.");
+      return;
+    }
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, exercise_category: category, sets: [set] } : ex)),
+    }));
+  }
+
+  function handleCategoryChange(dayId: string, blockId: string, blockExerciseId: string, category: ExerciseCategory) {
     const day = week.days.find((d) => d.id === dayId);
     const exercise = day?.blocks.find((b) => b.id === blockId)?.exercises.find((ex) => ex.id === blockExerciseId);
     if (!exercise || exercise.exercise_category === category) return;
@@ -323,22 +363,19 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         s.duration_seconds != null ||
         (s.reps && s.reps.length > 0)
     );
-    if (
-      hasData &&
-      !window.confirm(`Switch to ${category}? This clears the prescription data already entered for this exercise.`)
-    ) {
+    if (!hasData) {
+      performCategoryChange(dayId, blockId, blockExerciseId, category);
       return;
     }
-
-    const { set, error } = await m.switchExerciseCategory(supabase, { blockExerciseId: exercise.id, category });
-    if (error || !set) {
-      fail(error ?? "Couldn't switch exercise category.");
-      return;
-    }
-    updateBlock(week.id, dayId, blockId, (b) => ({
-      ...b,
-      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, exercise_category: category, sets: [set] } : ex)),
-    }));
+    setPendingConfirm({
+      title: "Switch exercise type?",
+      description: `Switch to ${category}? This clears the prescription data already entered for this exercise.`,
+      confirmLabel: "Switch",
+      onConfirm: async () => {
+        await performCategoryChange(dayId, blockId, blockExerciseId, category);
+        setPendingConfirm(null);
+      },
+    });
   }
 
   /** Applies to every existing row on the exercise at once — one exercise,
@@ -515,6 +552,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         onClose={() => setAddWeekOpen(false)}
         weeks={program.weeks}
         onCreate={handleAddWeek}
+      />
+
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        onClose={() => setPendingConfirm(null)}
+        onConfirm={() => pendingConfirm?.onConfirm()}
+        title={pendingConfirm?.title ?? ""}
+        description={pendingConfirm?.description ?? ""}
+        confirmLabel={pendingConfirm?.confirmLabel}
       />
     </div>
   );

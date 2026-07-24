@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ProgramCard } from "@/components/programs/program-card";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { deleteProgram, setActiveProgram } from "@/lib/programs/mutations";
 import { getProgramTree } from "@/lib/programs/queries";
@@ -51,6 +52,7 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
   const [sendTarget, setSendTarget] = useState<ProgramTree | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<ProgramSummary | null>(null);
 
   async function handleSetActive(programId: string) {
     const target = programs.find((p) => p.id === programId);
@@ -92,12 +94,14 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
     setSendTarget(tree);
   }
 
-  async function handleDelete(programId: string) {
+  function handleDeleteClick(programId: string) {
     const target = programs.find((p) => p.id === programId);
-    if (!target) return;
-    if (!window.confirm(`Delete "${target.name}"? This removes every week, day, and logged session in it — this can't be undone.`)) {
-      return;
-    }
+    if (target) setConfirmTarget(target);
+  }
+
+  async function handleDelete() {
+    if (!confirmTarget) return;
+    const programId = confirmTarget.id;
 
     const previous = programs;
     setDeleteError(null);
@@ -107,6 +111,7 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
     const supabase = createClient();
     const { error } = await deleteProgram(supabase, programId);
     setDeletingId(null);
+    setConfirmTarget(null);
     if (error) {
       setPrograms(previous);
       setDeleteError(error);
@@ -162,7 +167,13 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
             <ProgramCard
               key={program.id}
               program={program}
-              canSetActive
+              // A client who removed their assigned copy is no longer
+              // training on it — reactivating it for them without their
+              // say-so would be surprising, so this is the one action a
+              // removed row loses here (Send a copy and Delete still work:
+              // sending makes an unrelated new copy, and delete is just
+              // cleaning up a row the client already walked away from).
+              canSetActive={!program.removed_by_athlete_at}
               settingActive={settingActiveId === program.id}
               onSetActive={handleSetActive}
               canSend
@@ -170,7 +181,7 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
               onSend={handleSend}
               canDelete
               deleting={deletingId === program.id}
-              onDelete={handleDelete}
+              onDelete={handleDeleteClick}
             />
           ))}
         </div>
@@ -193,6 +204,15 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
           activeClients={activeClients}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        onClose={() => setConfirmTarget(null)}
+        onConfirm={handleDelete}
+        title="Delete program?"
+        description={`Delete "${confirmTarget?.name}"? This removes every week, day, and logged session in it — this can't be undone.`}
+        confirmLabel="Delete"
+      />
     </div>
   );
 }

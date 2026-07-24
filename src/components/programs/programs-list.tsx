@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
-import { deleteProgram, setActiveProgram } from "@/lib/programs/mutations";
+import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
 import { getProgramTree } from "@/lib/programs/queries";
 import type { ProgramSummary, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
@@ -33,6 +34,7 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
   const [sendTarget, setSendTarget] = useState<ProgramTree | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<ProgramSummary | null>(null);
 
   // ProgramCard only has the lightweight ProgramSummary shape (no nested
   // tree — see getProgramSummaries), so sending a copy from the list needs
@@ -80,21 +82,38 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
     router.refresh();
   }
 
-  async function handleDelete(programId: string) {
+  function handleDeleteClick(programId: string) {
     const target = programs.find((p) => p.id === programId);
+    if (target) setConfirmTarget(target);
+  }
+
+  async function handleDelete() {
+    const target = confirmTarget;
     if (!target) return;
-    if (!window.confirm(`Delete "${target.name}"? This removes every week, day, and logged session in it — this can't be undone.`)) {
-      return;
-    }
+    const programId = target.id;
+    // Owner deleting a program they built removes it outright; an athlete
+    // "deleting" a coach-assigned copy just removes their own copy (see
+    // ProgramViewer's handleRemove and removeAssignedProgram's comment) —
+    // the coach keeps it, with a "removed" note instead of it silently
+    // vanishing from their Client programs list.
+    const isOwner = target.owner_id === userId;
 
     const previous = programs;
     setDeleteError(null);
     setDeletingId(programId);
+    // Either way it disappears from *this viewer's* list: a hard delete for
+    // the owner, or (for the athlete) simply no longer theirs to see —
+    // getProgramSummaries hides a program the athlete has removed from
+    // their own view even though the row (and the coach's visibility into
+    // it) lives on.
     setPrograms((current) => current.filter((p) => p.id !== programId));
 
     const supabase = createClient();
-    const { error } = await deleteProgram(supabase, programId);
+    const { error } = isOwner
+      ? await deleteProgram(supabase, programId)
+      : await removeAssignedProgram(supabase, programId);
     setDeletingId(null);
+    setConfirmTarget(null);
     if (error) {
       setPrograms(previous);
       setDeleteError(error);
@@ -119,15 +138,15 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
           <ProgramCard
             key={program.id}
             program={program}
-            canSetActive={program.owner_id === userId || program.athlete_id === userId}
+            canSetActive={(program.owner_id === userId || program.athlete_id === userId) && !program.removed_by_athlete_at}
             settingActive={settingActiveId === program.id}
             onSetActive={handleSetActive}
             canSend={program.owner_id === userId}
             sendingCopy={loadingSendId === program.id}
             onSend={handleSend}
-            canDelete={program.owner_id === userId || program.athlete_id === userId}
+            canDelete={program.owner_id === userId || (program.athlete_id === userId && !program.removed_by_athlete_at)}
             deleting={deletingId === program.id}
-            onDelete={handleDelete}
+            onDelete={handleDeleteClick}
           />
         ))}
       </div>
@@ -207,6 +226,19 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
           activeClients={activeClients}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        onClose={() => setConfirmTarget(null)}
+        onConfirm={handleDelete}
+        title={confirmTarget?.owner_id === userId ? "Delete program?" : "Remove program?"}
+        description={
+          confirmTarget?.owner_id === userId
+            ? `Delete "${confirmTarget?.name}"? This removes every week, day, and logged session in it — this can't be undone.`
+            : `Remove "${confirmTarget?.name}"? This only removes your own copy — it won't affect your coach's original.`
+        }
+        confirmLabel={confirmTarget?.owner_id === userId ? "Delete" : "Remove"}
+      />
     </div>
   );
 }
