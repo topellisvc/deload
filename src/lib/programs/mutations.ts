@@ -228,6 +228,13 @@ export async function updateProgram(
   return { error: error?.message ?? null };
 }
 
+/**
+ * Deletes a program row outright — RLS (schema.sql + migration 0017)
+ * allows this for the program's owner OR its assigned athlete. Since every
+ * coach-assigned program is already its own independent copy (see
+ * cloneProgram below), an athlete deleting their own copy can never affect
+ * the coach's original or any other client's copy — it's just their row.
+ */
 export async function deleteProgram(
   supabase: SupabaseClient,
   programId: string
@@ -239,11 +246,14 @@ export async function deleteProgram(
 /**
  * Makes `programId` the athlete's one active program, deactivating
  * whatever was active before it. Goes through the `set_active_program`
- * Postgres function (migration 0010) rather than two separate client
- * updates, so there's never a window with zero or two active programs —
- * see that migration's comments for why this needs to be atomic. Still
- * fully RLS-scoped: the function is `security invoker`, so this only
- * succeeds for programs the caller owns.
+ * Postgres function (migration 0010, widened in 0017) rather than two
+ * separate client updates, so there's never a window with zero or two
+ * active programs — see that migration's comments for why this needs to be
+ * atomic. The function is `security definer` (migration 0013) with its own
+ * explicit permission check rather than relying on RLS: it allows either
+ * the program's owner or its assigned athlete to activate it (migration
+ * 0017), so an athlete can switch which of their coach-assigned programs
+ * is active without the coach needing to do it for them.
  */
 export async function setActiveProgram(
   supabase: SupabaseClient,

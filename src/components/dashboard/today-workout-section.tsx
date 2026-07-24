@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarX2, ClipboardCheck, Dumbbell, Moon, PersonStanding, Repeat } from "lucide-react";
+import { CalendarX2, ClipboardCheck, Dumbbell, Moon, PersonStanding, Repeat, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
@@ -29,6 +29,23 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
   }
 
   const { program, today } = context;
+
+  // Same "program complete" condition as the Hero's ProgramCompleteHero,
+  // and same carve-out for explicit day-browsing (?day=) — see
+  // hero-section.tsx's comment on this exact check.
+  if (context.completionPercent === 100 && today.isRealToday) {
+    return (
+      <div className="rounded-2xl border border-border bg-surface p-6">
+        <h2 className="mb-1 text-sm font-medium uppercase tracking-wide text-muted-foreground">Program complete</h2>
+        <div className="flex items-center gap-2 py-6">
+          <Trophy className="size-5 text-primary" />
+          <p className="text-sm text-foreground">
+            Every workout in {program.name} is done — head to Programs when you&apos;re ready for what&apos;s next.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const sectionTitle = today.isRealToday ? "Today's workout" : today.weekLabel;
 

@@ -10,6 +10,7 @@ import { buildExerciseSequence, buildSetTargets, findResumeStepIndex } from "@/l
 import { estimateWorkoutDurationSeconds } from "@/lib/training/estimate-duration";
 import { computeWorkoutTotals } from "@/lib/training/totals";
 import { saveDraftSession, deleteDraftSession, finishWorkout } from "@/lib/training/mutations";
+import { isProgramComplete } from "@/lib/training/queries";
 import type { DraftSet, PreviousPerformance, TrainingModeSession } from "@/lib/training/types";
 import type { BlockRow } from "@/lib/programs/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
@@ -18,8 +19,9 @@ import { ExerciseScreen } from "@/components/training/exercise-screen";
 import { RestScreen } from "@/components/training/rest-screen";
 import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-screen";
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
+import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
 
-type Phase = "overview" | "exercise" | "rest" | "exercise-complete" | "summary";
+type Phase = "overview" | "exercise" | "rest" | "exercise-complete" | "summary" | "program-complete";
 
 interface TrainingSessionProps {
   trainingDayId: string;
@@ -329,16 +331,35 @@ export function TrainingSession({
       exerciseNotes,
       workoutNote: workoutNote.trim() || null,
     });
-    setFinishing(false);
     if (finishError) {
+      setFinishing(false);
       setError(finishError);
       return;
     }
+
+    // Was that the last non-rest day left in the program? If so, show the
+    // Program Complete screen instead of jumping straight to the dashboard
+    // — a separate moment from "today's workout is done" (see
+    // ProgramCompleteScreen). Checked after the log write succeeds, since
+    // it's this exact workout finishing that might tip the program over
+    // into "fully done."
+    const complete = await isProgramComplete(supabase, programId, athleteId);
+    setFinishing(false);
+    if (complete) {
+      setPhase("program-complete");
+      return;
+    }
+
+    goToDashboard();
+  }
+
+  function goToDashboard() {
     // The dashboard's "today's workout" card and hero may already be
     // prefetched/cached from before this workout was logged — refresh
-    // busts that cache so it shows "completed today" immediately rather
-    // than the stale "Start workout" state (same fix as ProgramViewer's
-    // handleSetActive, same underlying router-cache-staleness cause).
+    // busts that cache so it shows "completed today" (or the Program
+    // Complete hero) immediately rather than a stale "Start workout" state
+    // (same fix as ProgramViewer's handleSetActive, same underlying
+    // router-cache-staleness cause).
     router.refresh();
     router.push("/dashboard");
   }
@@ -436,6 +457,8 @@ export function TrainingSession({
           error={error}
         />
       )}
+
+      {phase === "program-complete" && <ProgramCompleteScreen programName={programName} onDone={goToDashboard} />}
     </div>
   );
 }

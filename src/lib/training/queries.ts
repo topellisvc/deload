@@ -121,6 +121,39 @@ export async function getDraftSessionDayIds(
 }
 
 /**
+ * Whether every non-rest day in this program now has at least one
+ * non-skipped session log — checked right after Finish Workout to detect
+ * "that was the last thing left to train" and show the Program Complete
+ * screen. Skipped days don't count as done, matching the dashboard's own
+ * completion % definition (see distinctLoggedNonRest in
+ * lib/dashboard/queries.ts's getActiveProgramContext) so this never
+ * disagrees with what the dashboard calls "100% complete." A program with
+ * zero non-rest days (e.g. mid-setup) is never "complete" — there's
+ * nothing to have finished.
+ */
+export async function isProgramComplete(supabase: SupabaseClient, programId: string, athleteId: string): Promise<boolean> {
+  const { data: weeksData } = await supabase.from("program_weeks").select("id").eq("program_id", programId);
+  const weekIds = ((weeksData ?? []) as { id: string }[]).map((w) => w.id);
+  if (weekIds.length === 0) return false;
+
+  const { data: daysData } = await supabase.from("training_days").select("id, is_rest_day").in("week_id", weekIds);
+  const nonRestDayIds = ((daysData ?? []) as { id: string; is_rest_day: boolean }[])
+    .filter((d) => !d.is_rest_day)
+    .map((d) => d.id);
+  if (nonRestDayIds.length === 0) return false;
+
+  const { data: logsData } = await supabase
+    .from("session_logs")
+    .select("training_day_id")
+    .eq("athlete_id", athleteId)
+    .eq("skipped", false)
+    .in("training_day_id", nonRestDayIds);
+  const loggedDayIds = new Set(((logsData ?? []) as { training_day_id: string }[]).map((l) => l.training_day_id));
+
+  return nonRestDayIds.every((id) => loggedDayIds.has(id));
+}
+
+/**
  * The athlete's most recent *performed* occurrence of each given exercise —
  * "Last Session" comparisons never look at the programmed target (spec: "Do
  * not compare against the programmed workout"). Matched by exercise identity

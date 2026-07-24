@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarClock, ChevronLeft, ChevronRight, Dumbbell, Moon, PlusCircle } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Dumbbell, Moon, PlusCircle, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkipWorkoutButton } from "@/components/dashboard/skip-workout-button";
 import { formatLogTime } from "@/lib/dates";
@@ -36,6 +36,12 @@ export function HeroSection({ displayName, email, athleteId, activeContext }: He
         <EmptyHero />
       ) : !activeContext.today ? (
         <NoDaysHero programName={activeContext.program.name} />
+      ) : activeContext.completionPercent === 100 && activeContext.today.isRealToday ? (
+        // Only takes over the default (auto-resolved "today") view — if the
+        // athlete has explicitly browsed to a specific day via the
+        // prev/next arrows, that day's own Workout/Rest hero still shows so
+        // they can keep browsing what they already trained.
+        <ProgramCompleteHero program={activeContext.program} />
       ) : activeContext.today.day.is_rest_day ? (
         <RestDayHero context={activeContext} />
       ) : (
@@ -162,6 +168,38 @@ function RestDayHero({ context }: { context: ActiveProgramContext }) {
         <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Rest day</h1>
       </div>
       <p className="text-sm text-muted-foreground">No training scheduled today — recovery is part of the plan.</p>
+    </div>
+  );
+}
+
+/** Shown once every non-rest day in the active program has been trained
+ * (completionPercent === 100 — see getActiveProgramContext) instead of the
+ * WorkoutHero perpetually re-showing the last day as "Completed" forever.
+ * Deliberately doesn't auto-clear the active program or pick a new one —
+ * that's the athlete's call, made from /programs, same as EmptyHero's
+ * "Create a program"/"Choose an existing one" pattern for the equivalent
+ * "nothing driving the dashboard right now" moment. */
+function ProgramCompleteHero({ program }: { program: { id: string; name: string } }) {
+  return (
+    <div className="mt-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Trophy className="size-5 text-primary" />
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Program complete!</h1>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        You&apos;ve finished every workout in <span className="font-medium text-foreground">{program.name}</span>. Ready to move onto something else?
+      </p>
+      <div className="flex flex-wrap gap-3">
+        <Link href="/programs">
+          <Button>
+            <PlusCircle className="size-4" />
+            Browse programs
+          </Button>
+        </Link>
+        <Link href={`/programs/${program.id}`}>
+          <Button variant="outline">Review this one</Button>
+        </Link>
+      </div>
     </div>
   );
 }

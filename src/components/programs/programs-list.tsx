@@ -119,13 +119,13 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
           <ProgramCard
             key={program.id}
             program={program}
-            canSetActive={program.owner_id === userId}
+            canSetActive={program.owner_id === userId || program.athlete_id === userId}
             settingActive={settingActiveId === program.id}
             onSetActive={handleSetActive}
             canSend={program.owner_id === userId}
             sendingCopy={loadingSendId === program.id}
             onSend={handleSend}
-            canDelete={program.owner_id === userId}
+            canDelete={program.owner_id === userId || program.athlete_id === userId}
             deleting={deletingId === program.id}
             onDelete={handleDelete}
           />

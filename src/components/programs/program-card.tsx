@@ -13,20 +13,23 @@ const DISCIPLINE_META = {
 
 interface ProgramCardProps {
   program: ProgramSummary;
-  /** Only the owner can flip is_active (see migration 0010 — "owned" means
-   * owner_id, matching every other edit action in this app), so the
-   * control only renders for programs the current user owns. Everyone
-   * else still sees the "Active" badge if it happens to be active. */
+  /** The owner OR the assigned athlete can flip is_active (migration 0010,
+   * widened in 0017) — a coach can activate any program they built, and an
+   * athlete can switch which of their own or coach-assigned programs is
+   * active for themselves. Everyone else still sees the "Active" badge if
+   * it happens to be active. */
   canSetActive: boolean;
   settingActive: boolean;
   onSetActive: (programId: string) => void;
-  /** Same owner-only gating as canSetActive — sending a copy edits/creates
-   * a program, so only the owner can do it. */
+  /** Owner-only — sending a copy edits/creates a program, so only the
+   * owner (the person who built it) can do it. */
   canSend: boolean;
   sendingCopy: boolean;
   onSend: (programId: string) => void;
-  /** Same owner-only gating again — matches the "programs are deletable by
-   * their owner" RLS policy, and mirrors canSetActive/canSend exactly. */
+  /** Owner OR assigned athlete (migration 0017's additive RLS policy) — an
+   * athlete can remove their own copy of a coach-assigned program. Since
+   * every assigned program is its own independent row (see cloneProgram),
+   * this can never affect the coach's original or another client's copy. */
   canDelete: boolean;
   deleting: boolean;
   onDelete: (programId: string) => void;

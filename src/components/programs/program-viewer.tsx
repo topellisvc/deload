@@ -3,7 +3,19 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ChevronDown, Pencil, PersonStanding, PlayCircle, Repeat, Send, SkipForward, UserRound } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Pencil,
+  PersonStanding,
+  PlayCircle,
+  Repeat,
+  Send,
+  SkipForward,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient, LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
@@ -13,7 +25,7 @@ import { SessionPerformanceEditor } from "@/components/programs/session-performa
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
-import { setActiveProgram } from "@/lib/programs/mutations";
+import { deleteProgram, setActiveProgram } from "@/lib/programs/mutations";
 import { formatLogDate as formatLogDateShared, todayDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
@@ -87,10 +99,19 @@ export function ProgramViewer({
   const isOwner = program.owner_id === currentUserId;
   const isAthlete = program.athlete_id === currentUserId;
 
+  // Either side of a coach-assigned program can activate/delete it now
+  // (migration 0017) — a coach manages anything they built, and an athlete
+  // manages their own copy (including one a coach sent them). Since a sent
+  // program is always its own independent row, the athlete deleting theirs
+  // never touches the coach's original or another client's copy.
+  const canManage = isOwner || isAthlete;
+
   const [isActive, setIsActive] = useState(program.is_active);
   const [settingActive, setSettingActive] = useState(false);
   const [activeError, setActiveError] = useState<string | null>(null);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // Coach Review: which logged session (by session_log.id) has its
   // Planned-vs-Performed detail expanded. One id across the whole page is
   // enough — session_log ids are globally unique, so this doubles as a
@@ -118,13 +139,32 @@ export function ProgramViewer({
     router.refresh();
   }
 
+  async function handleDelete() {
+    const confirmMessage = isOwner
+      ? `Delete "${program.name}"? This removes every week, day, and logged session in it — this can't be undone.`
+      : `Remove "${program.name}"? This only removes your own copy — it won't affect your coach's original.`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setDeleting(true);
+    setDeleteError(null);
+    const supabase = createClient();
+    const { error } = await deleteProgram(supabase, program.id);
+    if (error) {
+      setDeleting(false);
+      setDeleteError(error);
+      return;
+    }
+    router.refresh();
+    router.push("/programs");
+  }
+
   return (
     <div className="mx-auto flex max-w-[100rem] flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
       {!isOwner && (
         <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
           <UserRound className="mt-0.5 size-4 shrink-0 text-primary" />
           <p className="text-sm text-foreground">
-            Assigned by {assignedByEmail ?? "your coach"} — view only.
+            Assigned by {assignedByEmail ?? "your coach"} — you can set it active or remove your own copy, but only they can edit its exercises.
           </p>
         </div>
       )}
@@ -145,7 +185,7 @@ export function ProgramViewer({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">
-          {isOwner && !isActive && (
+          {canManage && !isActive && (
             <Button variant="outline" size="sm" disabled={settingActive} onClick={handleSetActive}>
               {settingActive ? "Setting active…" : "Set as active"}
             </Button>
@@ -165,13 +205,25 @@ export function ProgramViewer({
               Edit program
             </Link>
           )}
+          {canManage && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={deleting}
+              className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
+              onClick={handleDelete}
+            >
+              <Trash2 className="size-3.5" />
+              {deleting ? "Removing…" : isOwner ? "Delete" : "Remove"}
+            </Button>
+          )}
         </div>
       </div>
 
-      {activeError && (
+      {(activeError || deleteError) && (
         <div className="flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-          <p className="text-sm text-foreground">{activeError}</p>
+          <p className="text-sm text-foreground">{activeError || deleteError}</p>
         </div>
       )}
 
