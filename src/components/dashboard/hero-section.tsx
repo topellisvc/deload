@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CalendarClock, Dumbbell, Moon, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SkipWorkoutButton } from "@/components/dashboard/skip-workout-button";
 import type { ActiveProgramContext } from "@/lib/dashboard/types";
 
 /** Server-rendered, so this reflects the server's clock rather than the
@@ -17,10 +18,11 @@ function greeting(): string {
 interface HeroSectionProps {
   displayName: string | null;
   email: string;
+  athleteId: string;
   activeContext: ActiveProgramContext | null;
 }
 
-export function HeroSection({ displayName, email, activeContext }: HeroSectionProps) {
+export function HeroSection({ displayName, email, athleteId, activeContext }: HeroSectionProps) {
   const name = displayName || email.split("@")[0] || "there";
 
   return (
@@ -36,13 +38,13 @@ export function HeroSection({ displayName, email, activeContext }: HeroSectionPr
       ) : activeContext.today.day.is_rest_day ? (
         <RestDayHero context={activeContext} />
       ) : (
-        <WorkoutHero context={activeContext} />
+        <WorkoutHero context={activeContext} athleteId={athleteId} />
       )}
     </div>
   );
 }
 
-function WorkoutHero({ context }: { context: ActiveProgramContext }) {
+function WorkoutHero({ context, athleteId }: { context: ActiveProgramContext; athleteId: string }) {
   const { program, today } = context;
   if (!today) return null;
   const exerciseCount = today.day.blocks.reduce((n, b) => n + b.exercises.length, 0);
@@ -82,9 +84,12 @@ function WorkoutHero({ context }: { context: ActiveProgramContext }) {
           </span>
         </div>
       ) : (
-        <Link href={`/train/${today.day.id}`} className="w-fit">
-          <Button>Start workout</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href={`/train/${today.day.id}`} className="w-fit">
+            <Button>Start workout</Button>
+          </Link>
+          <SkipWorkoutButton trainingDayId={today.day.id} athleteId={athleteId} />
+        </div>
       )}
     </div>
   );

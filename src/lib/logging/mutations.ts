@@ -7,10 +7,14 @@ import type { LoggedSet, SessionLog } from "@/lib/supabase/types";
  * the same day twice on the same date is a friendly no-op error, not a
  * silent duplicate — the UI only ever calls this when there's no existing
  * log for that date, but the constraint is the real guarantee.
+ *
+ * `skipped: true` records a deliberate skip instead ("move on to the next
+ * day") — same row shape, same constraint, just excluded from completion %,
+ * consistency %, and streak wherever those are computed (migration 0015).
  */
 export async function createSessionLog(
   supabase: SupabaseClient,
-  params: { trainingDayId: string; athleteId: string; performedOn: string; note?: string | null }
+  params: { trainingDayId: string; athleteId: string; performedOn: string; note?: string | null; skipped?: boolean }
 ): Promise<{ log: SessionLog | null; error: string | null }> {
   const { data, error } = await supabase
     .from("session_logs")
@@ -19,6 +23,7 @@ export async function createSessionLog(
       athlete_id: params.athleteId,
       performed_on: params.performedOn,
       note: params.note ?? null,
+      skipped: params.skipped ?? false,
     })
     .select()
     .single();

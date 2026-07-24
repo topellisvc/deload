@@ -4,14 +4,14 @@ import { MessageSquareText, PersonStanding } from "lucide-react";
 import { SetDetails } from "@/components/programs/set-details";
 import { WorkoutProgressBar } from "@/components/training/workout-progress-bar";
 import { PreviousPerformanceCard } from "@/components/training/previous-performance-card";
-import { StrengthSetLogger } from "@/components/training/strength-set-logger";
+import { StrengthSetLogger, type LastSetValues } from "@/components/training/strength-set-logger";
 import { CardioSummaryForm } from "@/components/training/cardio-summary-form";
 import { BigTextField } from "@/components/training/big-fields";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { getPrescriptionTypeDef, suggestedWeightFromPercent1RM } from "@/lib/programs/prescription-types";
 import { EXERCISE_CATEGORY_LABELS } from "@/lib/programs/prescription-types";
 import { buildSetTargets } from "@/lib/training/sequence";
-import type { ExerciseStep, PreviousPerformance } from "@/lib/training/types";
+import type { DraftSet, ExerciseStep, PreviousPerformance } from "@/lib/training/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
 
 interface ExerciseScreenProps {
@@ -19,11 +19,12 @@ interface ExerciseScreenProps {
   stepIndex: number;
   totalSteps: number;
   loggedSetCount: number;
+  draftSets: DraftSet[];
   personalRecords: PersonalRecord[];
   previous: PreviousPerformance | undefined;
   exerciseNote: string;
   onExerciseNoteChange: (text: string) => void;
-  onCompleteSet: (payload: { weight: number | null; reps: number | null; rpe: number | null; notes: string | null }) => void;
+  onCompleteSet: (payload: { weight: number | null; reps: number | null; notes: string | null }) => void;
   onCardioFinish: (payload: {
     distanceMeters: number | null;
     durationSeconds: number | null;
@@ -33,6 +34,7 @@ interface ExerciseScreenProps {
     rpe: number | null;
     notes: string | null;
   }) => void;
+  onSkipWorkout: () => void;
   busy: boolean;
 }
 
@@ -48,12 +50,14 @@ export function ExerciseScreen({
   stepIndex,
   totalSteps,
   loggedSetCount,
+  draftSets,
   personalRecords,
   previous,
   exerciseNote,
   onExerciseNoteChange,
   onCompleteSet,
   onCardioFinish,
+  onSkipWorkout,
   busy,
 }: ExerciseScreenProps) {
   const exercise = step.blockExercise;
@@ -62,7 +66,16 @@ export function ExerciseScreen({
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-5 px-6 py-8">
-      <WorkoutProgressBar currentIndex={stepIndex} total={totalSteps} />
+      <div className="flex items-start justify-between gap-3">
+        <WorkoutProgressBar currentIndex={stepIndex} total={totalSteps} />
+        <button
+          type="button"
+          onClick={onSkipWorkout}
+          className="shrink-0 pt-0.5 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          Skip Workout
+        </button>
+      </div>
 
       <div className="flex items-center gap-2">
         {category !== "strength" && <PersonStanding className="size-4 text-muted-foreground" />}
@@ -95,6 +108,7 @@ export function ExerciseScreen({
           exercise={exercise}
           exerciseName={exerciseName}
           loggedSetCount={loggedSetCount}
+          draftSets={draftSets}
           personalRecords={personalRecords}
           onCompleteSet={onCompleteSet}
           busy={busy}
@@ -120,6 +134,7 @@ function StrengthLoggerSlot({
   exercise,
   exerciseName,
   loggedSetCount,
+  draftSets,
   personalRecords,
   onCompleteSet,
   busy,
@@ -127,6 +142,7 @@ function StrengthLoggerSlot({
   exercise: ExerciseStep["blockExercise"];
   exerciseName: string;
   loggedSetCount: number;
+  draftSets: DraftSet[];
   personalRecords: PersonalRecord[];
   onCompleteSet: ExerciseScreenProps["onCompleteSet"];
   busy: boolean;
@@ -141,6 +157,10 @@ function StrengthLoggerSlot({
     suggestedWeight = suggestedWeightFromPercent1RM(target.percent_1rm_value, pr?.value_number ?? null);
   }
 
+  const exerciseDraftSets = draftSets.filter((s) => s.blockExerciseId === exercise.id).sort((a, b) => a.position - b.position);
+  const lastDraftSet = exerciseDraftSets[exerciseDraftSets.length - 1];
+  const lastSet: LastSetValues | null = lastDraftSet ? { weight: lastDraftSet.performedWeight, reps: lastDraftSet.performedReps } : null;
+
   return (
     <StrengthSetLogger
       key={`${target.id}-${loggedSetCount}`}
@@ -149,6 +169,7 @@ function StrengthLoggerSlot({
       totalSets={targets.length}
       target={target}
       suggestedWeight={suggestedWeight}
+      lastSet={lastSet}
       onComplete={onCompleteSet}
       busy={busy}
     />

@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { createSessionLog } from "@/lib/logging/mutations";
+import { todayDateString } from "@/lib/dates";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { buildExerciseSequence, buildSetTargets, findResumeStepIndex } from "@/lib/training/sequence";
 import { estimateWorkoutDurationSeconds } from "@/lib/training/estimate-duration";
 import { computeWorkoutTotals } from "@/lib/training/totals";
-import { saveDraftSession, finishWorkout } from "@/lib/training/mutations";
+import { saveDraftSession, deleteDraftSession, finishWorkout } from "@/lib/training/mutations";
 import type { DraftSet, PreviousPerformance, TrainingModeSession } from "@/lib/training/types";
 import type { BlockRow } from "@/lib/programs/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
@@ -97,6 +99,7 @@ export function TrainingSession({
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [skippingWorkout, setSkippingWorkout] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const transitionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,7 +161,7 @@ export function TrainingSession({
     }, 1100);
   }
 
-  async function handleCompleteSet(payload: { weight: number | null; reps: number | null; rpe: number | null; notes: string | null }) {
+  async function handleCompleteSet(payload: { weight: number | null; reps: number | null; notes: string | null }) {
     if (!currentStep) return;
     const exercise = currentStep.blockExercise;
     const targets = buildSetTargets(exercise.sets);
@@ -172,7 +175,9 @@ export function TrainingSession({
       position: nextPosition(exercise.id, draftSets),
       performedWeight: payload.weight,
       performedReps: payload.reps,
-      performedRpe: payload.rpe,
+      // No RPE input in Training Mode's strength logger — weight and reps
+      // only, to keep each set to two taps (see StrengthSetLogger).
+      performedRpe: null,
       performedDistanceMeters: null,
       performedDurationSeconds: null,
       performedPaceSecondsPerKm: null,
@@ -248,6 +253,35 @@ export function TrainingSession({
     void persist({ workoutNote: text || null });
   }
 
+  async function handleSkipWorkout() {
+    // Skipping from the Overview loses nothing (nothing's logged yet), but
+    // skipping mid-workout discards any sets already completed — worth a
+    // confirmation there, since it's not undoable.
+    if (draftSets.length > 0 && !window.confirm("Skip this workout? The sets you've already logged won't be saved.")) {
+      return;
+    }
+    setSkippingWorkout(true);
+    setError(null);
+    const supabase = createClient();
+    const { error: skipError } = await createSessionLog(supabase, {
+      trainingDayId,
+      athleteId,
+      performedOn: todayDateString(),
+      skipped: true,
+    });
+    if (skipError) {
+      setSkippingWorkout(false);
+      setError(skipError);
+      return;
+    }
+    // Discard any in-progress draft — skipping abandons this attempt
+    // rather than leaving something to resume into later.
+    await deleteDraftSession(supabase, trainingDayId, athleteId);
+    setSkippingWorkout(false);
+    router.refresh();
+    router.push("/dashboard");
+  }
+
   async function handleFinish() {
     setFinishing(true);
     setError(null);
@@ -291,6 +325,8 @@ export function TrainingSession({
           blocks={blocks}
           onBegin={handleBegin}
           starting={starting}
+          onSkip={handleSkipWorkout}
+          skipping={skippingWorkout}
         />
       )}
 
@@ -301,12 +337,14 @@ export function TrainingSession({
           stepIndex={stepIndex}
           totalSteps={sequence.length}
           loggedSetCount={loggedSetCounts.get(currentStep.blockExercise.id) ?? 0}
+          draftSets={draftSets}
           personalRecords={personalRecords}
           previous={previousPerformance[currentStep.blockExercise.id]}
           exerciseNote={exerciseNotes[currentStep.blockExercise.id] ?? ""}
           onExerciseNoteChange={handleExerciseNoteChange}
           onCompleteSet={handleCompleteSet}
           onCardioFinish={handleCardioFinish}
+          onSkipWorkout={handleSkipWorkout}
           busy={saving}
         />
       )}

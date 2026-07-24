@@ -1,4 +1,4 @@
-import { Dumbbell, Users } from "lucide-react";
+import { Dumbbell, SkipForward, Users } from "lucide-react";
 import type { ActivityEvent } from "@/lib/dashboard/types";
 
 function formatWhen(iso: string): string {
@@ -26,10 +26,14 @@ export function RecentActivitySection({ events, title = "Recent activity" }: { e
             <li key={`${event.type}-${event.id}`} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
               {event.type === "session_log" ? (
                 <>
-                  <Dumbbell className="mt-0.5 size-4 shrink-0 text-primary" />
+                  {event.skipped ? (
+                    <SkipForward className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <Dumbbell className="mt-0.5 size-4 shrink-0 text-primary" />
+                  )}
                   <div className="flex-1">
                     <p className="text-sm text-foreground">
-                      Logged {event.dayLabel} — {event.programName}
+                      {event.skipped ? "Skipped" : "Logged"} {event.dayLabel} — {event.programName}
                     </p>
                     <p className="text-xs text-muted-foreground">{formatWhen(event.occurredAt)}</p>
                   </div>

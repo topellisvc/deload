@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
 import { BigNumberField, BigTextField } from "@/components/training/big-fields";
 import type { SetPrescription } from "@/lib/programs/types";
+
+export interface LastSetValues {
+  weight: number | null;
+  reps: number | null;
+}
 
 interface StrengthSetLoggerProps {
   exerciseName: string;
@@ -12,7 +18,11 @@ interface StrengthSetLoggerProps {
   totalSets: number;
   target: SetPrescription;
   suggestedWeight: number | null;
-  onComplete: (payload: { weight: number | null; reps: number | null; rpe: number | null; notes: string | null }) => void;
+  /** The athlete's own previous set on this exercise, if one's already been
+   * logged this workout — powers "Same as Last Set" (spec: "mark a set to
+   * be the same as the last set"). Null for the first set of an exercise. */
+  lastSet: LastSetValues | null;
+  onComplete: (payload: { weight: number | null; reps: number | null; notes: string | null }) => void;
   busy: boolean;
 }
 
@@ -34,23 +44,22 @@ function defaultReps(target: SetPrescription): number | null {
 }
 
 /**
- * "Bench Press / Set 2 of 4 / Target: 100kg × 6 / Input: Weight, Reps,
- * Optional RPE / Complete Set" — the spec's Set Workflow example, verbatim.
- * The Prescription's own read-only card sits above this (in ExerciseScreen);
- * this component is only the "Target" reminder plus the actual input, kept
- * separate so it can be remounted (via `key`) fresh for every set.
+ * "Bench Press / Set 2 of 4 / Target: 100kg × 6 / Input: Weight, Reps /
+ * Complete Set" — the spec's Set Workflow example. No RPE input: logging
+ * what actually happened only needs weight and reps, and skipping RPE
+ * keeps each set to two taps instead of three. (RPE stays available in the
+ * desktop Coach Review / logging table for anyone who wants it there —
+ * this is Training Mode's own, deliberately narrower, input.)
  */
-export function StrengthSetLogger({ exerciseName, setNumber, totalSets, target, suggestedWeight, onComplete, busy }: StrengthSetLoggerProps) {
+export function StrengthSetLogger({ exerciseName, setNumber, totalSets, target, suggestedWeight, lastSet, onComplete, busy }: StrengthSetLoggerProps) {
   const [weight, setWeight] = useState<number | null>(() => defaultWeight(target, suggestedWeight));
   const [reps, setReps] = useState<number | null>(() => defaultReps(target));
-  const [rpe, setRpe] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
   const [showNotes, setShowNotes] = useState(false);
 
   useEffect(() => {
     setWeight(defaultWeight(target, suggestedWeight));
     setReps(defaultReps(target));
-    setRpe(null);
     setNotes("");
     setShowNotes(false);
   }, [target, suggestedWeight]);
@@ -74,7 +83,6 @@ export function StrengthSetLogger({ exerciseName, setNumber, totalSets, target, 
       <div className="flex flex-wrap items-start justify-center gap-6">
         {showWeight && <BigNumberField label="Weight" unit="kg" value={weight} onChange={setWeight} step={2.5} autoFocus />}
         <BigNumberField label="Reps" value={reps} onChange={setReps} step={1} autoFocus={!showWeight} />
-        <BigNumberField label="RPE" value={rpe} onChange={setRpe} step={0.5} min={1} placeholder="—" />
       </div>
 
       {showNotes ? (
@@ -85,14 +93,24 @@ export function StrengthSetLogger({ exerciseName, setNumber, totalSets, target, 
         </button>
       )}
 
-      <Button
-        size="lg"
-        disabled={busy}
-        onClick={() => onComplete({ weight, reps, rpe, notes: notes.trim() || null })}
-        className="h-14 text-base"
-      >
-        {busy ? "Saving…" : "Complete Set"}
-      </Button>
+      <div className="flex flex-col gap-2">
+        <Button size="lg" disabled={busy} onClick={() => onComplete({ weight, reps, notes: notes.trim() || null })} className="h-14 text-base">
+          {busy ? "Saving…" : "Complete Set"}
+        </Button>
+
+        {lastSet && (lastSet.weight != null || lastSet.reps != null) && (
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={busy}
+            onClick={() => onComplete({ weight: lastSet.weight, reps: lastSet.reps, notes: null })}
+            className="h-12 text-sm"
+          >
+            <Copy className="size-4" />
+            Same as Last Set{lastSet.weight != null && lastSet.reps != null ? ` — ${lastSet.weight}kg × ${lastSet.reps}` : ""}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

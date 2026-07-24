@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ChevronDown, Pencil, PersonStanding, PlayCircle, Repeat, Send, UserRound } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Pencil, PersonStanding, PlayCircle, Repeat, Send, SkipForward, UserRound } from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient, LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
@@ -280,36 +280,46 @@ export function ProgramViewer({
                 {!day.is_rest_day && !isAthlete && isOwner && (() => {
                   const dayLogs = logsByDay[day.id] ?? [];
                   if (dayLogs.length === 0) return null;
+                  const trainedCount = dayLogs.filter((l) => !l.skipped).length;
+                  const skippedCount = dayLogs.length - trainedCount;
                   return (
                     <div className="flex flex-col gap-2 border-t border-border pt-2.5 text-xs">
                       <span className="font-medium text-muted-foreground">
-                        Logged {dayLogs.length}× · last {formatLogDate(dayLogs[0]!.performed_on, today)}
+                        Logged {trainedCount}× · last {formatLogDate(dayLogs[0]!.performed_on, today)}
+                        {skippedCount > 0 && ` · Skipped ${skippedCount}×`}
                       </span>
                       <ul className="flex flex-col gap-1.5">
-                        {dayLogs.map((log) => (
-                          <li key={log.id} className="flex flex-col gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedLogId((v) => (v === log.id ? null : log.id))}
-                              className="flex items-center gap-1 self-start font-medium text-foreground/80 transition-colors hover:text-foreground"
-                            >
-                              {formatLogDate(log.performed_on, today)}
-                              <ChevronDown className={cn("size-3.5 transition-transform", expandedLogId === log.id && "rotate-180")} />
-                            </button>
-                            {expandedLogId === log.id && (
-                              // Planned vs Performed, side by side per set — the coach's
-                              // review view. Same SessionPerformanceEditor the athlete logs
-                              // into, just readOnly, so the two can never render differently.
-                              <SessionPerformanceEditor
-                                sessionLogId={log.id}
-                                blocks={day.blocks}
-                                loggedSetsByExercise={loggedSetsByExercise}
-                                personalRecords={personalRecords}
-                                readOnly
-                              />
-                            )}
-                          </li>
-                        ))}
+                        {dayLogs.map((log) =>
+                          log.skipped ? (
+                            <li key={log.id} className="flex items-center gap-1.5 font-medium text-muted-foreground">
+                              <SkipForward className="size-3.5" />
+                              {formatLogDate(log.performed_on, today)} · Skipped
+                            </li>
+                          ) : (
+                            <li key={log.id} className="flex flex-col gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedLogId((v) => (v === log.id ? null : log.id))}
+                                className="flex items-center gap-1 self-start font-medium text-foreground/80 transition-colors hover:text-foreground"
+                              >
+                                {formatLogDate(log.performed_on, today)}
+                                <ChevronDown className={cn("size-3.5 transition-transform", expandedLogId === log.id && "rotate-180")} />
+                              </button>
+                              {expandedLogId === log.id && (
+                                // Planned vs Performed, side by side per set — the coach's
+                                // review view. Same SessionPerformanceEditor the athlete logs
+                                // into, just readOnly, so the two can never render differently.
+                                <SessionPerformanceEditor
+                                  sessionLogId={log.id}
+                                  blocks={day.blocks}
+                                  loggedSetsByExercise={loggedSetsByExercise}
+                                  personalRecords={personalRecords}
+                                  readOnly
+                                />
+                              )}
+                            </li>
+                          )
+                        )}
                       </ul>
                     </div>
                   );

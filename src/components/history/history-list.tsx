@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, SkipForward } from "lucide-react";
 import type { SessionHistoryEntry } from "@/lib/logging/queries";
 import type { LoggedSet } from "@/lib/supabase/types";
 import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
@@ -34,7 +34,7 @@ export function HistoryList({ entries, loggedSetsByExercise }: HistoryListProps)
     <ul className="flex flex-col gap-3">
       {entries.map((entry) => {
         const isExpanded = expandedId === entry.log.id;
-        const hasDetail = entry.blocks.some((b) => b.exercises.length > 0);
+        const hasDetail = !entry.log.skipped && entry.blocks.some((b) => b.exercises.length > 0);
 
         return (
           <li key={entry.log.id} className="rounded-2xl border border-border bg-surface p-4">
@@ -45,8 +45,10 @@ export function HistoryList({ entries, loggedSetsByExercise }: HistoryListProps)
               className="flex w-full items-center justify-between gap-3 text-left disabled:cursor-default"
             >
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-semibold text-foreground">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  {entry.log.skipped && <SkipForward className="size-3.5 shrink-0 text-muted-foreground" />}
                   {formatLogDate(entry.log.performed_on, today, { includeYear: true })}
+                  {entry.log.skipped && <span className="font-normal text-muted-foreground">· Skipped</span>}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {entry.programName} · {entry.dayLabel}

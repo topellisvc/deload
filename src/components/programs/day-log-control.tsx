@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, ChevronDown, Pencil, Plus, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, Pencil, Plus, SkipForward, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { createSessionLog, deleteSessionLog, updateSessionLogNote } from "@/lib/logging/mutations";
 import type { LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
@@ -61,6 +61,24 @@ export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs, blo
     setLogs((prev) => [log, ...prev]);
   }
 
+  async function handleSkipToday() {
+    setBusyId("skip");
+    setError(null);
+    const supabase = createClient();
+    const { log, error: logError } = await createSessionLog(supabase, {
+      trainingDayId,
+      athleteId,
+      performedOn: today,
+      skipped: true,
+    });
+    setBusyId(null);
+    if (logError || !log) {
+      setError(logError ?? "Couldn't skip this session.");
+      return;
+    }
+    setLogs((prev) => [log, ...prev]);
+  }
+
   async function handleDelete(logId: string) {
     setBusyId(logId);
     setError(null);
@@ -90,15 +108,26 @@ export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs, blo
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-2.5 text-xs">
       {!hasTodayLog && (
-        <button
-          type="button"
-          onClick={handleLogToday}
-          disabled={busyId === "new"}
-          className="flex items-center gap-1 self-start font-medium text-primary transition-colors hover:underline disabled:opacity-50"
-        >
-          <Plus className="size-3.5" />
-          Log today
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={handleLogToday}
+            disabled={busyId === "new"}
+            className="flex items-center gap-1 self-start font-medium text-primary transition-colors hover:underline disabled:opacity-50"
+          >
+            <Plus className="size-3.5" />
+            Log today
+          </button>
+          <button
+            type="button"
+            onClick={handleSkipToday}
+            disabled={busyId === "skip"}
+            className="flex items-center gap-1 self-start font-medium text-muted-foreground transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+          >
+            <SkipForward className="size-3.5" />
+            Skip today
+          </button>
+        </div>
       )}
 
       {logs.length > 0 && (
@@ -106,12 +135,19 @@ export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs, blo
           {logs.map((log) => (
             <li key={log.id} className="flex flex-col gap-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 font-medium text-success">
-                  <CheckCircle2 className="size-3.5" />
-                  {formatLogDate(log.performed_on, today)}
-                </span>
+                {log.skipped ? (
+                  <span className="flex items-center gap-1.5 font-medium text-muted-foreground">
+                    <SkipForward className="size-3.5" />
+                    Skipped · {formatLogDate(log.performed_on, today)}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 font-medium text-success">
+                    <CheckCircle2 className="size-3.5" />
+                    {formatLogDate(log.performed_on, today)}
+                  </span>
+                )}
                 <div className="flex items-center gap-2.5">
-                  {blocks.length > 0 && (
+                  {!log.skipped && blocks.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setExpandedId((v) => (v === log.id ? null : log.id))}
@@ -159,7 +195,7 @@ export function DayLogControl({ trainingDayId, athleteId, logs: initialLogs, blo
                 log.note && <p className="pl-5 text-muted-foreground">{log.note}</p>
               )}
 
-              {expandedId === log.id && blocks.length > 0 && (
+              {!log.skipped && expandedId === log.id && blocks.length > 0 && (
                 <div className="pl-0.5 pt-1">
                   <SessionPerformanceEditor
                     sessionLogId={log.id}

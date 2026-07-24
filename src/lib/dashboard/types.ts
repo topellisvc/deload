@@ -57,5 +57,5 @@ export interface DashboardStats {
  * emitted today, since those are the only ones backed by real data.
  */
 export type ActivityEvent =
-  | { type: "session_log"; id: string; occurredAt: string; dayLabel: string; programName: string }
+  | { type: "session_log"; id: string; occurredAt: string; dayLabel: string; programName: string; skipped: boolean }
   | { type: "coach_interaction"; id: string; occurredAt: string; detail: string };

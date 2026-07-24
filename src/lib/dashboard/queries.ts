@@ -80,11 +80,11 @@ export async function getActiveProgramContext(
   const dayIds = flat.map((f) => f.day.id);
   const { data: logsData } = await supabase
     .from("session_logs")
-    .select("training_day_id, performed_on, created_at")
+    .select("training_day_id, performed_on, created_at, skipped")
     .in("training_day_id", dayIds)
     .order("performed_on", { ascending: false })
     .order("created_at", { ascending: false });
-  const logs = (logsData ?? []) as { training_day_id: string; performed_on: string; created_at: string }[];
+  const logs = (logsData ?? []) as { training_day_id: string; performed_on: string; created_at: string; skipped: boolean }[];
 
   const today = todayDateString();
   const mostRecentLog = logs[0] ?? null;
@@ -96,10 +96,14 @@ export async function getActiveProgramContext(
   // after whatever was last logged, or day 1 of week 1 if nothing has ever
   // been logged. Clamped to the last day once the program's fully worked
   // through, rather than pointing past the end.
+  //
+  // A *skipped* log never counts as "stay put, completed today" — the whole
+  // point of skipping is to move on right now, not to wait for the
+  // calendar date to change (migration 0015).
   let todayIndex: number;
   let completedToday = false;
   let completedAt: string | null = null;
-  if (mostRecentLog && mostRecentLog.performed_on === today) {
+  if (mostRecentLog && mostRecentLog.performed_on === today && !mostRecentLog.skipped) {
     todayIndex = mostRecentIndex;
     completedToday = true;
     completedAt = mostRecentLog.created_at;
@@ -122,8 +126,13 @@ export async function getActiveProgramContext(
       }
     : null;
 
+  // Skipped days are deliberately excluded from both % figures below — a
+  // skip means "didn't train," so it shouldn't inflate completion or
+  // consistency the way an actual logged session does.
+  const trainedLogs = logs.filter((l) => !l.skipped);
+
   const nonRestDayIds = new Set(flat.filter((f) => !f.day.is_rest_day).map((f) => f.day.id));
-  const distinctLoggedNonRest = new Set(logs.map((l) => l.training_day_id).filter((id) => nonRestDayIds.has(id)));
+  const distinctLoggedNonRest = new Set(trainedLogs.map((l) => l.training_day_id).filter((id) => nonRestDayIds.has(id)));
   const completionPercent =
     nonRestDayIds.size > 0 ? Math.round((distinctLoggedNonRest.size / nonRestDayIds.size) * 100) : null;
 
@@ -137,7 +146,7 @@ export async function getActiveProgramContext(
     const expectedLast28Days = avgNonRestPerWeek * 4;
     const cutoff28 = shiftDate(today, -28);
     const loggedLast28Days = new Set(
-      logs.filter((l) => l.performed_on >= cutoff28 && nonRestDayIds.has(l.training_day_id)).map((l) => l.training_day_id)
+      trainedLogs.filter((l) => l.performed_on >= cutoff28 && nonRestDayIds.has(l.training_day_id)).map((l) => l.training_day_id)
     ).size;
     consistencyPercent = expectedLast28Days > 0 ? Math.min(100, Math.round((loggedLast28Days / expectedLast28Days) * 100)) : null;
   }
@@ -192,11 +201,12 @@ export async function getRecentSessionActivity(
 ): Promise<{ sessionsLast14Days: number; sessionsPrevious14Days: number; daysSinceLastSession: number | null }> {
   const { data } = await supabase
     .from("session_logs")
-    .select("performed_on")
+    .select("performed_on, skipped")
     .eq("athlete_id", userId)
     .order("performed_on", { ascending: false })
     .limit(60);
-  const dates = ((data ?? []) as { performed_on: string }[]).map((d) => d.performed_on);
+  // Skipped days shouldn't count as training activity for these insights.
+  const dates = ((data ?? []) as { performed_on: string; skipped: boolean }[]).filter((d) => !d.skipped).map((d) => d.performed_on);
   if (dates.length === 0) {
     return { sessionsLast14Days: 0, sessionsPrevious14Days: 0, daysSinceLastSession: null };
   }
@@ -225,12 +235,12 @@ export async function getRecentSessionActivity(
 export async function getRecentActivity(supabase: SupabaseClient, userId: string): Promise<ActivityEvent[]> {
   const { data: logsData } = await supabase
     .from("session_logs")
-    .select("id, training_day_id, performed_on, created_at")
+    .select("id, training_day_id, performed_on, created_at, skipped")
     .eq("athlete_id", userId)
     .order("performed_on", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(8);
-  const logs = (logsData ?? []) as { id: string; training_day_id: string; performed_on: string; created_at: string }[];
+  const logs = (logsData ?? []) as { id: string; training_day_id: string; performed_on: string; created_at: string; skipped: boolean }[];
 
   const events: ActivityEvent[] = [];
 
@@ -265,6 +275,7 @@ export async function getRecentActivity(supabase: SupabaseClient, userId: string
         occurredAt: log.created_at,
         dayLabel: day?.label || `Day ${day?.position ?? "?"}`,
         programName: program?.name ?? "a program",
+        skipped: log.skipped,
       });
     }
   }

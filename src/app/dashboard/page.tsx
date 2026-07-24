@@ -79,7 +79,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-12">
-      <HeroSection displayName={profile.display_name} email={user.email ?? ""} activeContext={activeContext} />
+      <HeroSection displayName={profile.display_name} email={user.email ?? ""} athleteId={user.id} activeContext={activeContext} />
 
       <DashboardSnapshot stats={stats} />
 

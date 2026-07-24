@@ -249,6 +249,11 @@ export interface SessionLog {
   athlete_id: string;
   performed_on: string;
   note: string | null;
+  /** True when this row records a deliberate skip ("move on to the next
+   * day") rather than a completed session — see migration 0015. Excluded
+   * from completion %, consistency %, and streak calculations, but still
+   * used to advance which training day counts as "today". */
+  skipped: boolean;
   created_at: string;
 }
 

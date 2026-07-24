@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarClock, Clock3, Dumbbell, UserRound } from "lucide-react";
+import { CalendarClock, Clock3, Dumbbell, SkipForward, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { formatEstimatedDuration } from "@/lib/training/estimate-duration";
@@ -18,6 +18,8 @@ interface WorkoutOverviewScreenProps {
   blocks: BlockRow[];
   onBegin: () => void;
   starting: boolean;
+  onSkip: () => void;
+  skipping: boolean;
 }
 
 /**
@@ -40,6 +42,8 @@ export function WorkoutOverviewScreen({
   blocks,
   onBegin,
   starting,
+  onSkip,
+  skipping,
 }: WorkoutOverviewScreenProps) {
   const coachNotes = blocks
     .flatMap((b) => b.exercises)
@@ -97,14 +101,20 @@ export function WorkoutOverviewScreen({
       )}
 
       <div className="flex flex-col gap-2.5">
-        <Button size="lg" onClick={onBegin} disabled={starting} className="h-14 text-base">
+        <Button size="lg" onClick={onBegin} disabled={starting || skipping} className="h-14 text-base">
           {starting ? "Starting…" : "Begin Workout"}
         </Button>
-        <Link href={`/programs/${programId}`}>
-          <Button variant="ghost" size="lg" className="w-full">
-            Cancel
+        <div className="flex items-center gap-2.5">
+          <Link href={`/programs/${programId}`} className="flex-1">
+            <Button variant="ghost" size="lg" className="w-full">
+              Cancel
+            </Button>
+          </Link>
+          <Button variant="ghost" size="lg" disabled={starting || skipping} onClick={onSkip} className="flex-1 text-muted-foreground">
+            <SkipForward className="size-4" />
+            {skipping ? "Skipping…" : "Skip Workout"}
           </Button>
-        </Link>
+        </div>
       </div>
     </div>
   );

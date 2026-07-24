@@ -96,7 +96,7 @@ export async function getMyStats(
     supabase.from("programs").select("id", { count: "exact", head: true }).eq("owner_id", userId),
     supabase
       .from("session_logs")
-      .select("performed_on")
+      .select("performed_on, skipped")
       .eq("athlete_id", userId)
       .order("performed_on", { ascending: false })
       .limit(400),
@@ -109,7 +109,11 @@ export async function getMyStats(
       : Promise.resolve({ count: null }),
   ]);
 
-  const logDates = ((logsResult.data ?? []) as { performed_on: string }[]).map((l) => l.performed_on);
+  // Skipped days aren't training — excluded here so streak, session count,
+  // and weeks-active all only ever reflect what was actually done.
+  const logDates = ((logsResult.data ?? []) as { performed_on: string; skipped: boolean }[])
+    .filter((l) => !l.skipped)
+    .map((l) => l.performed_on);
   const distinctDatesDesc = Array.from(new Set(logDates)).sort().reverse();
   const totalWeeksActive = new Set(distinctDatesDesc.map(weekBucket)).size;
 
