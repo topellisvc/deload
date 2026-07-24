@@ -49,3 +49,16 @@ export function exerciseNamesForCategory(category: ExerciseCategory): readonly s
   if (category === "running") return RUNNING_EXERCISE_NAMES;
   return CARDIO_EXERCISE_NAMES;
 }
+
+const STRENGTH_ID_TO_NAME = new Map(EXERCISES.map((e) => [e.id, e.name]));
+
+/** Resolves a block_exercise's display name — exercise_id looks up the
+ * strength catalog (lib/workout-generator/exercises.ts), custom_name is
+ * used verbatim otherwise. Extracted from what used to be a private map
+ * inside ExercisePicker so every place that renders an exercise's name
+ * (the program builder, workout logging, Training Mode) resolves it the
+ * same way instead of a couple of call sites showing the raw id. */
+export function getExerciseDisplayName(exercise: { exercise_id: string | null; custom_name: string | null }): string {
+  if (exercise.exercise_id) return STRENGTH_ID_TO_NAME.get(exercise.exercise_id) ?? exercise.custom_name ?? exercise.exercise_id;
+  return exercise.custom_name ?? "Exercise";
+}

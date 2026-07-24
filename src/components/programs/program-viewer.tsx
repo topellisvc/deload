@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ChevronDown, Pencil, PersonStanding, Repeat, Send, UserRound } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Pencil, PersonStanding, PlayCircle, Repeat, Send, UserRound } from "lucide-react";
 import type { BlockRow, ProgramDiscipline, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient, LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
+import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { SetDetails } from "@/components/programs/set-details";
 import { SessionPerformanceEditor } from "@/components/programs/session-performance-editor";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
@@ -237,7 +238,7 @@ export function ProgramViewer({
                                 <div className="flex items-center gap-1.5">
                                   {category !== "strength" && <PersonStanding className="size-3.5 shrink-0 text-muted-foreground" />}
                                   <span className="text-sm font-medium text-foreground">
-                                    {exercise.custom_name || exercise.exercise_id}
+                                    {getExerciseDisplayName(exercise)}
                                   </span>
                                 </div>
                                 <ul className="flex flex-col gap-1 pl-0.5">
@@ -254,6 +255,15 @@ export function ProgramViewer({
                       );
                     })}
                   </div>
+                )}
+
+                {!day.is_rest_day && isAthlete && day.blocks.length > 0 && (
+                  <Link href={`/train/${day.id}`}>
+                    <Button size="sm" className="w-full">
+                      <PlayCircle className="size-3.5" />
+                      Start Workout
+                    </Button>
+                  </Link>
                 )}
 
                 {!day.is_rest_day && isAthlete && (

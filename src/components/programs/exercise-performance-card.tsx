@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plus, PersonStanding } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { createLoggedSet, deleteLoggedSet, updateLoggedSet } from "@/lib/logging/mutations";
+import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { getPrescriptionTypeDef, suggestedWeightFromPercent1RM } from "@/lib/programs/prescription-types";
 import type { BlockExerciseRow, LoggedSet } from "@/lib/programs/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
@@ -125,7 +126,7 @@ export function ExercisePerformanceCard({
     <div className="flex flex-col gap-2.5 rounded-lg border border-border bg-background p-3.5">
       <div className="flex items-center gap-1.5">
         {category !== "strength" && <PersonStanding className="size-3.5 shrink-0 text-muted-foreground" />}
-        <span className="text-sm font-medium text-foreground">{exercise.custom_name || exercise.exercise_id}</span>
+        <span className="text-sm font-medium text-foreground">{getExerciseDisplayName(exercise)}</span>
       </div>
 
       <div className="flex flex-col gap-1">

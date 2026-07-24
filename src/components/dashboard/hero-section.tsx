@@ -82,7 +82,7 @@ function WorkoutHero({ context }: { context: ActiveProgramContext }) {
           </span>
         </div>
       ) : (
-        <Link href={`/programs/${program.id}`} className="w-fit">
+        <Link href={`/train/${today.day.id}`} className="w-fit">
           <Button>Start workout</Button>
         </Link>
       )}

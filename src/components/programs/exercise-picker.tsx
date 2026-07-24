@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { EXERCISES } from "@/lib/workout-generator/exercises";
-import { exerciseNamesForCategory } from "@/lib/programs/exercise-catalog";
+import { exerciseNamesForCategory, getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import type { ExerciseCategory } from "@/lib/programs/types";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,6 @@ interface ExercisePickerProps {
 // are suggestions only and always land in custom_name, same as any
 // strength name typed that isn't in EXERCISES either.
 const STRENGTH_NAME_TO_ID = new Map(EXERCISES.map((e) => [e.name.toLowerCase(), e.id]));
-const STRENGTH_ID_TO_NAME = new Map(EXERCISES.map((e) => [e.id, e.name]));
 
 /**
  * Free-text exercise name field backed by a <datalist> of category-relevant
@@ -36,7 +35,7 @@ export function ExercisePicker({ category, exerciseId, customName, onChange, cla
   const suggestions = useMemo(() => exerciseNamesForCategory(category), [category]);
 
   const initialLabel = useMemo(() => {
-    if (exerciseId) return STRENGTH_ID_TO_NAME.get(exerciseId) ?? customName ?? "";
+    if (exerciseId) return getExerciseDisplayName({ exercise_id: exerciseId, custom_name: customName });
     return customName ?? "";
   }, [exerciseId, customName]);
   const [text, setText] = useState(initialLabel);

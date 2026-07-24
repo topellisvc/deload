@@ -2,15 +2,17 @@ import Link from "next/link";
 import { CalendarX2, ClipboardCheck, Dumbbell, Moon, PersonStanding, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
+import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { cn } from "@/lib/utils";
 import type { ActiveProgramContext } from "@/lib/dashboard/types";
 
 /**
  * The full exercise list for today, not just the Hero's teaser — reuses
  * the same SetDetails formatting ProgramViewer uses so a set row reads
- * identically everywhere in the app. "Open workout" / "View workout" both
- * link to the program page itself; there's no separate workout-player
- * route yet, so that's the most useful place to send someone.
+ * identically everywhere in the app. "Open workout" launches Training Mode
+ * (the guided execution flow); "View workout" (once today's already logged)
+ * still goes to the program page — there's nothing left to execute, just
+ * the plan/history to look back at.
  */
 export function TodayWorkoutSection({ context }: { context: ActiveProgramContext | null }) {
   if (!context || !context.today) {
@@ -48,7 +50,7 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
           <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Today&apos;s workout</h2>
           <p className="mt-1 text-lg font-semibold text-foreground">{today.day.label || `Day ${today.day.position}`}</p>
         </div>
-        <Link href={`/programs/${program.id}`}>
+        <Link href={today.completedToday ? `/programs/${program.id}` : `/train/${today.day.id}`}>
           <Button variant={today.completedToday ? "outline" : "primary"} size="sm">
             {today.completedToday ? "View workout" : "Open workout"}
           </Button>
@@ -99,7 +101,7 @@ export function TodayWorkoutSection({ context }: { context: ActiveProgramContext
                       <div className="flex items-center gap-1.5">
                         {category !== "strength" && <PersonStanding className="size-3.5 shrink-0 text-muted-foreground" />}
                         <span className="text-sm font-medium text-foreground">
-                          {exercise.custom_name || exercise.exercise_id}
+                          {getExerciseDisplayName(exercise)}
                         </span>
                       </div>
                       <ul className="flex flex-col gap-1 pl-0.5">
