@@ -4,6 +4,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ToolCard } from "@/components/tool-card";
 import { HomeRedirect } from "@/components/home-redirect";
+import { StarterProgramPicker } from "@/components/programs/starter-program-picker";
 import { TOOLS } from "@/lib/tools-registry";
 
 const FEATURED_TOOL_SLUGS = ["one-rep-max", "running-pace-calculator", "quick-workout"];
@@ -91,6 +92,18 @@ export default function HomePage() {
             );
           })}
         </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-6 pb-24">
+        <div className="mb-6 flex flex-col gap-1.5">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Not sure where to start?
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Pick a 4-week program and we&rsquo;ll set it up for you — sign in once and it&rsquo;s ready to go.
+          </p>
+        </div>
+        <StarterProgramPicker mode="redirect" />
       </section>
 
       <section className="mx-auto max-w-6xl px-6 pb-24">

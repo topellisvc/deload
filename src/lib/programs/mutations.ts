@@ -13,6 +13,7 @@ import type {
 } from "@/lib/programs/types";
 import { defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { getProgramTree } from "@/lib/programs/queries";
+import type { StarterProgramTemplate } from "@/lib/programs/starter-templates";
 
 /**
  * Every row in the program tree gets its id generated here on the client
@@ -217,6 +218,65 @@ export async function cloneProgram(
     : { program: null, error: "Program was cloned, but couldn't be loaded back." };
 }
 
+/**
+ * Instantiates one of the starter templates (lib/programs/starter-templates.ts)
+ * into a brand-new, real program for this user — the "pick a program to get
+ * started" flow on the homepage/dashboard. Week 1 is materialized straight
+ * from the template via addWeek's existing clone path (it already generates
+ * fresh ids for every day/block/exercise/set regardless of what's on the
+ * source object — recordProvenance:false just keeps the template's
+ * placeholder id out of based_on_week_id). Every subsequent week reuses the
+ * exact same "copy week with progression" mechanism the builder's own UI
+ * uses for "duplicate week with progression", just driven by the template's
+ * own progression curve instead of a coach's manual choice each time.
+ */
+export async function createProgramFromTemplate(
+  supabase: SupabaseClient,
+  params: { template: StarterProgramTemplate; userId: string; athleteId?: string }
+): Promise<{ program: ProgramTree | null; error: string | null }> {
+  const { template } = params;
+  const programId = newId();
+  const athleteId = params.athleteId ?? params.userId;
+
+  const { error: programError } = await supabase.from("programs").insert({
+    id: programId,
+    owner_id: params.userId,
+    athlete_id: athleteId,
+    name: template.name,
+    discipline: template.discipline,
+  });
+  if (programError) return { program: null, error: programError.message };
+
+  const { week: week1, error: week1Error } = await addWeek(supabase, {
+    programId,
+    position: 1,
+    dayTemplate: [],
+    sourceWeek: template.week1,
+    recordProvenance: false,
+  });
+  if (week1Error || !week1) return { program: null, error: week1Error ?? "Couldn't create week 1." };
+
+  // Sequential, not Promise.all: each week's addWeek call depends on nothing
+  // from the others, but this only ever runs 2-3 times for a one-off
+  // "start this program" action — simplicity over shaving round trips (same
+  // tradeoff cloneProgram makes above).
+  for (let i = 0; i < template.progressionSteps.length; i++) {
+    const { error } = await addWeek(supabase, {
+      programId,
+      position: i + 2,
+      dayTemplate: [],
+      sourceWeek: week1,
+      progressionPercent: template.progressionSteps[i],
+    });
+    if (error) return { program: null, error };
+  }
+
+  const program = await getProgramTree(supabase, programId);
+  return program
+    ? { program, error: null }
+    : { program: null, error: "Program was created, but couldn't be loaded back." };
+}
+
 export async function updateProgram(
   supabase: SupabaseClient,
   programId: string,
@@ -322,6 +382,12 @@ export async function addWeek(
     dayTemplate: { label: string | null; is_rest_day: boolean }[];
     sourceWeek?: WeekRow;
     progressionPercent?: number;
+    /** False when sourceWeek isn't a real, persisted row — e.g. a starter
+     * program template (see createProgramFromTemplate), whose placeholder
+     * .id would otherwise violate program_weeks.based_on_week_id's foreign
+     * key. Defaults to true, preserving every existing call site's
+     * behavior (recording real "copied from" provenance). */
+    recordProvenance?: boolean;
   }
 ): Promise<{ week: WeekRow | null; error: string | null }> {
   const weekId = newId();
@@ -332,7 +398,7 @@ export async function addWeek(
     program_id: params.programId,
     position: params.position,
     label,
-    based_on_week_id: params.sourceWeek?.id ?? null,
+    based_on_week_id: params.recordProvenance !== false ? (params.sourceWeek?.id ?? null) : null,
   });
   if (weekError) return { week: null, error: weekError.message };
 
@@ -436,7 +502,7 @@ export async function addWeek(
       program_id: params.programId,
       position: params.position,
       label,
-      based_on_week_id: params.sourceWeek?.id ?? null,
+      based_on_week_id: params.recordProvenance !== false ? (params.sourceWeek?.id ?? null) : null,
       created_at: new Date().toISOString(),
       days,
     },

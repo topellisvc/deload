@@ -10,6 +10,8 @@ import {
   getRecentSessionActivity,
 } from "@/lib/dashboard/queries";
 import { computeInsights } from "@/lib/dashboard/insights";
+import { createProgramFromTemplate } from "@/lib/programs/mutations";
+import { getStarterTemplate } from "@/lib/programs/starter-templates";
 import { HeroSection } from "@/components/dashboard/hero-section";
 import { DashboardSnapshot } from "@/components/dashboard/dashboard-snapshot";
 import { TodayWorkoutSection } from "@/components/dashboard/today-workout-section";
@@ -38,8 +40,13 @@ export default async function DashboardPage({
 }: {
   /** `?day=<training_day_id>` — set by the Hero's prev/next browse arrows
    * (see resolveViewedDay usage in HeroSection/getActiveProgramContext).
-   * Absent for the normal "today" view. */
-  searchParams: Promise<{ day?: string }>;
+   * Absent for the normal "today" view.
+   * `?start=<template-slug>` — set by StarterProgramPicker's sign-in
+   * redirect (mode="redirect" on the signed-out homepage): a visitor
+   * picked a starter program before they had an account, so it's created
+   * here once they land back signed in, then this redirects straight to
+   * it rather than rendering the dashboard at all. */
+  searchParams: Promise<{ day?: string; start?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -50,7 +57,18 @@ export default async function DashboardPage({
     redirect("/sign-in?redirect_to=/dashboard");
   }
 
-  const { day: viewedDayId } = await searchParams;
+  const { day: viewedDayId, start: startSlug } = await searchParams;
+
+  if (startSlug) {
+    const template = getStarterTemplate(startSlug);
+    if (template) {
+      const { program } = await createProgramFromTemplate(supabase, { template, userId: user.id });
+      // Falls through to the normal dashboard render on failure rather than
+      // getting stuck — the picker is still right there in EmptyHero below
+      // if this didn't work.
+      if (program) redirect(`/programs/${program.id}`);
+    }
+  }
 
   // profile and activeContext are independent of each other (both only
   // need user.id) but both feed the Promise.all below (getDashboardStats

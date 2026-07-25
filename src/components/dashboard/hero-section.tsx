@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CalendarClock, ChevronLeft, ChevronRight, Dumbbell, Moon, PlusCircle, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkipWorkoutButton } from "@/components/dashboard/skip-workout-button";
+import { StarterProgramPicker } from "@/components/programs/starter-program-picker";
 import { formatLogTime } from "@/lib/dates";
 import type { ActiveProgramContext } from "@/lib/dashboard/types";
 
@@ -33,7 +34,7 @@ export function HeroSection({ displayName, email, athleteId, activeContext }: He
       </p>
 
       {!activeContext ? (
-        <EmptyHero />
+        <EmptyHero athleteId={athleteId} />
       ) : !activeContext.today ? (
         <NoDaysHero programName={activeContext.program.name} />
       ) : activeContext.completionPercent === 100 && activeContext.today.isRealToday ? (
@@ -213,23 +214,29 @@ function NoDaysHero({ programName }: { programName: string }) {
   );
 }
 
-function EmptyHero() {
+function EmptyHero({ athleteId }: { athleteId: string }) {
   return (
-    <div className="mt-4 flex flex-col gap-3">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">No active program yet</h1>
-      <p className="text-sm text-muted-foreground">
-        Pick a program to follow and it&apos;ll drive your whole dashboard — today&apos;s workout, progress, all of it.
-      </p>
-      <div className="flex flex-wrap gap-3">
-        <Link href="/programs">
-          <Button>
-            <PlusCircle className="size-4" />
-            Create a program
-          </Button>
-        </Link>
-        <Link href="/programs">
-          <Button variant="outline">Choose an existing one</Button>
-        </Link>
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">No active program yet</h1>
+        <p className="text-sm text-muted-foreground">
+          Pick a program to follow and it&apos;ll drive your whole dashboard — today&apos;s workout, progress, all of it.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/programs">
+            <Button>
+              <PlusCircle className="size-4" />
+              Create a program
+            </Button>
+          </Link>
+          <Link href="/programs">
+            <Button variant="outline">Choose an existing one</Button>
+          </Link>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2 border-t border-border pt-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Or start with a ready-made program</p>
+        <StarterProgramPicker mode="create" userId={athleteId} />
       </div>
     </div>
   );
