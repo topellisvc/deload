@@ -85,6 +85,26 @@ export interface Message {
   created_at: string;
 }
 
+export type NotificationType = "program_assigned" | "invite_accepted";
+
+/**
+ * One in-app notification (migration 0019). `link` is an app-relative path
+ * the bell navigates to when clicked ('/programs/<id>', '/coaching'); null
+ * for a type that has nothing to point at. Named `AppNotification` (not
+ * `Notification`) to avoid colliding with the browser's own global.
+ */
+export interface AppNotification {
+  id: string;
+  recipient_id: string;
+  actor_id: string | null;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  link: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
 export interface SavedResult {
   id: string;
   user_id: string;

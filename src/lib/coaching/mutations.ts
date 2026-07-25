@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/supabase/types";
+import { notifyInviteAccepted } from "@/lib/notifications/mutations";
 
 function authCallbackUrl(redirectTo: string): string {
   const url = new URL("/auth/callback", window.location.origin);
@@ -112,12 +113,29 @@ export async function acceptInvite(
   supabase: SupabaseClient,
   params: { coachClientId: string; userId: string }
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("coach_clients")
     .update({ client_id: params.userId, status: "active", accepted_at: new Date().toISOString() })
     .eq("id", params.coachClientId)
-    .is("client_id", null);
-  return { error: friendlyError(error, "Couldn't accept this invite. Try again.") };
+    .is("client_id", null)
+    .select("coach_id, coach_email, client_email")
+    .maybeSingle<{ coach_id: string; coach_email: string; client_email: string }>();
+  if (error) return { error: friendlyError(error, "Couldn't accept this invite. Try again.") };
+
+  // Notifies the coach — see lib/notifications/mutations.ts's
+  // notifyInviteAccepted. client_email comes straight off this same row
+  // (it's the email the invite was addressed to, i.e. this accepting
+  // user's own email) rather than a second lookup.
+  if (data) {
+    await notifyInviteAccepted(supabase, {
+      coachId: data.coach_id,
+      coachEmail: data.coach_email,
+      clientId: params.userId,
+      clientEmail: data.client_email,
+    });
+  }
+
+  return { error: null };
 }
 
 /**

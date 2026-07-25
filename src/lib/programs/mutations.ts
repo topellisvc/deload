@@ -14,6 +14,7 @@ import type {
 import { defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { getProgramTree } from "@/lib/programs/queries";
 import type { StarterProgramTemplate } from "@/lib/programs/starter-templates";
+import { notifyProgramAssigned } from "@/lib/notifications/mutations";
 
 /**
  * Every row in the program tree gets its id generated here on the client
@@ -168,6 +169,19 @@ export async function createProgram(
     weeks: [{ id: weekId, program_id: programId, position: 1, label: "Week 1", based_on_week_id: null, created_at: now, days }],
   };
 
+  // Only a real assignment to someone else counts as "a coach sent a
+  // program" — self-programming (the default, athleteId omitted) never
+  // notifies yourself. See lib/notifications/mutations.ts for why the
+  // athlete's email is looked up from coach_clients rather than passed in.
+  if (athleteId !== params.userId) {
+    await notifyProgramAssigned(supabase, {
+      coachId: params.userId,
+      athleteId,
+      programId,
+      programName: params.name,
+    });
+  }
+
   return { program, error: null };
 }
 
@@ -213,9 +227,22 @@ export async function cloneProgram(
   }
 
   const cloned = await getProgramTree(supabase, programId);
-  return cloned
-    ? { program: cloned, error: null }
-    : { program: null, error: "Program was cloned, but couldn't be loaded back." };
+  if (!cloned) {
+    return { program: null, error: "Program was cloned, but couldn't be loaded back." };
+  }
+
+  // Same "only notify a real assignment to someone else" rule as
+  // createProgram — cloning a copy "for Myself" never notifies yourself.
+  if (params.athleteId !== params.ownerId) {
+    await notifyProgramAssigned(supabase, {
+      coachId: params.ownerId,
+      athleteId: params.athleteId,
+      programId,
+      programName: params.name,
+    });
+  }
+
+  return { program: cloned, error: null };
 }
 
 /**

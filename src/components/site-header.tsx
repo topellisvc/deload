@@ -7,6 +7,7 @@ import { Dumbbell, Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthStatus } from "@/components/auth/auth-status";
 import { AuthNavLink } from "@/components/auth-nav-link";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { isActivePath, navLinkActiveClassName, navLinkClassName } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
@@ -51,12 +52,16 @@ export function SiteHeader() {
             Tools
           </Link>
           <AuthNavLink href="/profile" label="Profile" />
+          <NotificationBell />
           <AuthStatus />
           <ThemeToggle />
         </nav>
 
-        {/* Mobile: theme toggle stays reachable without opening the menu, hamburger reveals everything else. */}
+        {/* Mobile: theme toggle and the notification bell stay reachable
+            without opening the menu (the bell renders nothing when signed
+            out, same as AuthNavLink), hamburger reveals everything else. */}
         <div className="flex items-center gap-1 lg:hidden">
+          <NotificationBell />
           <ThemeToggle />
           <button
             type="button"

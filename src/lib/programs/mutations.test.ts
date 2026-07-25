@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createProgramFromTemplate } from "./mutations";
+import { cloneProgram, createProgram, createProgramFromTemplate } from "./mutations";
 import { getProgramTree } from "./queries";
 import { STARTER_PROGRAM_TEMPLATES } from "./starter-templates";
 import type { ProgramTree } from "./types";
@@ -7,6 +7,12 @@ import type { ProgramTree } from "./types";
 vi.mock("./queries", () => ({
   getProgramTree: vi.fn(),
 }));
+
+vi.mock("@/lib/notifications/mutations", () => ({
+  notifyProgramAssigned: vi.fn(),
+}));
+
+import { notifyProgramAssigned } from "@/lib/notifications/mutations";
 
 /** Captures every row passed to insert(), per table, in call order — real
  * enough to verify createProgramFromTemplate/addWeek's actual behavior
@@ -104,5 +110,95 @@ describe("createProgramFromTemplate", () => {
 
     expect(result.program).toBeNull();
     expect(result.error).toBeTruthy();
+  });
+});
+
+describe("createProgram notification wiring", () => {
+  beforeEach(() => {
+    vi.mocked(notifyProgramAssigned).mockReset();
+  });
+
+  it("notifies the athlete when the program is assigned to someone other than the creator", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    await createProgram(supabase as never, {
+      userId: "coach-1",
+      name: "Off-season block",
+      discipline: "resistance",
+      dayLabels: ["Day 1"],
+      athleteId: "athlete-1",
+    });
+
+    expect(notifyProgramAssigned).toHaveBeenCalledWith(supabase, {
+      coachId: "coach-1",
+      athleteId: "athlete-1",
+      programId: expect.any(String),
+      programName: "Off-season block",
+    });
+  });
+
+  it("does not notify anyone for ordinary self-programming (no athleteId given)", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    await createProgram(supabase as never, {
+      userId: "user-1",
+      name: "My own plan",
+      discipline: "resistance",
+      dayLabels: ["Day 1"],
+    });
+
+    expect(notifyProgramAssigned).not.toHaveBeenCalled();
+  });
+});
+
+describe("cloneProgram notification wiring", () => {
+  const sourceProgram: ProgramTree = {
+    id: "prog-source",
+    owner_id: "coach-1",
+    athlete_id: "coach-1",
+    name: "Source",
+    discipline: "resistance",
+    is_active: false,
+    removed_by_athlete_at: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    weeks: [],
+  };
+
+  beforeEach(() => {
+    vi.mocked(notifyProgramAssigned).mockReset();
+    vi.mocked(getProgramTree).mockReset();
+    vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-clone" } as unknown as ProgramTree);
+  });
+
+  it("notifies the athlete when a copy is sent to a client", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    await cloneProgram(supabase as never, {
+      sourceProgram,
+      ownerId: "coach-1",
+      athleteId: "athlete-1",
+      name: "Source (copy)",
+    });
+
+    expect(notifyProgramAssigned).toHaveBeenCalledWith(supabase, {
+      coachId: "coach-1",
+      athleteId: "athlete-1",
+      programId: expect.any(String),
+      programName: "Source (copy)",
+    });
+  });
+
+  it("does not notify anyone when copying a program for yourself", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    await cloneProgram(supabase as never, {
+      sourceProgram,
+      ownerId: "coach-1",
+      athleteId: "coach-1",
+      name: "Source (copy)",
+    });
+
+    expect(notifyProgramAssigned).not.toHaveBeenCalled();
   });
 });
