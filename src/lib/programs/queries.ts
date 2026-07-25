@@ -12,6 +12,7 @@ import type {
   BlockRow,
   DayRow,
   ProgramSummary,
+  ProgramTemplateRow,
   ProgramTree,
   WeekRow,
 } from "@/lib/programs/types";
@@ -263,6 +264,21 @@ export async function getActiveProgram(
   const activeId = await getActiveProgramId(supabase, userId);
   if (!activeId) return null;
   return getProgramTree(supabase, activeId);
+}
+
+// ============================================================
+// Personal program templates (migration 0020)
+// ============================================================
+
+/** This user's own saved templates, newest first — RLS already restricts
+ * this to templates they own, so no extra filtering needed beyond that. */
+export async function getMyProgramTemplates(supabase: SupabaseClient, ownerId: string): Promise<ProgramTemplateRow[]> {
+  const { data } = await supabase
+    .from("program_templates")
+    .select("*")
+    .eq("owner_id", ownerId)
+    .order("created_at", { ascending: false });
+  return (data ?? []) as ProgramTemplateRow[];
 }
 
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {

@@ -7,6 +7,7 @@ import type {
   ExerciseCategory,
   PrescriptionType,
   ProgramDiscipline,
+  ProgramTemplateRow,
   ProgramTree,
   SetRow,
   WeekRow,
@@ -294,6 +295,91 @@ export async function createProgramFromTemplate(
       dayTemplate: [],
       sourceWeek: week1,
       progressionPercent: template.progressionSteps[i],
+    });
+    if (error) return { program: null, error };
+  }
+
+  const program = await getProgramTree(supabase, programId);
+  return program
+    ? { program, error: null }
+    : { program: null, error: "Program was created, but couldn't be loaded back." };
+}
+
+// ============================================================
+// Personal program templates (migration 0020) — "save as template" /
+// coach tooling. See ProgramTemplateRow's doc comment (types.ts) for why
+// this is a single jsonb snapshot rather than a parallel set of relational
+// tables.
+// ============================================================
+
+/**
+ * Snapshots a program's current weeks into a reusable template row. Just
+ * the weeks/days/blocks/exercises/sets — not the program's own id,
+ * owner/athlete, active flag, or timestamps, none of which mean anything
+ * once this becomes a template someone reuses later for a different
+ * person entirely.
+ */
+export async function saveProgramAsTemplate(
+  supabase: SupabaseClient,
+  params: { program: ProgramTree; ownerId: string; name: string }
+): Promise<{ template: ProgramTemplateRow | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from("program_templates")
+    .insert({
+      owner_id: params.ownerId,
+      name: params.name,
+      discipline: params.program.discipline,
+      template_data: { weeks: params.program.weeks },
+    })
+    .select()
+    .single<ProgramTemplateRow>();
+
+  if (error) return { template: null, error: "Couldn't save this as a template. Try again." };
+  return { template: data, error: null };
+}
+
+export async function deleteProgramTemplate(supabase: SupabaseClient, templateId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("program_templates").delete().eq("id", templateId);
+  return { error: error ? "Couldn't delete this template. Try again." : null };
+}
+
+/**
+ * Materializes a saved template into a brand-new program — functionally
+ * identical to cloneProgram's per-week addWeek loop, just reading from a
+ * stored snapshot instead of a live sibling program. Always
+ * recordProvenance: false: the template's stored week ids point at
+ * whatever program it was originally saved from (which may have since
+ * been edited or deleted), so linking a fresh copy's based_on_week_id back
+ * to them would be a stale, possibly-dangling reference rather than real
+ * provenance — same reasoning as createProgramFromTemplate's starter
+ * templates.
+ */
+export async function createProgramFromSavedTemplate(
+  supabase: SupabaseClient,
+  params: { template: ProgramTemplateRow; userId: string; athleteId?: string }
+): Promise<{ program: ProgramTree | null; error: string | null }> {
+  const { template } = params;
+  const programId = newId();
+  const athleteId = params.athleteId ?? params.userId;
+
+  const { error: programError } = await supabase.from("programs").insert({
+    id: programId,
+    owner_id: params.userId,
+    athlete_id: athleteId,
+    name: template.name,
+    discipline: template.discipline,
+  });
+  if (programError) return { program: null, error: programError.message };
+
+  // Sequential, not Promise.all — same low-frequency-action tradeoff as
+  // cloneProgram/createProgramFromTemplate above.
+  for (const week of template.template_data.weeks) {
+    const { error } = await addWeek(supabase, {
+      programId,
+      position: week.position,
+      dayTemplate: [],
+      sourceWeek: week,
+      recordProvenance: false,
     });
     if (error) return { program: null, error };
   }

@@ -69,3 +69,19 @@ export interface ProgramSummary extends Program {
    * owner_id === athlete_id (self-programmed, the common case). */
   assignmentLabel: string | null;
 }
+
+/**
+ * A personal, reusable program template (migration 0020) — distinct from
+ * the 3 hardcoded starter templates (starter-templates.ts, which aren't
+ * database rows at all). `template_data.weeks` is a `WeekRow[]` snapshot
+ * of whatever program it was saved from, materialized the same way
+ * cloneProgram clones a sibling program: one addWeek call per stored week.
+ */
+export interface ProgramTemplateRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  discipline: ProgramDiscipline;
+  template_data: { weeks: WeekRow[] };
+  created_at: string;
+}

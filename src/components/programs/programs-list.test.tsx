@@ -68,7 +68,7 @@ describe("ProgramsList", () => {
   it("calls deleteProgram and optimistically removes the card when the owner deletes their own program", async () => {
     vi.mocked(deleteProgram).mockResolvedValue({ error: null });
     const user = userEvent.setup();
-    render(<ProgramsList programs={[makeProgram()]} userId="user-1" activeClients={[]} />);
+    render(<ProgramsList programs={[makeProgram()]} userId="user-1" activeClients={[]} templates={[]} />);
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
     const dialog = screen.getByRole("dialog");
@@ -88,6 +88,7 @@ describe("ProgramsList", () => {
         programs={[makeProgram({ owner_id: "coach-1", athlete_id: "user-1", assignmentLabel: "From coach@example.com" })]}
         userId="user-1"
         activeClients={[]}
+        templates={[]}
       />
     );
 
@@ -103,7 +104,7 @@ describe("ProgramsList", () => {
   it("puts the card back and shows the error when the delete mutation fails", async () => {
     vi.mocked(deleteProgram).mockResolvedValue({ error: "Network error" });
     const user = userEvent.setup();
-    render(<ProgramsList programs={[makeProgram()]} userId="user-1" activeClients={[]} />);
+    render(<ProgramsList programs={[makeProgram()]} userId="user-1" activeClients={[]} templates={[]} />);
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
     const dialog = screen.getByRole("dialog");
@@ -124,6 +125,7 @@ describe("ProgramsList", () => {
         ]}
         userId="user-1"
         activeClients={[]}
+        templates={[]}
       />
     );
 
@@ -142,7 +144,7 @@ describe("ProgramsList", () => {
   it("rolls back the optimistic activation and shows the error when setActiveProgram fails", async () => {
     vi.mocked(setActiveProgram).mockResolvedValue({ error: "Network error" });
     const user = userEvent.setup();
-    render(<ProgramsList programs={[makeProgram({ is_active: false })]} userId="user-1" activeClients={[]} />);
+    render(<ProgramsList programs={[makeProgram({ is_active: false })]} userId="user-1" activeClients={[]} templates={[]} />);
 
     await user.click(screen.getByRole("button", { name: /set as active/i }));
 

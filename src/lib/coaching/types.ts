@@ -16,6 +16,13 @@ export interface CoachingClientSummary {
    * they didn't assign (self-programmed, or assigned by another coach),
    * so this is null in those cases rather than a guess. */
   activeProgramName: string | null;
+  /** Same completion/consistency % the athlete's own dashboard shows
+   * (dashboard/queries.ts's getActiveProgramContext), computed here from
+   * the coach's vantage for their active program — null under the exact
+   * same conditions activeProgramName is null (no program this coach owns
+   * is active for this client), not a zero. */
+  completionPercent: number | null;
+  consistencyPercent: number | null;
 }
 
 export interface CoachingDashboardData {

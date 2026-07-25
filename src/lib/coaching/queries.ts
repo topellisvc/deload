@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CoachClient, UserRole } from "@/lib/supabase/types";
 import type { CoachingDashboardData } from "@/lib/coaching/types";
+import { getActiveProgram } from "@/lib/programs/queries";
+import type { DayRow, WeekRow } from "@/lib/programs/types";
 
 /** Local calendar date (not UTC) — same convention as every other file
  * that needs "today" (profile/queries.ts, dashboard/queries.ts, etc). */
@@ -13,6 +15,74 @@ function shiftDate(isoDate: string, deltaDays: number): string {
   const [y, m, d] = isoDate.split("-").map(Number);
   const date = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, (d ?? 1) + deltaDays));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function flattenProgramDays(weeks: WeekRow[]): { day: DayRow }[] {
+  const flat: { day: DayRow }[] = [];
+  for (const week of weeks) {
+    for (const day of week.days) flat.push({ day });
+  }
+  return flat;
+}
+
+/**
+ * Same completion/consistency % math as dashboard/queries.ts's
+ * getActiveProgramContext (whole-program completion, and logged-vs-expected
+ * sessions in the last 28 days) — kept as its own local copy here rather
+ * than a shared import, same convention this file already uses for
+ * todayDateString/shiftDate, to avoid a coaching <-> dashboard import
+ * cycle (dashboard/queries.ts re-exports getCoachingDashboard from here).
+ */
+function computeAdherence(
+  flat: { day: DayRow }[],
+  logs: { training_day_id: string; performed_on: string; skipped: boolean }[],
+  weeksCount: number,
+  today: string
+): { completionPercent: number | null; consistencyPercent: number | null } {
+  const trainedLogs = logs.filter((l) => !l.skipped);
+  const nonRestDayIds = new Set(flat.filter((f) => !f.day.is_rest_day).map((f) => f.day.id));
+  const distinctLoggedNonRest = new Set(trainedLogs.map((l) => l.training_day_id).filter((id) => nonRestDayIds.has(id)));
+  const completionPercent = nonRestDayIds.size > 0 ? Math.round((distinctLoggedNonRest.size / nonRestDayIds.size) * 100) : null;
+
+  let consistencyPercent: number | null = null;
+  if (nonRestDayIds.size > 0) {
+    const avgNonRestPerWeek = nonRestDayIds.size / (weeksCount || 1);
+    const expectedLast28Days = avgNonRestPerWeek * 4;
+    const cutoff28 = shiftDate(today, -28);
+    const loggedLast28Days = new Set(
+      trainedLogs.filter((l) => l.performed_on >= cutoff28 && nonRestDayIds.has(l.training_day_id)).map((l) => l.training_day_id)
+    ).size;
+    consistencyPercent = expectedLast28Days > 0 ? Math.min(100, Math.round((loggedLast28Days / expectedLast28Days) * 100)) : null;
+  }
+  return { completionPercent, consistencyPercent };
+}
+
+/**
+ * Completion/consistency % for one client's active program, from this
+ * coach's vantage — getActiveProgram + session_logs' own RLS naturally
+ * restrict this to a program the calling coach actually owns (same as
+ * getClientLastActivity above), so this returns all-null rather than
+ * throwing when the client's active program (if any) isn't this coach's
+ * to see, exactly mirroring activeProgramName's own null case below.
+ */
+async function getClientAdherence(
+  supabase: SupabaseClient,
+  clientId: string
+): Promise<{ completionPercent: number | null; consistencyPercent: number | null }> {
+  const program = await getActiveProgram(supabase, clientId);
+  if (!program) return { completionPercent: null, consistencyPercent: null };
+
+  const flat = flattenProgramDays(program.weeks);
+  if (flat.length === 0) return { completionPercent: null, consistencyPercent: null };
+
+  const dayIds = flat.map((f) => f.day.id);
+  const { data: logsData } = await supabase
+    .from("session_logs")
+    .select("training_day_id, performed_on, skipped")
+    .in("training_day_id", dayIds);
+  const logs = (logsData ?? []) as { training_day_id: string; performed_on: string; skipped: boolean }[];
+
+  return computeAdherence(flat, logs, program.weeks.length, todayDateString());
 }
 
 /**
@@ -179,19 +249,45 @@ export async function getCoachingDashboard(supabase: SupabaseClient, coachId: st
     activeProgramByClient.set(row.athlete_id, row.name);
   }
 
+  // One getActiveProgram + session_logs round trip per client — real extra
+  // queries, but this only runs for however many active clients one coach
+  // has (a handful, at this app's current scale), and each is independent
+  // of the others, so Promise.all rather than sequential.
+  const adherenceByClient = new Map<string, { completionPercent: number | null; consistencyPercent: number | null }>();
+  await Promise.all(
+    clientIds.map(async (clientId) => {
+      adherenceByClient.set(clientId, await getClientAdherence(supabase, clientId));
+    })
+  );
+
   const attentionCutoff = shiftDate(todayDateString(), -14);
-  const clientSummaries = activeClients.map((c) => {
-    const clientId = c.client_id as string;
-    const lastActivityOn = lastActivityByClient.get(clientId) ?? null;
-    return {
-      id: c.id,
-      clientId,
-      email: c.client_email,
-      lastActivityOn,
-      needsAttention: !lastActivityOn || lastActivityOn < attentionCutoff,
-      activeProgramName: activeProgramByClient.get(clientId) ?? null,
-    };
-  });
+  const clientSummaries = activeClients
+    .map((c) => {
+      const clientId = c.client_id as string;
+      const lastActivityOn = lastActivityByClient.get(clientId) ?? null;
+      const adherence = adherenceByClient.get(clientId) ?? { completionPercent: null, consistencyPercent: null };
+      return {
+        id: c.id,
+        clientId,
+        email: c.client_email,
+        lastActivityOn,
+        needsAttention: !lastActivityOn || lastActivityOn < attentionCutoff,
+        activeProgramName: activeProgramByClient.get(clientId) ?? null,
+        completionPercent: adherence.completionPercent,
+        consistencyPercent: adherence.consistencyPercent,
+      };
+    })
+    // Oldest activity first (never-trained clients, lastActivityOn null,
+    // sort as the very oldest via the "" floor) — needsAttention is
+    // defined as exactly "activity older than the 14-day cutoff, or none
+    // at all," so this single key already surfaces every needs-attention
+    // client before every other one, most-overdue first, with no separate
+    // needsAttention-first tiebreak needed.
+    .sort((a, b) => {
+      const aKey = a.lastActivityOn ?? "";
+      const bKey = b.lastActivityOn ?? "";
+      return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+    });
 
   const recentActivity = Array.from(lastActivityByClient.entries())
     .sort((a, b) => (a[1] < b[1] ? 1 : -1))

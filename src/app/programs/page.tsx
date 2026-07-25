@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getProgramSummaries } from "@/lib/programs/queries";
+import { getMyProgramTemplates, getProgramSummaries } from "@/lib/programs/queries";
 import { getMyClients } from "@/lib/coaching/queries";
 import { ProgramsList } from "@/components/programs/programs-list";
 
@@ -26,10 +26,14 @@ export default async function ProgramsPage() {
     redirect("/sign-in?redirect_to=/programs");
   }
 
-  // Independent of each other (both only need user.id) — run concurrently
-  // instead of stacking two round-trips.
-  const [programs, clients] = await Promise.all([getProgramSummaries(supabase, user.id), getMyClients(supabase, user.id)]);
+  // Independent of each other (all three only need user.id) — run
+  // concurrently instead of stacking round-trips.
+  const [programs, clients, templates] = await Promise.all([
+    getProgramSummaries(supabase, user.id),
+    getMyClients(supabase, user.id),
+    getMyProgramTemplates(supabase, user.id),
+  ]);
   const activeClients = clients.filter((c) => c.status === "active");
 
-  return <ProgramsList programs={programs} userId={user.id} activeClients={activeClients} />;
+  return <ProgramsList programs={programs} userId={user.id} activeClients={activeClients} templates={templates} />;
 }

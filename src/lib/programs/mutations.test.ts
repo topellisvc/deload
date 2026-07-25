@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { cloneProgram, createProgram, createProgramFromTemplate } from "./mutations";
+import { cloneProgram, createProgram, createProgramFromSavedTemplate, createProgramFromTemplate, deleteProgramTemplate, saveProgramAsTemplate } from "./mutations";
 import { getProgramTree } from "./queries";
 import { STARTER_PROGRAM_TEMPLATES } from "./starter-templates";
-import type { ProgramTree } from "./types";
+import type { ProgramTemplateRow, ProgramTree } from "./types";
 
 vi.mock("./queries", () => ({
   getProgramTree: vi.fn(),
@@ -200,5 +200,158 @@ describe("cloneProgram notification wiring", () => {
     });
 
     expect(notifyProgramAssigned).not.toHaveBeenCalled();
+  });
+});
+
+describe("saveProgramAsTemplate", () => {
+  const program: ProgramTree = {
+    id: "prog-1",
+    owner_id: "coach-1",
+    athlete_id: "coach-1",
+    name: "Full Body Strength",
+    discipline: "resistance",
+    is_active: false,
+    removed_by_athlete_at: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    weeks: [
+      { id: "week-1", program_id: "prog-1", position: 1, label: "Week 1", based_on_week_id: null, created_at: "2026-01-01T00:00:00.000Z", days: [] },
+    ],
+  };
+
+  function makeInsertMock(result: { data: ProgramTemplateRow | null; error: { message: string } | null }) {
+    const insert = vi.fn(() => ({ select: () => ({ single: () => Promise.resolve(result) }) }));
+    const supabase = { from: vi.fn(() => ({ insert })) };
+    return { supabase, insert };
+  }
+
+  it("snapshots the program's weeks (not its own id/athlete/active flag) into a new template row", async () => {
+    const savedRow: ProgramTemplateRow = {
+      id: "template-1",
+      owner_id: "coach-1",
+      name: "My template",
+      discipline: "resistance",
+      template_data: { weeks: program.weeks },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+    const { supabase, insert } = makeInsertMock({ data: savedRow, error: null });
+
+    const result = await saveProgramAsTemplate(supabase as never, { program, ownerId: "coach-1", name: "My template" });
+
+    expect(insert).toHaveBeenCalledWith({
+      owner_id: "coach-1",
+      name: "My template",
+      discipline: "resistance",
+      template_data: { weeks: program.weeks },
+    });
+    expect(result).toEqual({ template: savedRow, error: null });
+  });
+
+  it("returns a friendly error instead of throwing when the insert fails", async () => {
+    const { supabase } = makeInsertMock({ data: null, error: { message: "boom" } });
+
+    const result = await saveProgramAsTemplate(supabase as never, { program, ownerId: "coach-1", name: "My template" });
+
+    expect(result.template).toBeNull();
+    expect(result.error).toBeTruthy();
+  });
+});
+
+describe("deleteProgramTemplate", () => {
+  it("deletes the template row by id", async () => {
+    const eq = vi.fn(() => Promise.resolve({ error: null }));
+    const supabase = { from: vi.fn(() => ({ delete: () => ({ eq }) })) };
+
+    const result = await deleteProgramTemplate(supabase as never, "template-1");
+
+    expect(eq).toHaveBeenCalledWith("id", "template-1");
+    expect(result.error).toBeNull();
+  });
+
+  it("returns a friendly error when the delete fails", async () => {
+    const supabase = { from: vi.fn(() => ({ delete: () => ({ eq: () => Promise.resolve({ error: { message: "boom" } }) }) })) };
+
+    const result = await deleteProgramTemplate(supabase as never, "template-1");
+
+    expect(result.error).toBeTruthy();
+  });
+});
+
+describe("createProgramFromSavedTemplate", () => {
+  const template: ProgramTemplateRow = {
+    id: "template-1",
+    owner_id: "coach-1",
+    name: "My Strength Template",
+    discipline: "resistance",
+    template_data: {
+      weeks: [
+        {
+          id: "old-week-1",
+          program_id: "old-prog",
+          position: 1,
+          label: "Week 1",
+          based_on_week_id: null,
+          created_at: "2026-01-01T00:00:00.000Z",
+          days: [{ id: "old-day-1", week_id: "old-week-1", position: 1, label: "Day 1", is_rest_day: false, blocks: [] }],
+        },
+        {
+          id: "old-week-2",
+          program_id: "old-prog",
+          position: 2,
+          label: "Week 2",
+          based_on_week_id: "old-week-1",
+          created_at: "2026-01-01T00:00:00.000Z",
+          days: [{ id: "old-day-2", week_id: "old-week-2", position: 1, label: "Day 1", is_rest_day: false, blocks: [] }],
+        },
+      ],
+    },
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  beforeEach(() => {
+    vi.mocked(getProgramTree).mockReset();
+    vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-new" } as unknown as ProgramTree);
+  });
+
+  it("creates one programs row and one program_weeks row per stored week, owned by the caller", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const result = await createProgramFromSavedTemplate(supabase as never, { template, userId: "user-1" });
+
+    expect(result.error).toBeNull();
+    expect(inserted.programs).toHaveLength(1);
+    expect(inserted.programs![0]).toMatchObject({
+      owner_id: "user-1",
+      athlete_id: "user-1",
+      name: "My Strength Template",
+      discipline: "resistance",
+    });
+    expect(inserted.program_weeks).toHaveLength(2);
+  });
+
+  it("never links based_on_week_id back to the template's own stored (possibly stale) week ids", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await createProgramFromSavedTemplate(supabase as never, { template, userId: "user-1" });
+
+    expect(inserted.program_weeks!.every((w) => w.based_on_week_id === null)).toBe(true);
+  });
+
+  it("assigns to a given athlete instead of the caller when athleteId is provided", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await createProgramFromSavedTemplate(supabase as never, { template, userId: "coach-1", athleteId: "athlete-1" });
+
+    expect(inserted.programs![0]).toMatchObject({ owner_id: "coach-1", athlete_id: "athlete-1" });
+  });
+
+  it("returns an error instead of a program when getProgramTree can't re-fetch it", async () => {
+    vi.mocked(getProgramTree).mockResolvedValue(null);
+    const { supabase } = makeSupabaseMock();
+
+    const result = await createProgramFromSavedTemplate(supabase as never, { template, userId: "user-1" });
+
+    expect(result.program).toBeNull();
+    expect(result.error).toBeTruthy();
   });
 });

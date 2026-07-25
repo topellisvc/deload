@@ -11,8 +11,12 @@ function formatDate(iso: string): string {
  * Every active athlete, as cards — name (email; no separate display name
  * reliably set across the app), last workout logged, current active
  * program (from this coach, if any — see getCoachingDashboard's comment
- * on why it's null otherwise), and a "needs attention" flag standing in
- * for "training status." Selecting one opens /coaching/athletes/[id].
+ * on why it's null otherwise), a "needs attention" flag standing in for
+ * "training status," and that program's consistency % if there is one.
+ * Already sorted most-overdue-first by getCoachingDashboard, so a coach
+ * managing several clients sees whoever needs a nudge at the top rather
+ * than having to scan the whole list. Selecting one opens
+ * /coaching/athletes/[id].
  */
 export function ClientListSection({ clients }: { clients: CoachingClientSummary[] }) {
   return (
@@ -42,6 +46,12 @@ export function ClientListSection({ clients }: { clients: CoachingClientSummary[
                   {client.lastActivityOn ? `Last workout ${formatDate(client.lastActivityOn)}` : "No workouts logged"}
                 </p>
               </div>
+              {client.consistencyPercent !== null && (
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-semibold tabular-nums text-foreground">{client.consistencyPercent}%</p>
+                  <p className="text-[10px] text-muted-foreground">consistency</p>
+                </div>
+              )}
               <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
             </Link>
           ))}

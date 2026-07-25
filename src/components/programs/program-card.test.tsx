@@ -149,6 +149,48 @@ describe("ProgramCard", () => {
     expect(onDelete).toHaveBeenCalledWith("prog-99");
   });
 
+  it("shows 'Save as template' only when canSaveAsTemplate is passed, and calls the handler with the program's id", async () => {
+    const onSaveAsTemplate = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ProgramCard
+        program={makeProgram({ id: "prog-7" })}
+        canSetActive={false}
+        settingActive={false}
+        onSetActive={noop}
+        canSend={false}
+        sendingCopy={false}
+        onSend={noop}
+        canSaveAsTemplate
+        savingTemplate={false}
+        onSaveAsTemplate={onSaveAsTemplate}
+        canDelete={false}
+        deleting={false}
+        onDelete={noop}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "Save as template" }));
+    expect(onSaveAsTemplate).toHaveBeenCalledWith("prog-7");
+  });
+
+  it("omits 'Save as template' when canSaveAsTemplate isn't passed (defaults to hidden)", () => {
+    render(
+      <ProgramCard
+        program={makeProgram()}
+        canSetActive={false}
+        settingActive={false}
+        onSetActive={noop}
+        canSend={false}
+        sendingCopy={false}
+        onSend={noop}
+        canDelete={false}
+        deleting={false}
+        onDelete={noop}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /save as template/i })).not.toBeInTheDocument();
+  });
+
   it("shows the assignment label on a coach's client program", () => {
     render(
       <ProgramCard

@@ -8,31 +8,38 @@ import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
+import { SaveAsTemplateDialog } from "@/components/programs/save-as-template-dialog";
+import { MyTemplatesSection } from "@/components/programs/my-templates-section";
 import { StarterProgramPicker } from "@/components/programs/starter-program-picker";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
-import { getProgramTree } from "@/lib/programs/queries";
-import type { ProgramSummary, ProgramTree } from "@/lib/programs/types";
+import { getMyProgramTemplates, getProgramTree } from "@/lib/programs/queries";
+import type { ProgramSummary, ProgramTemplateRow, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
 
 interface ProgramsListProps {
   programs: ProgramSummary[];
   userId: string;
   activeClients: CoachClient[];
+  templates: ProgramTemplateRow[];
 }
 
 /** Invitations and the coach roster used to render at the top of this
  * page — both moved to /coaching as part of the Coaching hub. */
-export function ProgramsList({ programs: initialPrograms, userId, activeClients }: ProgramsListProps) {
+export function ProgramsList({ programs: initialPrograms, userId, activeClients, templates: initialTemplates }: ProgramsListProps) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [programs, setPrograms] = useState(initialPrograms);
+  const [templates, setTemplates] = useState(initialTemplates);
   const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
   const [activeError, setActiveError] = useState<string | null>(null);
   const [loadingSendId, setLoadingSendId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendTarget, setSendTarget] = useState<ProgramTree | null>(null);
+  const [loadingTemplateId, setLoadingTemplateId] = useState<string | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateTarget, setTemplateTarget] = useState<ProgramTree | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<ProgramSummary | null>(null);
@@ -51,6 +58,35 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
       return;
     }
     setSendTarget(tree);
+  }
+
+  // Same one-time full-tree fetch as handleSend, above, for the same
+  // reason — SaveAsTemplateDialog needs the nested weeks/days/blocks/sets
+  // to snapshot, not just the lightweight ProgramSummary this list renders.
+  async function handleSaveAsTemplate(programId: string) {
+    setTemplateError(null);
+    setLoadingTemplateId(programId);
+    const supabase = createClient();
+    const tree = await getProgramTree(supabase, programId);
+    setLoadingTemplateId(null);
+    if (!tree) {
+      setTemplateError("Couldn't load this program to save it as a template.");
+      return;
+    }
+    setTemplateTarget(tree);
+  }
+
+  function handleTemplateDeleted(templateId: string) {
+    setTemplates((prev) => prev.filter((t) => t.id !== templateId));
+  }
+
+  // SaveAsTemplateDialog only reports success/failure, not the new row
+  // itself — a lightweight refetch is simpler than threading the created
+  // template back through onSaved just to avoid one query.
+  async function handleTemplateSaved() {
+    const supabase = createClient();
+    const refreshed = await getMyProgramTemplates(supabase, userId);
+    setTemplates(refreshed);
   }
 
   async function handleSetActive(programId: string) {
@@ -145,6 +181,9 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
             canSend={program.owner_id === userId}
             sendingCopy={loadingSendId === program.id}
             onSend={handleSend}
+            canSaveAsTemplate={program.owner_id === userId}
+            savingTemplate={loadingTemplateId === program.id}
+            onSaveAsTemplate={handleSaveAsTemplate}
             canDelete={program.owner_id === userId || (program.athlete_id === userId && !program.removed_by_athlete_at)}
             deleting={deletingId === program.id}
             onDelete={handleDeleteClick}
@@ -170,12 +209,14 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
         </Button>
       </div>
 
-      {(activeError || sendError || deleteError) && (
+      {(activeError || sendError || templateError || deleteError) && (
         <div className="mb-6 flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-          <p className="text-sm text-foreground">{activeError || sendError || deleteError}</p>
+          <p className="text-sm text-foreground">{activeError || sendError || templateError || deleteError}</p>
         </div>
       )}
+
+      <MyTemplatesSection templates={templates} userId={userId} activeClients={activeClients} onDeleted={handleTemplateDeleted} />
 
       <section className="mb-10 flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5 sm:p-6">
         <div className="flex flex-col gap-1">
@@ -233,6 +274,16 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
           program={sendTarget}
           currentUserId={userId}
           activeClients={activeClients}
+        />
+      )}
+
+      {templateTarget && (
+        <SaveAsTemplateDialog
+          open={!!templateTarget}
+          onClose={() => setTemplateTarget(null)}
+          program={templateTarget}
+          currentUserId={userId}
+          onSaved={handleTemplateSaved}
         />
       )}
 

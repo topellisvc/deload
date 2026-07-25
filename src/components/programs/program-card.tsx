@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CheckCircle2, Dumbbell, PersonStanding, Send, Trash2, UserX, UsersRound, Waves } from "lucide-react";
+import { BookmarkPlus, CalendarDays, CheckCircle2, Dumbbell, PersonStanding, Send, Trash2, UserX, UsersRound, Waves } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,14 @@ interface ProgramCardProps {
   canSend: boolean;
   sendingCopy: boolean;
   onSend: (programId: string) => void;
+  /** Owner-only, same reasoning as canSend — turning this program into a
+   * reusable template is an authoring action. Optional (defaults to
+   * hidden): only the main /programs list wires this up today; the other
+   * ProgramCard call sites (shared-programs-section, client-detail) don't
+   * need it and shouldn't have to pass three unused props to get it. */
+  canSaveAsTemplate?: boolean;
+  savingTemplate?: boolean;
+  onSaveAsTemplate?: (programId: string) => void;
   /** Owner OR assigned athlete (migration 0017's additive RLS policy) — an
    * athlete can remove their own copy of a coach-assigned program. Since
    * every assigned program is its own independent row (see cloneProgram),
@@ -43,6 +51,9 @@ export function ProgramCard({
   canSend,
   sendingCopy,
   onSend,
+  canSaveAsTemplate = false,
+  savingTemplate = false,
+  onSaveAsTemplate,
   canDelete,
   deleting,
   onDelete,
@@ -120,7 +131,7 @@ export function ProgramCard({
               </span>
             </div>
           )}
-          {(canSetActive || canSend || canDelete) && (
+          {(canSetActive || canSend || canSaveAsTemplate || canDelete) && (
             <div className="mt-1 flex flex-wrap gap-2">
               {canSetActive && !program.is_active && (
                 <Button
@@ -152,6 +163,21 @@ export function ProgramCard({
                 >
                   <Send className="size-3.5" />
                   {sendingCopy ? "Loading…" : "Send a copy"}
+                </Button>
+              )}
+              {canSaveAsTemplate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={savingTemplate}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSaveAsTemplate?.(program.id);
+                  }}
+                >
+                  <BookmarkPlus className="size-3.5" />
+                  {savingTemplate ? "Loading…" : "Save as template"}
                 </Button>
               )}
               {canDelete && (
