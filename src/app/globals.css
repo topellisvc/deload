@@ -135,18 +135,30 @@
     scroll-behavior: smooth;
   }
 
-  /* Echoes the hero card's `from-primary/10 via-surface to-surface`
-     gradient (dashboard/hero-section.tsx) on the page itself — a soft
-     glow anchored to the top of the viewport instead of flat, uniform
-     --background everywhere. Dark mode gets a slightly stronger mix
-     (16% vs 10%) since the same ratio reads as barely-there against a
-     much darker base color. Scrolls with the page rather than staying
-     fixed — background-attachment: fixed has known repaint/jank issues
-     on iOS Safari, not worth it for this. */
+  /* Two experimental/opt-in background layers on top of flat
+     --background, both easy to rip out independently if either doesn't
+     land:
+
+     1. A dot-grid ("graph paper") pattern — first in the list below, so
+        it paints on top. Just delete that one radial-gradient() line
+        (and drop the now-unused first values in background-size/
+        background-repeat) to remove only the pattern and keep the glow.
+     2. The gradient wash — echoes the hero card's
+        `from-primary/10 via-surface to-surface` gradient
+        (dashboard/hero-section.tsx) instead of flat, uniform
+        --background everywhere. Dark mode gets a slightly stronger mix
+        (16% vs 10%) since the same ratio reads as barely-there against a
+        much darker base color.
+
+     Scrolls with the page rather than using background-attachment:
+     fixed, which has known repaint/jank issues on iOS Safari. */
   body {
     background-color: var(--color-background);
-    background-image: radial-gradient(1100px 480px at 50% 0%, color-mix(in oklch, var(--color-primary) 10%, transparent), transparent 70%);
-    background-repeat: no-repeat;
+    background-image:
+      radial-gradient(circle, var(--color-border) 1px, transparent 1px),
+      radial-gradient(1100px 480px at 50% 0%, color-mix(in oklch, var(--color-primary) 10%, transparent), transparent 70%);
+    background-size: 22px 22px, auto;
+    background-repeat: repeat, no-repeat;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -154,7 +166,9 @@
   }
 
   .dark body {
-    background-image: radial-gradient(1100px 480px at 50% 0%, color-mix(in oklch, var(--color-primary) 16%, transparent), transparent 70%);
+    background-image:
+      radial-gradient(circle, var(--color-border) 1px, transparent 1px),
+      radial-gradient(1100px 480px at 50% 0%, color-mix(in oklch, var(--color-primary) 16%, transparent), transparent 70%);
   }
 
   ::selection {
