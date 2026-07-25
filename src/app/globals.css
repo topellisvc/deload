@@ -135,12 +135,26 @@
     scroll-behavior: smooth;
   }
 
+  /* Echoes the hero card's `from-primary/10 via-surface to-surface`
+     gradient (dashboard/hero-section.tsx) on the page itself — a soft
+     glow anchored to the top of the viewport instead of flat, uniform
+     --background everywhere. Dark mode gets a slightly stronger mix
+     (16% vs 10%) since the same ratio reads as barely-there against a
+     much darker base color. Scrolls with the page rather than staying
+     fixed — background-attachment: fixed has known repaint/jank issues
+     on iOS Safari, not worth it for this. */
   body {
     background-color: var(--color-background);
+    background-image: radial-gradient(1100px 480px at 50% 0%, color-mix(in oklch, var(--color-primary) 10%, transparent), transparent 70%);
+    background-repeat: no-repeat;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+  }
+
+  .dark body {
+    background-image: radial-gradient(1100px 480px at 50% 0%, color-mix(in oklch, var(--color-primary) 16%, transparent), transparent 70%);
   }
 
   ::selection {
