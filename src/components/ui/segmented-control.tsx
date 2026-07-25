@@ -5,6 +5,14 @@ import { cn } from "@/lib/utils";
 export interface SegmentedControlOption<T extends string> {
   value: T;
   label: string;
+  /** Optional literal Tailwind classes (e.g. "bg-zone-strength/15
+   * text-zone-strength") applied instead of the default neutral selected
+   * style when this option is the current value — lets callers like the
+   * discipline/exercise-category pickers color-code each option without
+   * every other SegmentedControl usage (profile forms, calculators) being
+   * affected, since it's opt-in and falls back to the old look when
+   * omitted. */
+  activeClassName?: string;
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -55,7 +63,7 @@ export function SegmentedControl<T extends string>({
             className={cn(
               "rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
               selected
-                ? "bg-surface text-foreground shadow-sm"
+                ? (option.activeClassName ?? "bg-surface text-foreground shadow-sm")
                 : "text-muted-foreground hover:text-foreground"
             )}
           >

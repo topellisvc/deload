@@ -7,6 +7,7 @@ import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { BlockRow, DayRow, ExerciseCategory, PrescriptionType, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
 import { defaultPrescriptionType } from "@/lib/programs/prescription-types";
+import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import * as m from "@/lib/programs/mutations";
 import { DayColumn } from "@/components/programs/day-column";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
@@ -29,11 +30,9 @@ interface PendingConfirm {
   onConfirm: () => void | Promise<void>;
 }
 
-const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string }[] = [
-  { value: "resistance", label: "Weights" },
-  { value: "running", label: "Running" },
-  { value: "hybrid", label: "Hybrid" },
-];
+const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string; activeClassName: string }[] = (
+  Object.keys(DISCIPLINE_META) as ProgramDiscipline[]
+).map((value) => ({ value, label: DISCIPLINE_META[value].label, activeClassName: DISCIPLINE_META[value].activeClassName }));
 
 /**
  * Every position column in the program tree (program_weeks, training_days,

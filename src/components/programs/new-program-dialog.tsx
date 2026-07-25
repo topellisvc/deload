@@ -12,12 +12,11 @@ import { createClient } from "@/lib/supabase/client";
 import { createProgram } from "@/lib/programs/mutations";
 import type { ProgramDiscipline } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
+import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 
-const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string }[] = [
-  { value: "resistance", label: "Weights" },
-  { value: "running", label: "Running" },
-  { value: "hybrid", label: "Hybrid" },
-];
+const DISCIPLINE_OPTIONS: { value: ProgramDiscipline; label: string; activeClassName: string }[] = (
+  Object.keys(DISCIPLINE_META) as ProgramDiscipline[]
+).map((value) => ({ value, label: DISCIPLINE_META[value].label, activeClassName: DISCIPLINE_META[value].activeClassName }));
 
 const MYSELF = "myself";
 

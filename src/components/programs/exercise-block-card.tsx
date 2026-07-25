@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Plus, Repeat, X } from "lucide-react";
 import type { BlockRow, ExerciseCategory, PrescriptionType, SetRow } from "@/lib/programs/types";
-import { EXERCISE_CATEGORY_LABELS, PRESCRIPTION_TYPES_BY_CATEGORY, defaultPrescriptionType } from "@/lib/programs/prescription-types";
+import {
+  EXERCISE_CATEGORY_ACTIVE_CLASSES,
+  EXERCISE_CATEGORY_LABELS,
+  PRESCRIPTION_TYPES_BY_CATEGORY,
+  defaultPrescriptionType,
+} from "@/lib/programs/prescription-types";
 import { ExercisePicker } from "@/components/programs/exercise-picker";
 import { PrescriptionRowEditor } from "@/components/programs/prescription-row-editor";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -35,6 +40,7 @@ interface ExerciseBlockCardProps {
 const CATEGORY_OPTIONS = (Object.keys(EXERCISE_CATEGORY_LABELS) as ExerciseCategory[]).map((value) => ({
   value,
   label: EXERCISE_CATEGORY_LABELS[value],
+  activeClassName: EXERCISE_CATEGORY_ACTIVE_CLASSES[value],
 }));
 
 /**

@@ -1,15 +1,10 @@
 import Link from "next/link";
-import { BookmarkPlus, CalendarDays, CheckCircle2, Dumbbell, PersonStanding, Send, Trash2, UserX, UsersRound, Waves } from "lucide-react";
+import { BookmarkPlus, CalendarDays, CheckCircle2, Send, Trash2, UserX, UsersRound } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ProgramSummary } from "@/lib/programs/types";
-
-const DISCIPLINE_META = {
-  resistance: { label: "Weights", Icon: Dumbbell },
-  running: { label: "Running", Icon: PersonStanding },
-  hybrid: { label: "Hybrid", Icon: Waves },
-} as const;
+import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 
 interface ProgramCardProps {
   program: ProgramSummary;
@@ -58,7 +53,7 @@ export function ProgramCard({
   deleting,
   onDelete,
 }: ProgramCardProps) {
-  const { label, Icon } = DISCIPLINE_META[program.discipline];
+  const { label, Icon, badgeClass } = DISCIPLINE_META[program.discipline];
 
   // assignmentLabel starting with "For " means the viewer is the coach and
   // this program's athlete is someone else — that's the case a coach's
@@ -80,7 +75,7 @@ export function ProgramCard({
       >
         <CardContent className="flex flex-col gap-3 p-5">
           <div className="flex items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+            <span className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", badgeClass)}>
               <Icon className="size-3.5" />
               {label}
             </span>
