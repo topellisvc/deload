@@ -52,8 +52,16 @@ export function MessageThread({ coachClientId, currentUserId, otherPartyId, othe
     const supabase = createClient();
     markConversationRead(supabase, { coachClientId, userId: currentUserId });
 
+    // Unique topic per mount, not just coachClientId — see
+    // NotificationBell's identical fix for why: Supabase's realtime client
+    // dedupes channels by topic name, so React Strict Mode's dev-only
+    // mount→cleanup→mount can hand this effect back a still-tearing-down
+    // channel from the previous mount, and calling `.on()` on that throws
+    // "cannot add postgres_changes callbacks after subscribe()". The
+    // filter below already scopes events by coach_client_id regardless of
+    // topic name.
     const channel = supabase
-      .channel(`messages:${coachClientId}`)
+      .channel(`messages:${coachClientId}:${crypto.randomUUID()}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `coach_client_id=eq.${coachClientId}` },

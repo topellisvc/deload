@@ -61,8 +61,18 @@ export function NotificationBell() {
       }
     );
 
+    // A random suffix, not just the user id, as the topic name: Supabase's
+    // realtime client dedupes channels by topic and hands back an existing
+    // instance if one with the same topic is still mid-teardown from a
+    // previous mount (removeChannel's unsubscribe round-trip is async) —
+    // in dev, React Strict Mode's mount→cleanup→mount means that previous
+    // mount can still be tearing down when this one runs. Calling `.on()`
+    // on that stale, already-subscribed instance is what throws "cannot
+    // add postgres_changes callbacks after subscribe()". The filter below
+    // already scopes events to this user regardless of topic name, so a
+    // unique topic per mount costs nothing and sidesteps the whole race.
     const channel = supabase
-      .channel(`notifications:${user.id}`)
+      .channel(`notifications:${user.id}:${crypto.randomUUID()}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "notifications", filter: `recipient_id=eq.${user.id}` },
