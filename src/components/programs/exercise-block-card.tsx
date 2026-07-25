@@ -7,6 +7,7 @@ import { EXERCISE_CATEGORY_LABELS, PRESCRIPTION_TYPES_BY_CATEGORY, defaultPrescr
 import { ExercisePicker } from "@/components/programs/exercise-picker";
 import { PrescriptionRowEditor } from "@/components/programs/prescription-row-editor";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { cn } from "@/lib/utils";
 
 interface ExerciseBlockCardProps {
   block: BlockRow;
@@ -16,6 +17,11 @@ interface ExerciseBlockCardProps {
   onMoveDown: () => void;
   onDeleteBlock: () => void;
   onAddExerciseToBlock: () => void;
+  /** True while this block's "add exercise" write is in flight. The click
+   * needs a server-generated exercise id before local state can update, so
+   * without this the button looked like it silently ignored the first
+   * click during that round-trip. */
+  isAddingExercise: boolean;
   onRemoveExerciseFromBlock: (blockExerciseId: string) => void;
   onRoundsChange: (rounds: number) => void;
   onExerciseChange: (blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
@@ -62,6 +68,7 @@ export function ExerciseBlockCard({
   onMoveDown,
   onDeleteBlock,
   onAddExerciseToBlock,
+  isAddingExercise,
   onRemoveExerciseFromBlock,
   onRoundsChange,
   onExerciseChange,
@@ -215,10 +222,11 @@ export function ExerciseBlockCard({
       <button
         type="button"
         onClick={onAddExerciseToBlock}
-        className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        disabled={isAddingExercise}
+        className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <Repeat className="size-3.5" />
-        {isGrouped ? "Add another exercise" : "Make this a superset"}
+        <Repeat className={cn("size-3.5", isAddingExercise && "animate-spin")} />
+        {isAddingExercise ? "Adding…" : isGrouped ? "Add another exercise" : "Make this a superset"}
       </button>
     </div>
   );

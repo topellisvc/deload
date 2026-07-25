@@ -97,7 +97,12 @@ export function MessageThread({ coachClientId, currentUserId, otherPartyId, othe
   }
 
   return (
-    <div className="flex h-[32rem] flex-col rounded-2xl border border-border bg-surface">
+    // max-h (not a fixed h) so a short conversation's card shrinks to fit
+    // instead of leaving a tall empty void below the last message —
+    // min-h keeps a near-empty thread from looking like a single skinny
+    // line. Only caps out at 32rem and starts scrolling once there's
+    // actually enough history to fill it.
+    <div className="flex max-h-[32rem] min-h-[18rem] flex-col rounded-2xl border border-border bg-surface">
       <div className="border-b border-border p-4">
         <h2 className="text-sm font-medium text-foreground">{otherPartyLabel}</h2>
       </div>

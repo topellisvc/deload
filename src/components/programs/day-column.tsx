@@ -15,6 +15,10 @@ interface DayColumnProps {
   onDeleteBlock: (blockId: string) => void;
   onMoveBlock: (blockId: string, direction: "up" | "down") => void;
   onAddExerciseToBlock: (blockId: string) => void;
+  /** Block id currently awaiting its "add exercise" network round-trip, if
+   * any — see ProgramBuilder's addingExerciseBlockId comment for why this
+   * needs visible pending state rather than just firing and forgetting. */
+  addingExerciseBlockId: string | null;
   onRemoveExerciseFromBlock: (blockId: string, blockExerciseId: string) => void;
   onRoundsChange: (blockId: string, rounds: number) => void;
   onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
@@ -40,6 +44,7 @@ export function DayColumn({
   onDeleteBlock,
   onMoveBlock,
   onAddExerciseToBlock,
+  addingExerciseBlockId,
   onRemoveExerciseFromBlock,
   onRoundsChange,
   onExerciseChange,
@@ -115,6 +120,19 @@ export function DayColumn({
         </label>
       </div>
 
+      {day.is_rest_day && day.blocks.length > 0 && (
+        // Checking "Rest day" hides the exercises below without deleting
+        // anything (see the unchanged branch below) — but with no
+        // indication of that, watching a day's whole exercise list vanish
+        // the instant you check the box reads as "I just lost my work."
+        // This only needs to show up when there's actually something
+        // hidden; an already-empty rest day has nothing to reassure anyone
+        // about.
+        <p className="text-xs text-muted-foreground">
+          Exercises are hidden while this is a rest day — uncheck it to see them again.
+        </p>
+      )}
+
       {!day.is_rest_day && (
         <>
           <div className="flex flex-col gap-2">
@@ -128,6 +146,7 @@ export function DayColumn({
                 onMoveDown={() => onMoveBlock(block.id, "down")}
                 onDeleteBlock={() => onDeleteBlock(block.id)}
                 onAddExerciseToBlock={() => onAddExerciseToBlock(block.id)}
+                isAddingExercise={addingExerciseBlockId === block.id}
                 onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
                 onRoundsChange={(rounds) => onRoundsChange(block.id, rounds)}
                 onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}

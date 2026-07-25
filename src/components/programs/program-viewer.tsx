@@ -25,6 +25,7 @@ import { SessionPerformanceEditor } from "@/components/programs/session-performa
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ScrollFadeX } from "@/components/ui/scroll-fade-x";
 import { createClient } from "@/lib/supabase/client";
 import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
 import { formatLogDate as formatLogDateShared, todayDateString } from "@/lib/dates";
@@ -268,7 +269,13 @@ export function ProgramViewer({
 
       {week && (
         <>
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {/* overflow-x-auto with no explicit overflow-y computes overflow-y
+              to auto too (CSS Overflow spec's "one axis visible, one not"
+              rule) — without overflow-y-visible here, this row silently
+              swallows vertical wheel scroll instead of letting it bubble to
+              the page, which is exactly the "scrolling over this row does
+              nothing" bug this pattern caused below. */}
+          <ScrollFadeX className="flex items-center gap-2 overflow-x-auto overflow-y-visible pb-1">
             {program.weeks.map((w) => (
               <button
                 key={w.id}
@@ -284,9 +291,12 @@ export function ProgramViewer({
                 {w.label || `Week ${w.position}`}
               </button>
             ))}
-          </div>
+          </ScrollFadeX>
 
-          <div className="flex flex-col gap-4 lg:flex-row lg:flex-nowrap lg:items-start lg:overflow-x-auto lg:pb-2">
+          {/* Same overflow-y-visible fix as the week-tabs row above — this
+              is the row that actually caused the bug in practice, since
+              it's the one people hover over while reading exercises. */}
+          <ScrollFadeX className="flex flex-col gap-4 lg:flex-row lg:flex-nowrap lg:items-start lg:overflow-x-auto lg:overflow-y-visible lg:pb-2">
             {week.days.map((day) => (
               <div
                 key={day.id}
@@ -414,7 +424,7 @@ export function ProgramViewer({
                 })()}
               </div>
             ))}
-          </div>
+          </ScrollFadeX>
         </>
       )}
     </div>

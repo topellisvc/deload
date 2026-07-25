@@ -12,6 +12,7 @@ import { DayColumn } from "@/components/programs/day-column";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ScrollFadeX } from "@/components/ui/scroll-fade-x";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +74,16 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   const [nameDraft, setNameDraft] = useState(initialProgram.name);
   const [deleting, setDeleting] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  // "Make this a superset" needs a server-generated exercise id before it
+  // can update local state (unlike most other edits here, which apply
+  // optimistically first) — so the click has a real network round-trip
+  // with no visible effect until it resolves. Tracked per-block so the
+  // button can disable itself and say so instead of silently doing
+  // nothing, and so a second click during that window can't fire a
+  // duplicate insert (confirmed live: clicking twice in quick succession
+  // read as "the first click didn't register" when actually the request
+  // just hadn't resolved yet).
+  const [addingExerciseBlockId, setAddingExerciseBlockId] = useState<string | null>(null);
 
   useEffect(() => setNameDraft(program.name), [program.name]);
 
@@ -241,13 +252,16 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
   // ---- superset/circuit grouping ----
   async function handleAddExerciseToBlock(dayId: string, blockId: string) {
+    if (addingExerciseBlockId === blockId) return; // already in flight — see state comment above
     const day = week.days.find((d) => d.id === dayId);
     const block = day?.blocks.find((b) => b.id === blockId);
     if (!block) return;
+    setAddingExerciseBlockId(blockId);
     const { exercise, error } = await m.addExerciseToBlock(supabase, {
       blockId,
       position: nextPosition(block.exercises),
     });
+    setAddingExerciseBlockId(null);
     if (error || !exercise) {
       fail(error ?? "Couldn't add exercise.");
       return;
@@ -466,7 +480,11 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+      {/* overflow-x-auto with no explicit overflow-y computes overflow-y to
+          auto too (CSS Overflow spec's "one axis visible, one not" rule) —
+          overflow-y-visible keeps vertical wheel scroll bubbling to the
+          page instead of dying over this row. */}
+      <ScrollFadeX className="flex items-center gap-2 overflow-x-auto overflow-y-visible pb-1">
         {program.weeks.map((w) => (
           <div key={w.id} className="group relative shrink-0">
             <button
@@ -501,7 +519,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
           <Plus className="size-4" />
           Add week
         </button>
-      </div>
+      </ScrollFadeX>
 
       {/*
         On mobile, days stack in one column (default flex-col). On desktop
@@ -511,7 +529,10 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         without navigating between days. A few days fit without scrolling;
         a 6-7 day week scrolls sideways, still on one screen.
       */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:flex-nowrap lg:items-start lg:overflow-x-auto lg:pb-2">
+      {/* Same overflow-y-visible fix as the week-tabs row above — this is
+          the row that actually caused the bug in practice, since it's the
+          one people hover over while editing exercises. */}
+      <ScrollFadeX className="flex flex-col gap-4 lg:flex-row lg:flex-nowrap lg:items-start lg:overflow-x-auto lg:overflow-y-visible lg:pb-2">
         {week.days.map((day) => (
           <DayColumn
             key={day.id}
@@ -525,6 +546,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
             onMoveBlock={(blockId, direction) => handleMoveBlock(day.id, blockId, direction)}
             onAddExerciseToBlock={(blockId) => handleAddExerciseToBlock(day.id, blockId)}
+            addingExerciseBlockId={addingExerciseBlockId}
             onRemoveExerciseFromBlock={(blockId, blockExerciseId) =>
               handleRemoveExerciseFromBlock(day.id, blockId, blockExerciseId)
             }
@@ -545,7 +567,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
           />
         ))}
-      </div>
+      </ScrollFadeX>
 
       <AddWeekDialog
         open={addWeekOpen}

@@ -43,7 +43,23 @@ export async function updateSession(request: NextRequest) {
   });
 
   // Touching auth.getUser() is what actually triggers the refresh.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Signed-in visitors landing on the marketing homepage want their
+  // dashboard, not the pitch. Catching that here — before any HTML is
+  // sent — replaces the old approach of rendering the full marketing page
+  // and yanking it away client-side a moment later once auth state
+  // resolved (see HomeRedirect's history): same "/" stays static for the
+  // signed-out/SEO audience, signed-in visitors just never see it.
+  if (user && request.nextUrl.pathname === "/") {
+    const redirectResponse = NextResponse.redirect(new URL("/dashboard", request.url));
+    // Carry over any cookies getUser() just refreshed — building the
+    // redirect from a fresh NextResponse would otherwise drop them.
+    supabaseResponse.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return redirectResponse;
+  }
 
   return supabaseResponse;
 }

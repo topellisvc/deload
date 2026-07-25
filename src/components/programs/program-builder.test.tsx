@@ -23,7 +23,17 @@ vi.mock("next/link", () => ({
 // drive ProgramBuilder's own onCategoryChange branch (confirm vs. no
 // confirm) without needing the real picker UI.
 vi.mock("@/components/programs/day-column", () => ({
-  DayColumn: ({ day, onCategoryChange }: { day: DayRow; onCategoryChange: (blockId: string, blockExerciseId: string, category: string) => void }) => (
+  DayColumn: ({
+    day,
+    onCategoryChange,
+    onAddExerciseToBlock,
+    addingExerciseBlockId,
+  }: {
+    day: DayRow;
+    onCategoryChange: (blockId: string, blockExerciseId: string, category: string) => void;
+    onAddExerciseToBlock: (blockId: string) => void;
+    addingExerciseBlockId: string | null;
+  }) => (
     <div>
       <span>{day.label}</span>
       <button
@@ -35,6 +45,13 @@ vi.mock("@/components/programs/day-column", () => ({
         }}
       >
         Switch to running
+      </button>
+      <button type="button" disabled={addingExerciseBlockId === day.blocks[0]!.id} onClick={() => onAddExerciseToBlock(day.blocks[0]!.id)}>
+        {addingExerciseBlockId === day.blocks[0]!.id
+          ? "Adding…"
+          : day.blocks[0]!.exercises.length > 1
+            ? "Add another exercise"
+            : "Make this a superset"}
       </button>
     </div>
   ),
@@ -278,5 +295,44 @@ describe("ProgramBuilder shared confirm dialog", () => {
         category: "running",
       })
     );
+  });
+});
+
+/**
+ * "Make this a superset" needs the server-generated exercise id back before
+ * local state can update, so there's a real network round-trip with no
+ * synchronous effect — clicking again before it resolves used to fire a
+ * second, duplicate insert (and read, live, as "my first click didn't
+ * register"). These cover the fix: the in-flight block disables its own
+ * button until the request settles.
+ */
+describe("ProgramBuilder add-exercise-to-block pending state", () => {
+  beforeEach(() => {
+    vi.mocked(m.addExerciseToBlock).mockReset();
+    // Adding a second exercise flips the block to "superset" server-side
+    // too (see becomesGrouped in handleAddExerciseToBlock) — resolved here
+    // so that background write doesn't surface as an unhandled rejection.
+    vi.mocked(m.updateBlockType).mockResolvedValue({ error: null });
+  });
+
+  it("disables the button while the add-exercise request is in flight, and ignores a second click", async () => {
+    let resolveAdd!: (v: { exercise: BlockExerciseRow; error: null }) => void;
+    vi.mocked(m.addExerciseToBlock).mockReturnValue(
+      new Promise((resolve) => {
+        resolveAdd = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    render(<ProgramBuilder initialProgram={makeProgram()} />);
+
+    const button = screen.getByRole("button", { name: "Make this a superset" });
+    await user.click(button);
+
+    expect(await screen.findByRole("button", { name: "Adding…" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Adding…" }));
+    expect(m.addExerciseToBlock).toHaveBeenCalledTimes(1);
+
+    resolveAdd({ exercise: makeExercise({ id: "ex-2" }), error: null });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add another exercise" })).not.toBeDisabled());
   });
 });

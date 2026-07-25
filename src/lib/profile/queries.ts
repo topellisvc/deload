@@ -222,13 +222,16 @@ export async function getAthleteSummary(supabase: SupabaseClient, userId: string
   const linkedProfile = await getLinkedProfile(supabase, coach.coach_id);
   const coachName = linkedProfile?.display_name || coach.coach_email;
 
+  // is_active, not "most recently touched" — a program this coach edited
+  // last but isn't training on isn't their "current" one (migration 0010's
+  // partial unique index already guarantees at most one active row per
+  // athlete_id, so this is never ambiguous).
   const { data: program } = await supabase
     .from("programs")
     .select("id, name")
     .eq("athlete_id", userId)
     .eq("owner_id", coach.coach_id)
-    .order("updated_at", { ascending: false })
-    .limit(1)
+    .eq("is_active", true)
     .maybeSingle<{ id: string; name: string }>();
 
   let currentWeekLabel: string | null = null;

@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
 
 /**
- * Sends signed-in visitors from the marketing homepage straight to their
- * dashboard, without making / itself a dynamic page — same reasoning as
- * AuthStatus. Renders nothing. Signed-out visitors see the homepage
- * completely unaffected; signed-in visitors get a brief flash of the
- * marketing page before the redirect fires, which is the right tradeoff
- * for keeping / static and fast for the SEO/logged-out audience it's
- * actually built for.
+ * Fallback for the rare case someone's auth state changes while they're
+ * already sitting on "/" without a fresh navigation (e.g. signing in from
+ * another tab). The common case — a signed-in visitor requesting "/" —
+ * is now caught in middleware (src/lib/supabase/middleware.ts) before any
+ * HTML is even sent, which is what actually eliminated the old flash of
+ * the marketing page. This component renders nothing and is otherwise a
+ * no-op; signed-out visitors are completely unaffected either way.
  *
  * Reads from the shared AuthProvider instead of its own session
  * subscription (this used to duplicate the same check every other header
