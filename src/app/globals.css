@@ -135,36 +135,26 @@
     scroll-behavior: smooth;
   }
 
-  /* Two experimental/opt-in background layers on top of flat
-     --background, both easy to rip out independently if either doesn't
-     land:
-
-     1. A tiled weight-plate motif (thick ring + center hub, like a
-        plate viewed face-on) — first in the list below, so it paints
-        on top. It's a static inline SVG data URI rather than a CSS
-        gradient because the ring/hub shape isn't expressible as
-        gradients alone; there are separate light/dark-encoded SVGs
-        (baked-in stroke color, since a data URI can't read the page's
-        CSS custom properties) swapped via the .dark body override
-        below. To remove just this pattern and keep the glow, delete
-        that one url(...) line (and drop the now-unused first values in
-        background-size/background-repeat).
-     2. The gradient wash — echoes the hero card's
-        `from-primary/10 via-surface to-surface` gradient
-        (dashboard/hero-section.tsx) instead of flat, uniform
-        --background everywhere. Dark mode gets a slightly stronger mix
-        (16% vs 10%) since the same ratio reads as barely-there against a
-        much darker base color.
-
-     Scrolls with the page rather than using background-attachment:
-     fixed, which has known repaint/jank issues on iOS Safari. */
+  /* Experimental/opt-in background wash on top of flat --background —
+     three large, soft blurred blobs using the zone-* tokens (the same
+     ones DISCIPLINE_META/EXERCISE_CATEGORY_ACTIVE_CLASSES use for
+     resistance/running/hybrid color-coding elsewhere), instead of a
+     single primary-colored glow. Replaces both the earlier dot-grid and
+     weight-plate tile experiments — this one IS the whole background
+     treatment rather than a pattern layered on top of a separate glow,
+     so removing it is just deleting the background-image line (and its
+     .dark body override) below. Dark mode uses stronger color-mix
+     percentages since the same ratio reads as barely-there against a
+     much darker base color. Scrolls with the page rather than using
+     background-attachment: fixed, which has known repaint/jank issues
+     on iOS Safari. */
   body {
     background-color: var(--color-background);
     background-image:
-      url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc2NCcgaGVpZ2h0PSc2NCcgdmlld0JveD0nMCAwIDY0IDY0Jz48Y2lyY2xlIGN4PSczMicgY3k9JzMyJyByPScxMycgZmlsbD0nbm9uZScgc3Ryb2tlPScjZTJlMmU2JyBzdHJva2Utd2lkdGg9JzQnLz48Y2lyY2xlIGN4PSczMicgY3k9JzMyJyByPSc0JyBmaWxsPScjZTJlMmU2Jy8+PC9zdmc+"),
-      radial-gradient(1100px 480px at 50% 0%, color-mix(in oklch, var(--color-primary) 10%, transparent), transparent 70%);
-    background-size: 64px 64px, auto;
-    background-repeat: repeat, no-repeat;
+      radial-gradient(420px 340px at 10% 10%, color-mix(in oklch, var(--color-zone-strength) 14%, transparent), transparent 70%),
+      radial-gradient(460px 380px at 90% 15%, color-mix(in oklch, var(--color-zone-endurance) 14%, transparent), transparent 70%),
+      radial-gradient(520px 420px at 45% 85%, color-mix(in oklch, var(--color-zone-hypertrophy) 12%, transparent), transparent 70%);
+    background-repeat: no-repeat;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -173,8 +163,9 @@
 
   .dark body {
     background-image:
-      url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc2NCcgaGVpZ2h0PSc2NCcgdmlld0JveD0nMCAwIDY0IDY0Jz48Y2lyY2xlIGN4PSczMicgY3k9JzMyJyByPScxMycgZmlsbD0nbm9uZScgc3Ryb2tlPScjM2EzYTQyJyBzdHJva2Utd2lkdGg9JzQnLz48Y2lyY2xlIGN4PSczMicgY3k9JzMyJyByPSc0JyBmaWxsPScjM2EzYTQyJy8+PC9zdmc+"),
-      radial-gradient(1100px 480px at 50% 0%, color-mix(in oklch, var(--color-primary) 16%, transparent), transparent 70%);
+      radial-gradient(420px 340px at 10% 10%, color-mix(in oklch, var(--color-zone-strength) 20%, transparent), transparent 70%),
+      radial-gradient(460px 380px at 90% 15%, color-mix(in oklch, var(--color-zone-endurance) 20%, transparent), transparent 70%),
+      radial-gradient(520px 420px at 45% 85%, color-mix(in oklch, var(--color-zone-hypertrophy) 18%, transparent), transparent 70%);
   }
 
   ::selection {
