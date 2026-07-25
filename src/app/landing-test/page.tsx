@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Calculator, CheckCircle2, ClipboardList, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { BarbellLoader } from "@/components/ui/barbell-loader";
 
 export const metadata: Metadata = {
   title: "Landing page test",
@@ -14,19 +15,31 @@ export const metadata: Metadata = {
  * homepage (src/app/page.tsx is untouched). Built off a competitive
  * review of 5 other coaching-software landing pages (Everfit, TrueCoach,
  * Trainerize, TrainHeroic, PT Distinction): every one of them leads with
- * an audience-first headline, a real product screenshot in the hero, a
- * trust signal, and one repeated primary CTA — all things the real
- * homepage's text-only hero currently lacks.
+ * an audience-first headline, a hero visual, a trust signal, and one
+ * repeated primary CTA — all things the real homepage's text-only hero
+ * currently lacks.
  *
- * The two images are real screenshots of this actual app (captured live
- * off deloadhq.com, not stock photos or a fabricated mockup) — showing
- * the real product was the single biggest, most consistent gap versus
- * every competitor reviewed. Deliberately no invented customer counts or
- * testimonials: Deload doesn't have those yet, and every competitor's
- * strongest trust signals were specific and real (a named founder, an
- * exact revenue number) rather than generic — a fabricated "10,000+
- * users" would be worse than the honest "free while we build this out"
- * hook this leans on instead.
+ * Hero photo: "person about to lift the barbel" by Victor Freitas
+ * (@victorfreitas) on Unsplash, photo-1517836357463-d25dfeac3438 — free
+ * to use under the Unsplash License (unsplash.com/license), hotlinked
+ * from Unsplash's own CDN (see next.config.mjs's remotePatterns) rather
+ * than downloaded/self-hosted. Swapped in after the first draft used a
+ * real app screenshot here instead — a photo of someone actually
+ * training reads more human in the hero; the second section further
+ * down still uses a real screenshot of the programs list to show the
+ * product itself.
+ *
+ * The floating "Logging today's set" card is the one moving element on
+ * the page — it reuses BarbellLoader, the app's own branded route-loading
+ * animation (same barbell-lift/-shadow keyframes from globals.css), so
+ * the motion is the product's real animation rather than a generic
+ * effect bolted on for the marketing page.
+ *
+ * Deliberately no invented customer counts or testimonials: Deload
+ * doesn't have those yet, and every competitor's strongest trust signals
+ * were specific and real (a named founder, an exact revenue number)
+ * rather than generic — a fabricated "10,000+ users" would be worse than
+ * the honest "free while we build this out" hook this leans on instead.
  */
 export default function LandingTestPage() {
   return (
@@ -77,15 +90,26 @@ export default function LandingTestPage() {
               aria-hidden="true"
               className="absolute -inset-8 -z-10 rounded-[2rem] bg-gradient-to-br from-primary/20 via-zone-endurance/10 to-zone-strength/10 blur-2xl"
             />
-            <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-lg">
+            <div className="relative overflow-hidden rounded-2xl border border-border shadow-lg">
               <Image
-                src="/marketing/dashboard-preview.jpg"
-                alt="Deload dashboard showing today's workout, streak, and program completion"
-                width={1456}
-                height={827}
-                className="w-full"
+                src="https://images.unsplash.com/photo-1517836357463-d25dfeac3438?fm=jpg&q=80&w=1600&auto=format&fit=crop"
+                alt="Athlete mid-deadlift in a gym"
+                width={1600}
+                height={2000}
+                className="h-[520px] w-full object-cover"
                 priority
               />
+              {/* The one moving element on the page — reuses the same
+                  barbell-lift/-shadow keyframes as the app's own route
+                  loader (BarbellLoader), so "something's moving" is the
+                  product's real branded motion, not a generic effect. */}
+              <div className="absolute bottom-5 left-5 flex items-center gap-3 rounded-xl border border-border bg-surface/95 px-4 py-3 shadow-lg backdrop-blur">
+                <BarbellLoader />
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground">Logging today&rsquo;s set</span>
+                  <span className="text-xs text-muted-foreground">3 sets · 8-10 reps · 70kg</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

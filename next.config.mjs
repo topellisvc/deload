@@ -3,6 +3,13 @@ import { withSentryConfig } from "@sentry/nextjs";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // images.unsplash.com is only referenced by the /landing-test experiment
+  // (a real, free-to-use Unsplash training photo in its hero) — next/image
+  // refuses to optimize any remote host that isn't explicitly allowlisted
+  // here, even one this trusted.
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "images.unsplash.com" }],
+  },
 };
 
 // withSentryConfig is a safe no-op wrapper without SENTRY_AUTH_TOKEN set —
