@@ -45,6 +45,35 @@
       transform: translateY(0);
     }
   }
+
+  /* BarbellLoader (components/ui/barbell-loader.tsx) — a bar mid-rep,
+     lifting and settling on a loop. The shadow's keyframes are timed to
+     match the bar's exactly (same duration/easing) so it reads as one
+     lift rather than two independent animations. */
+  --animate-barbell-lift: barbell-lift 1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  --animate-barbell-shadow: barbell-shadow 1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+
+  @keyframes barbell-lift {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-7px);
+    }
+  }
+
+  @keyframes barbell-shadow {
+    0%,
+    100% {
+      transform: scaleX(1);
+      opacity: 0.4;
+    }
+    50% {
+      transform: scaleX(0.65);
+      opacity: 0.15;
+    }
+  }
 }
 
 :root {
