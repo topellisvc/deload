@@ -24,6 +24,10 @@ vi.mock("@/lib/programs/mutations", () => ({
   removeAssignedProgram: vi.fn(),
   setActiveProgram: vi.fn(),
   createProgram: vi.fn(),
+  // StarterProgramPicker (now rendered on this page too) imports this —
+  // never actually clicked in these tests, but needs to exist as a real
+  // mock fn rather than undefined for the import itself to be well-formed.
+  createProgramFromTemplate: vi.fn(),
 }));
 
 import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
@@ -33,7 +37,7 @@ function makeProgram(overrides: Partial<ProgramSummary> = {}): ProgramSummary {
     id: "prog-1",
     owner_id: "user-1",
     athlete_id: "user-1",
-    name: "Push Pull Legs",
+    name: "My Custom Split",
     discipline: "hybrid",
     is_active: false,
     removed_by_athlete_at: null,
@@ -73,7 +77,7 @@ describe("ProgramsList", () => {
 
     expect(deleteProgram).toHaveBeenCalledWith(expect.anything(), "prog-1");
     expect(removeAssignedProgram).not.toHaveBeenCalled();
-    expect(screen.queryByText("Push Pull Legs")).not.toBeInTheDocument();
+    expect(screen.queryByText("My Custom Split")).not.toBeInTheDocument();
   });
 
   it("calls removeAssignedProgram, not deleteProgram, when the viewer is only the assigned athlete", async () => {
@@ -106,7 +110,7 @@ describe("ProgramsList", () => {
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(screen.getByText("Network error")).toBeInTheDocument());
-    expect(screen.getByText("Push Pull Legs")).toBeInTheDocument();
+    expect(screen.getByText("My Custom Split")).toBeInTheDocument();
   });
 
   it("optimistically deactivates every other program for the same athlete when one is set active", async () => {

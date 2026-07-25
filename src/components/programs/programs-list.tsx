@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
+import { StarterProgramPicker } from "@/components/programs/starter-program-picker";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
@@ -175,6 +176,14 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients 
           <p className="text-sm text-foreground">{activeError || sendError || deleteError}</p>
         </div>
       )}
+
+      <section className="mb-10 flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5 sm:p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-base font-semibold text-foreground">Not sure where to start?</h2>
+          <p className="text-sm text-muted-foreground">Try one of our 4-week starter programs — we&apos;ll set the whole thing up for you.</p>
+        </div>
+        <StarterProgramPicker mode="create" userId={userId} />
+      </section>
 
       {programs.length === 0 ? (
         <Card>
