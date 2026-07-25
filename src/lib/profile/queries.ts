@@ -24,6 +24,8 @@ export async function getMyProfileDetails(supabase: SupabaseClient, userId: stri
       sex: null,
       experience_level: null,
       training_style: null,
+      email: null,
+      is_admin: false,
       created_at: new Date().toISOString(),
     }
   );

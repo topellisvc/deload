@@ -34,6 +34,17 @@ export interface Profile {
    * migration 0009 for why this is self-reported rather than pulled from
    * the finder tool automatically. */
   training_style: string | null;
+  /** Denormalized from auth.users at signup (migration 0021) — profiles
+   * otherwise has no way to show a user's email under RLS, since client
+   * code can't query auth.users directly (no service-role key in this
+   * app). Only ever populated by the handle_new_user trigger / the
+   * migration's one-time backfill, never written from app code. */
+  email: string | null;
+  /** Migration 0021 — gates the /admin roster page. Not a UserRole
+   * value on purpose: admin-ness is orthogonal to athlete/coach (an
+   * admin is still whichever of those they were before), so it's its
+   * own boolean rather than a third role value. */
+  is_admin: boolean;
   created_at: string;
 }
 
