@@ -118,7 +118,21 @@ export async function getMyProfile(
   // RoleOnboarding pop back up and look like a fresh account instead of
   // surfacing the real problem (see migration 0022). Logging doesn't
   // change the fallback behavior, just makes the next one visible.
-  if (error) console.error("getMyProfile: failed to read profile", error);
+  //
+  // PostgrestError extends Error, whose message/stack are non-enumerable
+  // own properties — logging the error object directly prints `{}` in
+  // the browser console (and in Next's dev overlay, which serializes
+  // console.error args the same way), hiding the one thing that'd
+  // actually explain the failure. Pulling the fields out explicitly
+  // avoids that.
+  if (error) {
+    console.error("getMyProfile: failed to read profile", {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
+  }
   return { role: data?.role ?? "athlete", roleSelected: data?.role_selected ?? false };
 }
 
