@@ -1,0 +1,38 @@
+name: CI
+
+# Runs on every push/PR so a broken commit is caught here instead of
+# silently reaching Vercel — until now, tsc/eslint/vitest/next build only
+# ran when someone happened to run them by hand. `next build` doesn't need
+# real Supabase credentials (confirmed locally: it succeeds with no
+# .env.local at all, since nothing here fetches data at build time), so
+# this needs no repo secrets to work.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit -p .
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
