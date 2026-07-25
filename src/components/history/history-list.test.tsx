@@ -91,4 +91,10 @@ describe("HistoryList delete", () => {
     await waitFor(() => expect(screen.queryByText("Program A · Day 1")).not.toBeInTheDocument());
     expect(screen.getByText("Program B · Day 1")).toBeInTheDocument();
   });
+
+  it("hides the delete affordance entirely when canDelete is false", () => {
+    render(<HistoryList entries={[makeEntry()]} loggedSetsByExercise={{}} canDelete={false} />);
+
+    expect(screen.queryByRole("button", { name: /Delete session from/i })).not.toBeInTheDocument();
+  });
 });

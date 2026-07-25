@@ -4,11 +4,11 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getClientLastActivity, getMyClients, getMyRole } from "@/lib/coaching/queries";
-import { getRecentActivity } from "@/lib/dashboard/queries";
 import { getProgramsForClient } from "@/lib/programs/queries";
 import { getConversationMessages } from "@/lib/messaging/queries";
+import { getSessionHistory, getLoggedSets, groupLoggedSetsByExercise } from "@/lib/logging/queries";
 import { ClientDetail } from "@/components/clients/client-detail";
-import { RecentActivitySection } from "@/components/dashboard/recent-activity-section";
+import { ClientHistorySection } from "@/components/coaching/client-history-section";
 import { NotesSection } from "@/components/coaching/notes-section";
 import { MessageThread } from "@/components/coaching/message-thread";
 
@@ -24,9 +24,13 @@ interface AthletePageProps {
 /**
  * The full per-athlete workspace the Coaching hub links out to: profile
  * summary + programs (ClientDetail, moved here unchanged from the old
- * /clients/[id] route), workout history, messages, and a notes
- * placeholder — everything the spec's "Client Detail" section calls for,
- * on one page instead of scattered across /clients and /programs.
+ * /clients/[id] route), full per-set workout history (ClientHistorySection
+ * — previously just a coarse "logged/skipped + program name" strip via
+ * RecentActivitySection; getSessionHistory already accepts any athleteId
+ * and RLS already permits reading it via program ownership, so this was a
+ * wiring change, not a new capability), messages, and a notes placeholder
+ * — everything the spec's "Client Detail" section calls for, on one page
+ * instead of scattered across /clients and /programs.
  * `id` is the athlete's user id (coach_clients.client_id), not the
  * coach_clients row id.
  */
@@ -53,12 +57,16 @@ export default async function AthletePage({ params }: AthletePageProps) {
   // still pending" (no linked user yet, so there's nothing here to show).
   if (!client) notFound();
 
-  const [programs, lastActivityOn, activityEvents, messages] = await Promise.all([
+  const [programs, lastActivityOn, historyEntries, messages] = await Promise.all([
     getProgramsForClient(supabase, user.id, id),
     getClientLastActivity(supabase, id),
-    getRecentActivity(supabase, id),
+    getSessionHistory(supabase, id),
     getConversationMessages(supabase, client.id),
   ]);
+  // Depends on historyEntries' log ids, so it can't join the Promise.all
+  // above — same two-step shape /history's own page uses for itself.
+  const loggedSets = await getLoggedSets(supabase, historyEntries.map((e) => e.log.id));
+  const loggedSetsByExercise = groupLoggedSetsByExercise(loggedSets);
 
   const activeClients = clients.filter((c) => c.status === "active");
 
@@ -75,7 +83,7 @@ export default async function AthletePage({ params }: AthletePageProps) {
       <div className="flex flex-col gap-8">
         <ClientDetail coachId={user.id} client={client} programs={programs} lastActivityOn={lastActivityOn} activeClients={activeClients} />
 
-        <RecentActivitySection events={activityEvents} title="Workout history" />
+        <ClientHistorySection entries={historyEntries} loggedSetsByExercise={loggedSetsByExercise} />
 
         <MessageThread
           coachClientId={client.id}

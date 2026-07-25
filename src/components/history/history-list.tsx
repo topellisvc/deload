@@ -17,6 +17,13 @@ interface HistoryListProps {
    * groupLoggedSetsByExercise. One flat map for every entry on the page,
    * same batching principle as everywhere else this shape is used. */
   loggedSetsByExercise: Record<string, LoggedSet[]>;
+  /** Off for a coach reviewing a client's history (see
+   * ClientHistorySection) — deleting a client's real training record isn't
+   * a coach action, and the DELETE policies on session_logs/logged_sets
+   * only ever check `auth.uid() = athlete_id` (migration 0006), so the
+   * button would silently no-op there instead of actually doing anything.
+   * Defaults to true so /history (self) is unaffected. */
+  canDelete?: boolean;
 }
 
 /**
@@ -34,7 +41,7 @@ interface HistoryListProps {
  * immediately — same optimistic-remove pattern as DayLogControl's
  * handleDelete, just spanning every program instead of one day.
  */
-export function HistoryList({ entries: initialEntries, loggedSetsByExercise }: HistoryListProps) {
+export function HistoryList({ entries: initialEntries, loggedSetsByExercise, canDelete = true }: HistoryListProps) {
   const [entries, setEntries] = useState(initialEntries);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -107,15 +114,17 @@ export function HistoryList({ entries: initialEntries, loggedSetsByExercise }: H
                     />
                   )}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmLogId(entry.log.id)}
-                  disabled={busyId === entry.log.id}
-                  aria-label={`Delete session from ${formatLogDate(entry.log.performed_on, today, { includeYear: true })}`}
-                  className="shrink-0 text-muted-foreground transition-colors hover:text-danger disabled:opacity-50"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmLogId(entry.log.id)}
+                    disabled={busyId === entry.log.id}
+                    aria-label={`Delete session from ${formatLogDate(entry.log.performed_on, today, { includeYear: true })}`}
+                    className="shrink-0 text-muted-foreground transition-colors hover:text-danger disabled:opacity-50"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
               </div>
 
               {entry.log.note && <p className="mt-2 text-sm text-muted-foreground">{entry.log.note}</p>}
