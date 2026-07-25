@@ -108,11 +108,17 @@ export async function getMyProfile(
   supabase: SupabaseClient,
   userId: string
 ): Promise<{ role: UserRole; roleSelected: boolean }> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("profiles")
     .select("role, role_selected")
     .eq("id", userId)
     .maybeSingle<{ role: UserRole; role_selected: boolean }>();
+  // A query error here (e.g. a bad RLS policy) used to fail silently into
+  // the same `data ?? ...` fallback as "no row yet" — which made
+  // RoleOnboarding pop back up and look like a fresh account instead of
+  // surfacing the real problem (see migration 0022). Logging doesn't
+  // change the fallback behavior, just makes the next one visible.
+  if (error) console.error("getMyProfile: failed to read profile", error);
   return { role: data?.role ?? "athlete", roleSelected: data?.role_selected ?? false };
 }
 
