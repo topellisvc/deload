@@ -124,15 +124,27 @@ export function TrainingSession({
   // unload to hook), but that's the smaller risk here — nothing in this
   // component navigates away *during* an unawaited save.
   const persisting = saving || finishing || skippingWorkout || starting;
+  // Read via a ref updated during render (not in an effect keyed on
+  // `persisting`) rather than adding/removing the listener every time
+  // `persisting` flips: an add/remove-on-dependency-change effect has a
+  // window, between the state update that clears `persisting` and that
+  // effect's own cleanup actually running, where a stale listener (closed
+  // over the old `persisting`) is still attached — usually too brief to
+  // notice, but a real CI flake (a beforeunload dispatched in that window
+  // was still incorrectly blocked). Registering the listener once and
+  // reading the ref instead makes it read whatever was most recently
+  // rendered, with no such window at all.
+  const persistingRef = useRef(persisting);
+  persistingRef.current = persisting;
   useEffect(() => {
-    if (!persisting) return;
     function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (!persistingRef.current) return;
       e.preventDefault();
       e.returnValue = "";
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [persisting]);
+  }, []);
 
   const currentStep = sequence[stepIndex];
   const loggedSetCounts = useMemo(() => draftSetCounts(draftSets), [draftSets]);
