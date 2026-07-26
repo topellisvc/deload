@@ -31,6 +31,13 @@ export interface TodayWorkout {
    * either end of the program. */
   prevDayId: string | null;
   nextDayId: string | null;
+  /** This day's position among the *non-rest* training sessions in its
+   * week (1-based) and how many such sessions that week has in total —
+   * e.g. "Session 2 of 3" for the second day of a push/pull/legs week.
+   * sessionPosition is null when the displayed day is itself a rest day
+   * (there's nothing to number) or the week has no non-rest days. */
+  sessionPosition: number | null;
+  sessionsInWeek: number | null;
 }
 
 export interface UpcomingSession {

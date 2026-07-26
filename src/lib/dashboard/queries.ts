@@ -149,6 +149,21 @@ export async function getActiveProgramContext(
 
   const draftDayIds = await getDraftSessionDayIds(supabase, dayIds, userId);
 
+  // "Session X of Y" — this day's position among the non-rest training
+  // days in its own week, e.g. the 2nd of 3 for the middle day of a
+  // push/pull/legs week. Rest days aren't numbered (nothing to train), and
+  // a week made up entirely of rest days has no sessions to count either.
+  let sessionPosition: number | null = null;
+  let sessionsInWeek: number | null = null;
+  if (displayEntry) {
+    const weekSessionDays = displayEntry.week.days.filter((d) => !d.is_rest_day);
+    sessionsInWeek = weekSessionDays.length > 0 ? weekSessionDays.length : null;
+    if (!displayEntry.day.is_rest_day && sessionsInWeek) {
+      const idx = weekSessionDays.findIndex((d) => d.id === displayEntry.day.id);
+      sessionPosition = idx >= 0 ? idx + 1 : null;
+    }
+  }
+
   const todayWorkout: TodayWorkout | null = displayEntry
     ? {
         weekId: displayEntry.week.id,
@@ -162,6 +177,8 @@ export async function getActiveProgramContext(
         isRealToday: displayIndex === todayIndex,
         prevDayId: flat[displayIndex - 1]?.day.id ?? null,
         nextDayId: flat[displayIndex + 1]?.day.id ?? null,
+        sessionPosition,
+        sessionsInWeek,
       }
     : null;
 

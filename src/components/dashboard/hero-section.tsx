@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarClock, ChevronLeft, ChevronRight, Dumbbell, Moon, PlusCircle, Trophy } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Dumbbell, ListOrdered, Moon, PlusCircle, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkipWorkoutButton } from "@/components/dashboard/skip-workout-button";
 import { StarterProgramPicker } from "@/components/programs/starter-program-picker";
@@ -77,6 +77,12 @@ function WorkoutHero({ context, athleteId }: { context: ActiveProgramContext; at
           <Dumbbell className="size-4" />
           {exerciseCount} {exerciseCount === 1 ? "exercise" : "exercises"}
         </span>
+        {today.sessionPosition && today.sessionsInWeek && (
+          <span className="flex items-center gap-1.5">
+            <ListOrdered className="size-4" />
+            Session {today.sessionPosition} of {today.sessionsInWeek}
+          </span>
+        )}
         <span className="flex items-center gap-1.5">
           <CalendarClock className="size-4" />
           Week {today.weekPosition} of {today.totalWeeks}
