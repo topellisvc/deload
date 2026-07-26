@@ -135,37 +135,12 @@
     scroll-behavior: smooth;
   }
 
-  /* Experimental/opt-in background wash on top of flat --background —
-     three large, soft blurred blobs using the zone-* tokens (the same
-     ones DISCIPLINE_META/EXERCISE_CATEGORY_ACTIVE_CLASSES use for
-     resistance/running/hybrid color-coding elsewhere), instead of a
-     single primary-colored glow. Replaces both the earlier dot-grid and
-     weight-plate tile experiments — this one IS the whole background
-     treatment rather than a pattern layered on top of a separate glow,
-     so removing it is just deleting the background-image line (and its
-     .dark body override) below. Dark mode uses stronger color-mix
-     percentages since the same ratio reads as barely-there against a
-     much darker base color. Scrolls with the page rather than using
-     background-attachment: fixed, which has known repaint/jank issues
-     on iOS Safari. */
   body {
     background-color: var(--color-background);
-    background-image:
-      radial-gradient(420px 340px at 10% 10%, color-mix(in oklch, var(--color-zone-strength) 14%, transparent), transparent 70%),
-      radial-gradient(460px 380px at 90% 15%, color-mix(in oklch, var(--color-zone-endurance) 14%, transparent), transparent 70%),
-      radial-gradient(520px 420px at 45% 85%, color-mix(in oklch, var(--color-zone-hypertrophy) 12%, transparent), transparent 70%);
-    background-repeat: no-repeat;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-  }
-
-  .dark body {
-    background-image:
-      radial-gradient(420px 340px at 10% 10%, color-mix(in oklch, var(--color-zone-strength) 20%, transparent), transparent 70%),
-      radial-gradient(460px 380px at 90% 15%, color-mix(in oklch, var(--color-zone-endurance) 20%, transparent), transparent 70%),
-      radial-gradient(520px 420px at 45% 85%, color-mix(in oklch, var(--color-zone-hypertrophy) 18%, transparent), transparent 70%);
   }
 
   ::selection {
