@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { createSessionLog } from "@/lib/logging/mutations";
 import { todayDateString } from "@/lib/dates";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
-import { buildExerciseSequence, buildSetTargets, findResumeStepIndex } from "@/lib/training/sequence";
+import { buildExerciseList, buildSetTargets, findResumeExerciseId } from "@/lib/training/sequence";
 import { estimateWorkoutDurationSeconds } from "@/lib/training/estimate-duration";
 import { computeWorkoutTotals } from "@/lib/training/totals";
 import { saveDraftSession, deleteDraftSession, finishWorkout } from "@/lib/training/mutations";
@@ -20,6 +20,7 @@ import { RestScreen } from "@/components/training/rest-screen";
 import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-screen";
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
 import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
+import { ExercisePickerDialog } from "@/components/training/exercise-picker-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Phase = "overview" | "exercise" | "rest" | "exercise-complete" | "summary" | "program-complete";
@@ -59,6 +60,16 @@ function nextPosition(blockExerciseId: string, sets: DraftSet[]): number {
  * than the single most recent edit — that's what makes resuming mid-workout
  * possible at all (see the initial-state derivation below, which is the
  * exact same logic a fresh mount uses whether or not `initialDraft` exists).
+ *
+ * Exercise order isn't enforced: `currentExerciseId` can move to any
+ * exercise in `exerciseList` at any time, either by finishing the current
+ * one (auto-advances to the next not-yet-done exercise) or by an explicit
+ * jump via the exercise picker (see ExercisePickerDialog) — added after
+ * athlete feedback that real gym order follows whatever equipment happens
+ * to be free, not the program's listed order. Each exercise's progress is
+ * tracked independently by its own logged-set count, never by position, so
+ * visiting exercises out of order and coming back to one later loses
+ * nothing.
  */
 export function TrainingSession({
   trainingDayId,
@@ -76,12 +87,7 @@ export function TrainingSession({
   initialDraft,
 }: TrainingSessionProps) {
   const router = useRouter();
-  const sequence = useMemo(() => buildExerciseSequence(blocks), [blocks]);
-  // Distinct exercises, not sequence.length — since buildExerciseSequence
-  // now emits one step per SET/turn (to interleave supersets), its length
-  // is a turn count, not an exercise count. The Overview screen's "X
-  // Exercises" badge and the in-workout progress bar both need the latter.
-  const totalExerciseCount = useMemo(() => blocks.reduce((n, b) => n + b.exercises.length, 0), [blocks]);
+  const exerciseList = useMemo(() => buildExerciseList(blocks), [blocks]);
   const estimatedSeconds = useMemo(() => estimateWorkoutDurationSeconds(blocks), [blocks]);
   const coachNoteTexts = useMemo(
     () => blocks.flatMap((b) => b.exercises).filter((e) => e.notes).map((e) => `${getExerciseDisplayName(e)}: ${e.notes}`),
@@ -93,13 +99,13 @@ export function TrainingSession({
   const [workoutNote, setWorkoutNote] = useState(initialDraft?.workoutNote ?? "");
   const [startedAt, setStartedAt] = useState<string | null>(initialDraft?.startedAt ?? null);
 
-  const [stepIndex, setStepIndex] = useState<number>(() => {
-    if (!initialDraft) return 0;
-    return findResumeStepIndex(sequence, draftSetCounts(initialDraft.draftSets)) ?? sequence.length;
+  const [currentExerciseId, setCurrentExerciseId] = useState<string | null>(() => {
+    if (!initialDraft) return exerciseList[0]?.id ?? null;
+    return findResumeExerciseId(exerciseList, draftSetCounts(initialDraft.draftSets));
   });
   const [phase, setPhase] = useState<Phase>(() => {
     if (!initialDraft) return "overview";
-    return stepIndex >= sequence.length ? "summary" : "exercise";
+    return currentExerciseId === null ? "summary" : "exercise";
   });
   const [completedAt, setCompletedAt] = useState<string | null>(() => (phase === "summary" ? new Date().toISOString() : null));
   const [restSeconds, setRestSeconds] = useState(0);
@@ -110,6 +116,7 @@ export function TrainingSession({
   const [skippingWorkout, setSkippingWorkout] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSkipOpen, setConfirmSkipOpen] = useState(false);
+  const [exercisePickerOpen, setExercisePickerOpen] = useState(false);
 
   const transitionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -146,7 +153,8 @@ export function TrainingSession({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, []);
 
-  const currentStep = sequence[stepIndex];
+  const currentExercise = exerciseList.find((e) => e.id === currentExerciseId) ?? null;
+  const currentExerciseIndex = currentExerciseId ? exerciseList.findIndex((e) => e.id === currentExerciseId) : -1;
   const loggedSetCounts = useMemo(() => draftSetCounts(draftSets), [draftSets]);
   const totals = useMemo(() => computeWorkoutTotals(draftSets), [draftSets]);
 
@@ -180,54 +188,47 @@ export function TrainingSession({
       return;
     }
     setStartedAt(session.startedAt);
-    setPhase(sequence.length === 0 ? "summary" : "exercise");
-    if (sequence.length === 0) setCompletedAt(new Date().toISOString());
+    setPhase(exerciseList.length === 0 ? "summary" : "exercise");
+    if (exerciseList.length === 0) setCompletedAt(new Date().toISOString());
   }
 
-  // Moves the sequence pointer to whatever step is next — this is now the
-  // only place stepIndex changes. Under the interleaved sequence (one step
-  // per set/turn, see buildExerciseSequence), "next step" might be another
-  // turn of the same exercise (a straight block) or a superset partner's
-  // turn (a grouped block) — this function doesn't need to know which,
-  // since sequence[] already encodes the correct order either way.
-  function commitAdvance() {
-    setStepIndex((prev) => {
-      const next = prev + 1;
-      if (next >= sequence.length) {
-        setCompletedAt(new Date().toISOString());
-        setPhase("summary");
-      } else {
-        setPhase("exercise");
-      }
-      return next;
-    });
-  }
-
-  // showCompleteTransition is true only when the just-finished turn was
-  // this exercise's LAST turn anywhere in the sequence (not just the last
-  // one before a rest) — see the exerciseFinished checks in
-  // handleCompleteSet/handleCardioFinish.
-  function advanceStep(showCompleteTransition: boolean) {
-    if (showCompleteTransition) {
-      setPhase("exercise-complete");
-      transitionTimeout.current = setTimeout(commitAdvance, 1100);
+  // Moves to a specific exercise (or, when null, to the summary — every
+  // exercise is done). Used both for auto-advance after finishing an
+  // exercise and for an explicit jump via the exercise picker; either way
+  // there's nothing else to reconcile, since progress lives entirely on
+  // draftSets keyed by exercise id, never on which exercise is "current."
+  function goToExercise(exerciseId: string | null) {
+    if (exerciseId === null) {
+      setCompletedAt(new Date().toISOString());
+      setPhase("summary");
     } else {
-      commitAdvance();
+      setCurrentExerciseId(exerciseId);
+      setPhase("exercise");
     }
   }
 
+  function handleJumpToExercise(exerciseId: string) {
+    // A manual jump should win over any pending "exercise finished, about
+    // to auto-advance" transition rather than being silently overridden a
+    // moment later.
+    if (transitionTimeout.current) {
+      clearTimeout(transitionTimeout.current);
+      transitionTimeout.current = null;
+    }
+    goToExercise(exerciseId);
+  }
+
   async function handleCompleteSet(payload: { weight: number | null; reps: number | null; notes: string | null }) {
-    if (!currentStep) return;
-    const exercise = currentStep.blockExercise;
-    const targets = buildSetTargets(exercise.sets);
-    const loggedCount = loggedSetCounts.get(exercise.id) ?? 0;
+    if (!currentExercise) return;
+    const targets = buildSetTargets(currentExercise.sets);
+    const loggedCount = loggedSetCounts.get(currentExercise.id) ?? 0;
     const target = targets[loggedCount] ?? targets[targets.length - 1];
     if (!target) return;
 
     const newSet: DraftSet = {
-      blockExerciseId: exercise.id,
+      blockExerciseId: currentExercise.id,
       setPrescriptionId: target.id,
-      position: nextPosition(exercise.id, draftSets),
+      position: nextPosition(currentExercise.id, draftSets),
       performedWeight: payload.weight,
       performedReps: payload.reps,
       // No RPE input in Training Mode's strength logger — weight and reps
@@ -246,23 +247,23 @@ export function TrainingSession({
     await persist({ draftSets: next });
     setSaving(false);
 
-    const newCount = loggedCount + 1;
+    const updatedCounts = draftSetCounts(next);
+    const newCount = updatedCounts.get(currentExercise.id) ?? 0;
     if (newCount < targets.length) {
-      // This exercise still has turns left later in the sequence
-      // (possibly after a superset partner's turn in between, if this is
-      // a grouped block). Rest if this set prescribes it, then move on to
-      // whatever the next step actually is — same exercise again for a
-      // straight block, the partner exercise for a superset.
+      // More sets left on this exercise — rest if this set prescribes it,
+      // then come right back to the same exercise for the next one. No
+      // forced switch to a different exercise mid-set anymore (see
+      // sequence.ts's buildExerciseList doc comment).
       if (target.rest_seconds != null && target.rest_seconds > 0) {
         setRestSeconds(target.rest_seconds);
         setPhase("rest");
-      } else {
-        commitAdvance();
       }
     } else {
-      // This exercise's last turn, anywhere in the sequence — celebrate,
-      // then move on.
-      advanceStep(true);
+      // This exercise is fully logged — celebrate, then auto-advance to
+      // whatever's actually still incomplete (which may not be the next
+      // exercise in list order, if the athlete free-navigated earlier).
+      setPhase("exercise-complete");
+      transitionTimeout.current = setTimeout(() => goToExercise(findResumeExerciseId(exerciseList, updatedCounts)), 1100);
     }
   }
 
@@ -275,14 +276,13 @@ export function TrainingSession({
     rpe: number | null;
     notes: string | null;
   }) {
-    if (!currentStep) return;
-    const exercise = currentStep.blockExercise;
-    const target = exercise.sets[0];
+    if (!currentExercise) return;
+    const target = currentExercise.sets[0];
 
     const newSet: DraftSet = {
-      blockExerciseId: exercise.id,
+      blockExerciseId: currentExercise.id,
       setPrescriptionId: target?.id ?? null,
-      position: nextPosition(exercise.id, draftSets),
+      position: nextPosition(currentExercise.id, draftSets),
       performedWeight: null,
       performedReps: null,
       performedRpe: payload.rpe,
@@ -298,22 +298,24 @@ export function TrainingSession({
     setSaving(true);
     await persist({ draftSets: next });
     setSaving(false);
-    // Cardio/running exercises always contribute exactly one turn (see
-    // turnCount in sequence.ts), so finishing one is always its last turn.
-    advanceStep(true);
+    // Cardio/running exercises are always logged as a single summary form
+    // (see ExerciseScreen's category branch), so finishing one always
+    // completes it in one shot.
+    const updatedCounts = draftSetCounts(next);
+    setPhase("exercise-complete");
+    transitionTimeout.current = setTimeout(() => goToExercise(findResumeExerciseId(exerciseList, updatedCounts)), 1100);
   }
 
-  // Rest now always sits BETWEEN two distinct sequence entries rather than
-  // "inside" a single exercise's step (see commitAdvance) — so finishing a
-  // rest period always means moving the sequence pointer forward, same as
-  // any other step transition.
+  // Resting only ever happens between two sets of the SAME exercise now
+  // (see handleCompleteSet) — "done resting" just returns to that same
+  // exercise's screen, ready for its next set.
   function handleRestDone() {
-    commitAdvance();
+    setPhase("exercise");
   }
 
   function handleExerciseNoteChange(text: string) {
-    if (!currentStep) return;
-    const next = { ...exerciseNotes, [currentStep.blockExercise.id]: text };
+    if (!currentExercise) return;
+    const next = { ...exerciseNotes, [currentExercise.id]: text };
     setExerciseNotes(next);
     void persist({ exerciseNotes: next });
   }
@@ -405,28 +407,11 @@ export function TrainingSession({
 
   const elapsedSeconds = startedAt && completedAt ? Math.max(0, Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000)) : 0;
 
-  // "X of Y Exercises" needs a count of DISTINCT exercises, not sequence
-  // position — sequence[] is now one entry per set/turn (see
-  // buildExerciseSequence), so raw stepIndex/sequence.length would count
-  // individual sets instead once a superset interleaves. Reusing the
-  // existing stepIndex/totalSteps prop names on ExerciseScreen (which just
-  // forwards them to WorkoutProgressBar) keeps that component untouched.
-  const exercisesSeenSoFar = new Set(sequence.slice(0, stepIndex + 1).map((s) => s.blockExercise.id)).size;
-  const progressIndex = Math.max(0, exercisesSeenSoFar - 1);
-
-  // The rest screen's "Next Set" preview is the literal next sequence
-  // entry, which — for a superset — may belong to a different exercise
-  // than the one just finished. Only shown once currentStep exists (i.e.
-  // we're actually resting between two exercise steps).
-  const nextStep = sequence[stepIndex + 1];
-  const nextIsStrength = nextStep?.blockExercise.exercise_category === "strength";
-  const restNextTarget =
-    nextStep && nextIsStrength
-      ? buildSetTargets(nextStep.blockExercise.sets)[loggedSetCounts.get(nextStep.blockExercise.id) ?? 0] ?? null
-      : null;
-  const restNextExerciseName = nextStep ? getExerciseDisplayName(nextStep.blockExercise) : null;
-  const restNextLabel = nextStep && !nextIsStrength ? `Next: ${restNextExerciseName}` : null;
-  const restShowExerciseName = !!(currentStep && nextStep && nextStep.blockExercise.id !== currentStep.blockExercise.id);
+  // Rest only ever happens between two sets of the current exercise (see
+  // handleCompleteSet), so the preview is always that same exercise's next
+  // target — never a different exercise's, the way a superset's
+  // interleaved turns used to require.
+  const restNextTarget = currentExercise ? buildSetTargets(currentExercise.sets)[loggedSetCounts.get(currentExercise.id) ?? 0] : undefined;
 
   return (
     <div className="min-h-screen">
@@ -439,7 +424,7 @@ export function TrainingSession({
           totalWeeks={totalWeeks}
           dayLabel={dayLabel}
           coachEmail={coachEmail}
-          exerciseCount={totalExerciseCount}
+          exerciseCount={exerciseList.length}
           estimatedSeconds={estimatedSeconds}
           blocks={blocks}
           onBegin={handleBegin}
@@ -449,39 +434,39 @@ export function TrainingSession({
         />
       )}
 
-      {phase === "exercise" && currentStep && (
+      {phase === "exercise" && currentExercise && (
         <ExerciseScreen
-          key={currentStep.blockExercise.id}
-          step={currentStep}
-          stepIndex={progressIndex}
-          totalSteps={totalExerciseCount}
-          loggedSetCount={loggedSetCounts.get(currentStep.blockExercise.id) ?? 0}
+          key={currentExercise.id}
+          exercise={currentExercise}
+          exerciseIndex={Math.max(0, currentExerciseIndex)}
+          totalExercises={exerciseList.length}
+          loggedSetCount={loggedSetCounts.get(currentExercise.id) ?? 0}
           draftSets={draftSets}
           personalRecords={personalRecords}
-          previous={previousPerformance[currentStep.blockExercise.id]}
-          exerciseNote={exerciseNotes[currentStep.blockExercise.id] ?? ""}
+          previous={previousPerformance[currentExercise.id]}
+          exerciseNote={exerciseNotes[currentExercise.id] ?? ""}
           onExerciseNoteChange={handleExerciseNoteChange}
           onCompleteSet={handleCompleteSet}
           onCardioFinish={handleCardioFinish}
+          onOpenExercisePicker={() => setExercisePickerOpen(true)}
           onSkipWorkout={handleSkipWorkout}
           busy={saving}
         />
       )}
 
-      {phase === "rest" && currentStep && (
+      {phase === "rest" && currentExercise && restNextTarget && (
         <RestScreen
-          key={`${currentStep.blockExercise.id}-${loggedSetCounts.get(currentStep.blockExercise.id) ?? 0}`}
+          key={`${currentExercise.id}-${loggedSetCounts.get(currentExercise.id) ?? 0}`}
           initialSeconds={restSeconds}
-          nextSetLabel={restNextLabel}
           nextTarget={restNextTarget}
-          nextExerciseName={restShowExerciseName ? restNextExerciseName : null}
-          category={nextStep?.blockExercise.exercise_category ?? currentStep.blockExercise.exercise_category}
+          category={currentExercise.exercise_category}
+          onOpenExercisePicker={() => setExercisePickerOpen(true)}
           onSkip={handleRestDone}
           onContinue={handleRestDone}
         />
       )}
 
-      {phase === "exercise-complete" && currentStep && <ExerciseCompleteScreen exerciseName={getExerciseDisplayName(currentStep.blockExercise)} />}
+      {phase === "exercise-complete" && currentExercise && <ExerciseCompleteScreen exerciseName={getExerciseDisplayName(currentExercise)} />}
 
       {phase === "summary" && (
         <WorkoutSummaryScreen
@@ -498,6 +483,15 @@ export function TrainingSession({
       )}
 
       {phase === "program-complete" && <ProgramCompleteScreen programName={programName} onDone={goToDashboard} />}
+
+      <ExercisePickerDialog
+        open={exercisePickerOpen}
+        onClose={() => setExercisePickerOpen(false)}
+        exercises={exerciseList}
+        currentExerciseId={currentExerciseId}
+        loggedSetCounts={loggedSetCounts}
+        onSelect={handleJumpToExercise}
+      />
 
       <ConfirmDialog
         open={confirmSkipOpen}

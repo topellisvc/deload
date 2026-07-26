@@ -12,8 +12,8 @@ const { routerMock } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({}) }));
 
-// The full state machine (exercise sequencing, superset interleaving, rest
-// timers, resume-step derivation) is out of scope here — that's
+// The full state machine (exercise navigation, rest timers, resume
+// derivation) is out of scope here — that's
 // integration-level territory already covered by live testing (tasks
 // #8-#11). These tests only exercise the two things ProgramBuilder-style
 // unit coverage can actually add value on: the skip-workout confirm branch
@@ -90,14 +90,13 @@ const FAKE_EXERCISE: BlockExerciseRow = {
   ],
 };
 
-// Real buildExerciseSequence/findResumeStepIndex depend on the full block
-// tree and superset-interleaving rules — none of that matters for these two
-// behaviors, so it's replaced with a fixed one-step sequence and a resume
-// index that always lands on that same step.
+// Real buildExerciseList/findResumeExerciseId depend on the full block tree
+// — none of that matters for these two behaviors, so it's replaced with a
+// fixed one-exercise list and a resume id that always lands on it.
 vi.mock("@/lib/training/sequence", () => ({
-  buildExerciseSequence: () => [{ blockExercise: FAKE_EXERCISE }],
+  buildExerciseList: () => [FAKE_EXERCISE],
   buildSetTargets: () => [{ id: "target-1", rest_seconds: null }],
-  findResumeStepIndex: () => 0,
+  findResumeExerciseId: () => FAKE_EXERCISE.id,
 }));
 vi.mock("@/lib/training/estimate-duration", () => ({ estimateWorkoutDurationSeconds: () => 0 }));
 vi.mock("@/lib/training/totals", () => ({ computeWorkoutTotals: () => ({}) }));

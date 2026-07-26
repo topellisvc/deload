@@ -1,20 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ListOrdered } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
 import type { ExerciseCategory, SetPrescription } from "@/lib/programs/types";
 
 interface RestScreenProps {
   initialSeconds: number;
-  nextSetLabel: string | null;
-  nextTarget: SetPrescription | null;
-  /** Set only when the upcoming turn belongs to a different exercise than
-   * the one just finished (a superset/circuit partner) — surfaced so the
-   * athlete knows to switch exercises, not just which set is next. Null
-   * for the common case of resting between two sets of the same exercise. */
-  nextExerciseName: string | null;
+  /** Rest now only ever happens between two sets of the SAME exercise —
+   * free exercise navigation means the athlete decides when to switch,
+   * rather than a superset partner forcing an exercise change mid-rest
+   * (see sequence.ts's buildExerciseList doc comment) — so this is always
+   * that exercise's next set target, never a different exercise's. */
+  nextTarget: SetPrescription;
   category: ExerciseCategory;
+  onOpenExercisePicker: () => void;
   onSkip: () => void;
   onContinue: () => void;
 }
@@ -41,7 +42,7 @@ function formatClock(totalSeconds: number): string {
  * recompute the moment the tab becomes visible again rather than waiting up
  * to a second for the next tick.
  */
-export function RestScreen({ initialSeconds, nextSetLabel, nextTarget, nextExerciseName, category, onSkip, onContinue }: RestScreenProps) {
+export function RestScreen({ initialSeconds, nextTarget, category, onOpenExercisePicker, onSkip, onContinue }: RestScreenProps) {
   const endAtRef = useRef(Date.now() + initialSeconds * 1000);
   const [remaining, setRemaining] = useState(initialSeconds);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -64,7 +65,16 @@ export function RestScreen({ initialSeconds, nextSetLabel, nextTarget, nextExerc
   const done = remaining <= 0;
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center gap-8 px-6 py-12 text-center">
+    <div className="relative mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center gap-8 px-6 py-12 text-center">
+      <button
+        type="button"
+        onClick={onOpenExercisePicker}
+        className="absolute right-6 top-6 flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+      >
+        <ListOrdered className="size-3.5" />
+        Exercises
+      </button>
+
       <div className="flex flex-col items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {done ? "Rest complete" : "Rest Remaining"}
@@ -72,15 +82,10 @@ export function RestScreen({ initialSeconds, nextSetLabel, nextTarget, nextExerc
         <span className="text-7xl font-bold tabular-nums text-foreground">{formatClock(remaining)}</span>
       </div>
 
-      {nextTarget && (
-        <div className="flex flex-col items-center gap-1.5 rounded-xl bg-muted/50 px-5 py-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Next Set{nextExerciseName ? ` · ${nextExerciseName}` : ""}
-          </span>
-          <SetDetails set={nextTarget} category={category} />
-        </div>
-      )}
-      {!nextTarget && nextSetLabel && <p className="text-sm text-muted-foreground">{nextSetLabel}</p>}
+      <div className="flex flex-col items-center gap-1.5 rounded-xl bg-muted/50 px-5 py-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Next Set</span>
+        <SetDetails set={nextTarget} category={category} />
+      </div>
 
       <div className="flex w-full flex-col gap-2.5">
         <Button size="lg" onClick={onContinue} className="h-14 text-base">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExerciseSequence, buildSetTargets, findResumeStepIndex } from "./sequence";
+import { buildExerciseList, buildSetTargets, findResumeExerciseId } from "./sequence";
 import type { BlockRow, SetPrescription } from "@/lib/programs/types";
 
 function makeSet(overrides: Partial<SetPrescription> & Pick<SetPrescription, "id" | "block_exercise_id" | "position">): SetPrescription {
@@ -29,7 +29,7 @@ function makeBlock(overrides: Partial<BlockRow> & Pick<BlockRow, "id" | "day_id"
   return { block_type: "straight", rounds: 1, ...overrides };
 }
 
-describe("buildExerciseSequence", () => {
+describe("buildExerciseList", () => {
   it("orders exercises by block position, then exercise position", () => {
     const blocks: BlockRow[] = [
       makeBlock({
@@ -51,16 +51,18 @@ describe("buildExerciseSequence", () => {
       }),
     ];
 
-    const sequence = buildExerciseSequence(blocks);
-    expect(sequence.map((s) => s.blockExercise.id)).toEqual(["ex-a", "ex-b", "ex-c"]);
-    expect(sequence.map((s) => s.stepIndex)).toEqual([0, 1, 2]);
+    const list = buildExerciseList(blocks);
+    expect(list.map((e) => e.id)).toEqual(["ex-a", "ex-b", "ex-c"]);
   });
 
-  it("returns an empty sequence for a day with no exercises", () => {
-    expect(buildExerciseSequence([])).toEqual([]);
+  it("returns an empty list for a day with no exercises", () => {
+    expect(buildExerciseList([])).toEqual([]);
   });
 
-  it("interleaves a superset round-robin (A1, B1, A2, B2...) instead of finishing one exercise before the next", () => {
+  it("lists a superset's exercises next to each other, without interleaving their sets", () => {
+    // Free exercise navigation replaced forced round-robin alternation
+    // (see this file's doc comment) — a superset's two exercises just sit
+    // adjacent in the list, same as any other pair in a block.
     const blocks: BlockRow[] = [
       makeBlock({
         id: "block-1",
@@ -93,48 +95,8 @@ describe("buildExerciseSequence", () => {
       }),
     ];
 
-    const sequence = buildExerciseSequence(blocks);
-    expect(sequence.map((s) => s.blockExercise.id)).toEqual(["ex-a", "ex-b", "ex-a", "ex-b", "ex-a", "ex-b"]);
-    expect(sequence.map((s) => s.roundNumber)).toEqual([0, 0, 1, 1, 2, 2]);
-  });
-
-  it("drops an exercise out of later rounds once its own turns are used up, without blocking its partner", () => {
-    const blocks: BlockRow[] = [
-      makeBlock({
-        id: "block-1",
-        day_id: "day-1",
-        position: 1,
-        block_type: "superset",
-        rounds: 1,
-        exercises: [
-          {
-            id: "ex-a",
-            block_id: "block-1",
-            position: 1,
-            exercise_id: "a",
-            custom_name: null,
-            notes: null,
-            exercise_category: "strength",
-            sets: [makeSet({ id: "s-a", block_exercise_id: "ex-a", position: 1, sets: 3 })],
-          },
-          {
-            id: "ex-b",
-            block_id: "block-1",
-            position: 2,
-            exercise_id: "b",
-            custom_name: null,
-            notes: null,
-            // Cardio/running always contributes exactly one turn, regardless
-            // of its partner's set count.
-            exercise_category: "cardio",
-            sets: [makeSet({ id: "s-b", block_exercise_id: "ex-b", position: 1, sets: 1 })],
-          },
-        ],
-      }),
-    ];
-
-    const sequence = buildExerciseSequence(blocks);
-    expect(sequence.map((s) => s.blockExercise.id)).toEqual(["ex-a", "ex-b", "ex-a", "ex-a"]);
+    const list = buildExerciseList(blocks);
+    expect(list.map((e) => e.id)).toEqual(["ex-a", "ex-b"]);
   });
 });
 
@@ -162,8 +124,8 @@ describe("buildSetTargets", () => {
   });
 });
 
-describe("findResumeStepIndex", () => {
-  const sequence = buildExerciseSequence([
+describe("findResumeExerciseId", () => {
+  const list = buildExerciseList([
     makeBlock({
       id: "block-1",
       day_id: "day-1",
@@ -194,50 +156,17 @@ describe("findResumeStepIndex", () => {
   ]);
 
   it("resumes at the first exercise with fewer logged sets than prescribed", () => {
-    expect(findResumeStepIndex(sequence, new Map())).toBe(0);
-    expect(findResumeStepIndex(sequence, new Map([["ex-1", 3]]))).toBe(1);
+    expect(findResumeExerciseId(list, new Map())).toBe("ex-1");
+    expect(findResumeExerciseId(list, new Map([["ex-1", 3]]))).toBe("ex-2");
   });
 
   it("returns null once every exercise is fully logged", () => {
-    expect(findResumeStepIndex(sequence, new Map([["ex-1", 3], ["ex-2", 2]]))).toBeNull();
+    expect(findResumeExerciseId(list, new Map([["ex-1", 3], ["ex-2", 2]]))).toBeNull();
   });
 
-  it("resumes at the next unlogged turn, not an exercise's first occurrence, once interleaving is underway", () => {
-    // ex-1: 3 sets, ex-2: 3 sets, round-robin -> [ex-1, ex-2, ex-1, ex-2, ex-1, ex-2]
-    const interleaved = buildExerciseSequence([
-      makeBlock({
-        id: "block-1",
-        day_id: "day-1",
-        position: 1,
-        exercises: [
-          {
-            id: "ex-1",
-            block_id: "block-1",
-            position: 1,
-            exercise_id: "a",
-            custom_name: null,
-            notes: null,
-            exercise_category: "strength",
-            sets: [makeSet({ id: "s1", block_exercise_id: "ex-1", position: 1, sets: 3 })],
-          },
-          {
-            id: "ex-2",
-            block_id: "block-1",
-            position: 2,
-            exercise_id: "b",
-            custom_name: null,
-            notes: null,
-            exercise_category: "strength",
-            sets: [makeSet({ id: "s2", block_exercise_id: "ex-2", position: 1, sets: 3 })],
-          },
-        ],
-      }),
-    ]);
-
-    // Athlete has done A1, B1, A2 (ex-1 logged twice, ex-2 logged once) and
-    // is about to do B2 — the next unlogged turn is index 3 (the second
-    // ex-2 step), not index 0 (ex-1's first step, which the old
-    // one-step-per-exercise logic would have incorrectly sent them back to).
-    expect(findResumeStepIndex(interleaved, new Map([["ex-1", 2], ["ex-2", 1]]))).toBe(3);
+  it("finds the first incomplete exercise even when a later one was already logged out of order", () => {
+    // The athlete did ex-2 first (free navigation), then came back — the
+    // next thing left to do is still ex-1, not "whatever's after ex-2."
+    expect(findResumeExerciseId(list, new Map([["ex-2", 2]]))).toBe("ex-1");
   });
 });

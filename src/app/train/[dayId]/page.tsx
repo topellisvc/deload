@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCoachEmail } from "@/lib/coaching/queries";
 import { getPersonalRecords } from "@/lib/profile/queries";
 import { getTrainingDayForTraining, getDraftSession, getPreviousPerformanceForExercises } from "@/lib/training/queries";
-import { buildExerciseSequence } from "@/lib/training/sequence";
+import { buildExerciseList } from "@/lib/training/sequence";
 import { TrainingSession } from "@/components/training/training-session";
 
 export const metadata: Metadata = {
@@ -44,12 +44,7 @@ export default async function TrainPage({ params }: TrainPageProps) {
     redirect(`/programs/${detail.program.id}`);
   }
 
-  const sequence = buildExerciseSequence(detail.day.blocks);
-  // sequence[] now has one entry per set/turn (see buildExerciseSequence),
-  // so a superset exercise appears multiple times — dedupe by
-  // block_exercise before building the previous-performance lookup rather
-  // than fetching/looking up the same exercise's history several times.
-  const distinctSteps = Array.from(new Map(sequence.map((step) => [step.blockExercise.id, step])).values());
+  const exerciseList = buildExerciseList(detail.day.blocks);
 
   const [draft, personalRecords, coachEmail, previousPerformance] = await Promise.all([
     getDraftSession(supabase, dayId, user.id),
@@ -58,10 +53,10 @@ export default async function TrainPage({ params }: TrainPageProps) {
     getPreviousPerformanceForExercises(
       supabase,
       user.id,
-      distinctSteps.map((step) => ({
-        blockExerciseId: step.blockExercise.id,
-        exerciseId: step.blockExercise.exercise_id,
-        customName: step.blockExercise.custom_name,
+      exerciseList.map((exercise) => ({
+        blockExerciseId: exercise.id,
+        exerciseId: exercise.exercise_id,
+        customName: exercise.custom_name,
       }))
     ),
   ]);

@@ -1,4 +1,4 @@
-import type { BlockExerciseRow, BlockType, DayRow, LoggedSet } from "@/lib/programs/types";
+import type { DayRow, LoggedSet } from "@/lib/programs/types";
 
 /**
  * One completed set/segment, kept client-side (and persisted as scratch
@@ -24,7 +24,7 @@ export interface DraftSet {
 /**
  * In-progress workout state — the whole of what's needed to resume exactly
  * where the athlete left off. No stored "current position": that's derived
- * by comparing draftSets against the program's exercise sequence (see
+ * by comparing draftSets against the program's exercise list (see
  * lib/training/sequence.ts) every time it's needed, so it can never drift
  * out of sync with the sets actually logged.
  */
@@ -64,24 +64,6 @@ export function mapTrainingModeSessionRow(row: TrainingModeSessionRow): Training
     exerciseNotes: row.exercise_notes ?? {},
     workoutNote: row.workout_note,
   };
-}
-
-/**
- * One turn at one exercise in the guided flow. A straight block's single
- * exercise contributes one step per prescribed set; a superset/circuit
- * block's exercises interleave round-robin (A1, B1, A2, B2...) rather than
- * each running to completion before the next starts — see
- * buildExerciseSequence in sequence.ts. `roundNumber` (0-based) is which
- * round of its block this particular turn belongs to, e.g. to label "Round
- * 2 of 3" in a grouped block's UI.
- */
-export interface ExerciseStep {
-  blockExercise: BlockExerciseRow;
-  blockId: string;
-  blockType: BlockType;
-  blockRounds: number;
-  stepIndex: number;
-  roundNumber: number;
 }
 
 /** The single day Training Mode runs — enough program/week context for the

@@ -1,75 +1,28 @@
 import type { BlockExerciseRow, BlockRow, SetPrescription } from "@/lib/programs/types";
-import type { ExerciseStep } from "@/lib/training/types";
 
 /**
- * How many turns (rest-separated stops at this exercise) it contributes to
- * the sequence. Strength exercises get one turn per prescribed set, so a
- * superset partner interleaves set-by-set rather than all at once.
- * Running/cardio exercises always contribute exactly one turn, since
- * they're logged as a single summary form rather than per-set (see
- * ExerciseScreen's category branch) — unaffected by this change.
+ * Flat, ordered list of every distinct exercise in a day — block position
+ * then exercise position order. This is what Training Mode's default
+ * auto-advance and its exercise picker both walk.
+ *
+ * Superset/circuit blocks used to force a round-robin turn order (A1, B1,
+ * A2, B2...) so partner exercises alternated set-by-set. That was dropped
+ * after athlete feedback that real gym order is dictated by whatever
+ * machine happens to be free, not the programmed order — forcing
+ * alternation is actively incompatible with letting someone jump to any
+ * exercise at will. Each exercise's sets are now always logged back-to-back
+ * whenever the athlete is on it, in whatever order they choose to visit
+ * exercises; a superset's two exercises simply sit next to each other in
+ * this list, same as any other pair of exercises in a block.
  */
-function turnCount(exercise: BlockExerciseRow): number {
-  if (exercise.exercise_category !== "strength") return 1;
-  return Math.max(1, buildSetTargets(exercise.sets).length);
-}
-
-/**
- * Flattens a day's blocks into the linear, one-at-a-time sequence Training
- * Mode walks through — the spec's "only display one exercise at a time...
- * never need to scroll through the entire workout." Straight blocks (a
- * single exercise, the overwhelming common case) just run that exercise's
- * turns back to back. Grouped blocks (superset/circuit, 2+ exercises)
- * round-robin instead: A1, B1, A2, B2... rather than finishing A entirely
- * before starting B — matches how a superset is actually performed. An
- * exercise with fewer turns than a partner's (e.g. 3 straight sets paired
- * with a single cardio finisher) simply drops out of later rounds once its
- * own turns are used up, rather than blocking the round from advancing.
- */
-export function buildExerciseSequence(blocks: BlockRow[]): ExerciseStep[] {
-  const steps: ExerciseStep[] = [];
+export function buildExerciseList(blocks: BlockRow[]): BlockExerciseRow[] {
   const sortedBlocks = [...blocks].sort((a, b) => a.position - b.position);
-
+  const list: BlockExerciseRow[] = [];
   for (const block of sortedBlocks) {
     const sortedExercises = [...block.exercises].sort((a, b) => a.position - b.position);
-    if (sortedExercises.length === 0) continue;
-
-    const turnsByExercise = sortedExercises.map((ex) => turnCount(ex));
-
-    if (sortedExercises.length === 1) {
-      // Straight block — no round-robin needed, just this exercise's turns.
-      const blockExercise = sortedExercises[0]!;
-      for (let round = 0; round < turnsByExercise[0]!; round++) {
-        steps.push({
-          blockExercise,
-          blockId: block.id,
-          blockType: block.block_type,
-          blockRounds: block.rounds,
-          stepIndex: steps.length,
-          roundNumber: round,
-        });
-      }
-      continue;
-    }
-
-    const maxRounds = Math.max(1, ...turnsByExercise);
-    for (let round = 0; round < maxRounds; round++) {
-      sortedExercises.forEach((blockExercise, i) => {
-        if (round < turnsByExercise[i]!) {
-          steps.push({
-            blockExercise,
-            blockId: block.id,
-            blockType: block.block_type,
-            blockRounds: block.rounds,
-            stepIndex: steps.length,
-            roundNumber: round,
-          });
-        }
-      });
-    }
+    list.push(...sortedExercises);
   }
-
-  return steps;
+  return list;
 }
 
 /**
@@ -93,35 +46,18 @@ export function buildSetTargets(sets: SetPrescription[]): SetPrescription[] {
 }
 
 /**
- * Resume position: the first step whose exercise hasn't logged enough sets
- * to cover every turn of that exercise seen so far in the sequence.
- * Cardio/running steps that use a single summary form rather than per-set
- * logging still fit this — their prescription's `sets` is 1 (or the
- * interval count), and one draft set is logged per "Finish Exercise" tap.
- *
- * A superset exercise now appears as multiple steps (one per turn — see
- * buildExerciseSequence), so this can't just compare against the
- * exercise's total prescribed set count at its first occurrence the way a
- * one-step-per-exercise sequence could: that would send the athlete back
- * to an exercise's very first turn even after they'd already interleaved
- * partway through its later turns with a partner exercise. Tracking how
- * many of THIS exercise's turns have been seen up to and including the
- * current step, and comparing that running count against what's actually
- * logged, correctly finds the next not-yet-done turn regardless of how the
- * sequence interleaves other exercises in between.
- *
- * Returns null when every step is already fully logged (draft's done, just
- * hasn't been finished yet — lands the athlete straight on the summary).
+ * First exercise in `list` that hasn't logged every prescribed set yet —
+ * where a fresh workout starts, where a resumed one picks back up, and
+ * where auto-advance lands after an exercise is finished (so someone who
+ * free-navigated out of order still gets routed to whatever's actually
+ * left, not just "the next one in the list"). Returns null once every
+ * exercise is fully logged — draft's done, just hasn't been finished yet.
  */
-export function findResumeStepIndex(steps: ExerciseStep[], draftSetCountByExercise: Map<string, number>): number | null {
-  const turnsSeen = new Map<string, number>();
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i]!;
-    const exerciseId = step.blockExercise.id;
-    const seen = (turnsSeen.get(exerciseId) ?? 0) + 1;
-    turnsSeen.set(exerciseId, seen);
-    const logged = draftSetCountByExercise.get(exerciseId) ?? 0;
-    if (logged < seen) return i;
+export function findResumeExerciseId(list: BlockExerciseRow[], loggedSetCountByExercise: Map<string, number>): string | null {
+  for (const exercise of list) {
+    const targetCount = buildSetTargets(exercise.sets).length;
+    const logged = loggedSetCountByExercise.get(exercise.id) ?? 0;
+    if (logged < targetCount) return exercise.id;
   }
   return null;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquareText, PersonStanding } from "lucide-react";
+import { ListOrdered, MessageSquareText, PersonStanding } from "lucide-react";
 import { SetDetails } from "@/components/programs/set-details";
 import { WorkoutProgressBar } from "@/components/training/workout-progress-bar";
 import { PreviousPerformanceCard } from "@/components/training/previous-performance-card";
@@ -11,13 +11,14 @@ import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { getPrescriptionTypeDef, suggestedWeightFromPercent1RM } from "@/lib/programs/prescription-types";
 import { EXERCISE_CATEGORY_LABELS } from "@/lib/programs/prescription-types";
 import { buildSetTargets } from "@/lib/training/sequence";
-import type { DraftSet, ExerciseStep, PreviousPerformance } from "@/lib/training/types";
+import type { BlockExerciseRow } from "@/lib/programs/types";
+import type { DraftSet, PreviousPerformance } from "@/lib/training/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
 
 interface ExerciseScreenProps {
-  step: ExerciseStep;
-  stepIndex: number;
-  totalSteps: number;
+  exercise: BlockExerciseRow;
+  exerciseIndex: number;
+  totalExercises: number;
   loggedSetCount: number;
   draftSets: DraftSet[];
   personalRecords: PersonalRecord[];
@@ -34,21 +35,23 @@ interface ExerciseScreenProps {
     rpe: number | null;
     notes: string | null;
   }) => void;
+  onOpenExercisePicker: () => void;
   onSkipWorkout: () => void;
   busy: boolean;
 }
 
 /**
- * One exercise's turn in the guided flow — everything the spec's "Exercise
- * Layout" section lists (name, category, prescription, rest time, coach
- * notes, previous performance) above the logging interface itself, which
- * branches on category: a per-set stepper for strength (StrengthSetLogger)
- * or a single summary form for running/cardio (CardioSummaryForm).
+ * One exercise, currently active in the guided flow — everything the
+ * spec's "Exercise Layout" section lists (name, category, prescription,
+ * rest time, coach notes, previous performance) above the logging
+ * interface itself, which branches on category: a per-set stepper for
+ * strength (StrengthSetLogger) or a single summary form for
+ * running/cardio (CardioSummaryForm).
  */
 export function ExerciseScreen({
-  step,
-  stepIndex,
-  totalSteps,
+  exercise,
+  exerciseIndex,
+  totalExercises,
   loggedSetCount,
   draftSets,
   personalRecords,
@@ -57,24 +60,34 @@ export function ExerciseScreen({
   onExerciseNoteChange,
   onCompleteSet,
   onCardioFinish,
+  onOpenExercisePicker,
   onSkipWorkout,
   busy,
 }: ExerciseScreenProps) {
-  const exercise = step.blockExercise;
   const category = exercise.exercise_category;
   const exerciseName = getExerciseDisplayName(exercise);
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-5 px-6 py-8">
       <div className="flex items-start justify-between gap-3">
-        <WorkoutProgressBar currentIndex={stepIndex} total={totalSteps} />
-        <button
-          type="button"
-          onClick={onSkipWorkout}
-          className="shrink-0 pt-0.5 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          Skip Workout
-        </button>
+        <WorkoutProgressBar currentIndex={exerciseIndex} total={totalExercises} />
+        <div className="flex shrink-0 items-center gap-3 pt-0.5 text-xs font-medium">
+          <button
+            type="button"
+            onClick={onOpenExercisePicker}
+            className="flex items-center gap-1 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            <ListOrdered className="size-3.5" />
+            Exercises
+          </button>
+          <button
+            type="button"
+            onClick={onSkipWorkout}
+            className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Skip Workout
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -139,7 +152,7 @@ function StrengthLoggerSlot({
   onCompleteSet,
   busy,
 }: {
-  exercise: ExerciseStep["blockExercise"];
+  exercise: BlockExerciseRow;
   exerciseName: string;
   loggedSetCount: number;
   draftSets: DraftSet[];
