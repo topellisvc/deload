@@ -11,6 +11,33 @@ import { TOOLS } from "@/lib/tools-registry";
 
 const FEATURED_TOOL_SLUGS = ["one-rep-max", "running-pace-calculator", "quick-workout"];
 
+// Organization + SoftwareApplication structured data — helps search engines
+// tie the domain to the "Deload" entity and understand what the product
+// actually is (free, coaching/training software), distinct from the
+// FAQPage JSON-LD each /tools calculator page already carries.
+const organizationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Deload",
+  url: "https://deloadhq.com",
+  logo: "https://deloadhq.com/icon",
+};
+
+const softwareApplicationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Deload",
+  applicationCategory: "HealthApplication",
+  operatingSystem: "Web",
+  description:
+    "Evidence-based training software for coaches and athletes — build real programs, track training live, and use free calculators backed by published research.",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+};
+
 /**
  * Promoted from the /landing-test A/B experiment (built off a
  * competitive review of 5 coaching-software landing pages — Everfit,
@@ -52,6 +79,14 @@ export default function HomePage() {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+      />
       <HomeRedirect />
 
       {/* Hero */}

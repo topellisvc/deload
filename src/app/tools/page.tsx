@@ -5,7 +5,16 @@ import { TOOLS } from "@/lib/tools-registry";
 export const metadata: Metadata = {
   title: "Tools",
   description:
-    "Browse Deload's collection of evidence-based training tools for athletes and coaches.",
+    "Free evidence-based training calculators for athletes and coaches — one-rep max, running pace, macros, body fat, training splits, and more.",
+  alternates: {
+    canonical: "/tools",
+  },
+  openGraph: {
+    title: "Tools | Deload",
+    description:
+      "Free evidence-based training calculators for athletes and coaches — one-rep max, running pace, macros, body fat, training splits, and more.",
+    url: "/tools",
+  },
 };
 
 export default function ToolsPage() {

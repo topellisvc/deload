@@ -10,20 +10,34 @@ import "./globals.css";
 
 const SITE_URL = "https://deloadhq.com";
 
+// Kept in sync with the homepage's own hero copy (src/app/page.tsx) rather
+// than written separately — a meta description that doesn't match what the
+// page actually says is a well-known "looks like SEO spam" smell, and the
+// old copy ("the internet's most trusted collection...") was exactly that:
+// an unbacked superlative claim, the opposite of the no-invented-stats rule
+// the rest of the site's copy already follows (see page.tsx's doc comment,
+// og-image.tsx's "no fluff, no fake precision" line).
+const SITE_DESCRIPTION =
+  "Evidence-based training software for coaches and athletes — build real programs, track training live, and use free calculators backed by published research, not guesswork.";
+const HOMEPAGE_OG_DESCRIPTION =
+  "Deload is evidence-based training software for coaches and athletes — a real program builder, live tracking, and coaching tools, backed by published research instead of guesswork.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Deload — Evidence-based training tools",
+    default: "Deload — Evidence-based training software",
     template: "%s | Deload",
   },
-  description:
-    "The internet's most trusted collection of evidence-based training tools for athletes and coaches. Start with our one-rep max calculator.",
+  description: SITE_DESCRIPTION,
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
     type: "website",
+    url: "/",
     siteName: "Deload",
-    title: "Deload — Evidence-based training tools",
-    description:
-      "The internet's most trusted collection of evidence-based training tools for athletes and coaches.",
+    title: "Deload — Evidence-based training software",
+    description: HOMEPAGE_OG_DESCRIPTION,
   },
   twitter: {
     card: "summary_large_image",
