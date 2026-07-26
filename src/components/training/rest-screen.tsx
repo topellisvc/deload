@@ -29,17 +29,33 @@ function formatClock(totalSeconds: number): string {
  * Automatic countdown between sets. Reaching 0:00 doesn't force a
  * navigation anywhere — "the athlete can continue whenever they are ready"
  * (spec) — it just stops counting and waits for Continue.
+ *
+ * Anchored to a real wall-clock end time rather than counting down "one
+ * tick = one second" — browsers throttle or fully suspend setInterval in a
+ * backgrounded/inactive tab (mobile Safari does this aggressively), which
+ * made the old tick-based version appear to freeze whenever someone
+ * switched apps or locked their phone mid-rest, only catching back up once
+ * they returned. Deriving `remaining` from `endAt - Date.now()` on every
+ * tick means it's always correct regardless of how long the tab was
+ * throttled, and the visibilitychange listener forces an immediate
+ * recompute the moment the tab becomes visible again rather than waiting up
+ * to a second for the next tick.
  */
 export function RestScreen({ initialSeconds, nextSetLabel, nextTarget, nextExerciseName, category, onSkip, onContinue }: RestScreenProps) {
+  const endAtRef = useRef(Date.now() + initialSeconds * 1000);
   const [remaining, setRemaining] = useState(initialSeconds);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  function recompute() {
+    setRemaining(Math.max(0, Math.round((endAtRef.current - Date.now()) / 1000)));
+  }
+
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setRemaining((r) => Math.max(0, r - 1));
-    }, 1000);
+    intervalRef.current = setInterval(recompute, 1000);
+    document.addEventListener("visibilitychange", recompute);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener("visibilitychange", recompute);
     };
     // Only ever runs once per rest period — this component is remounted
     // (via `key`) for each new rest, so a fresh interval each time is correct.
@@ -71,7 +87,15 @@ export function RestScreen({ initialSeconds, nextSetLabel, nextTarget, nextExerc
           Continue
         </Button>
         <div className="flex gap-2.5">
-          <Button variant="outline" size="lg" className="flex-1" onClick={() => setRemaining((r) => r + 30)}>
+          <Button
+            variant="outline"
+            size="lg"
+            className="flex-1"
+            onClick={() => {
+              endAtRef.current += 30_000;
+              recompute();
+            }}
+          >
             +30 Seconds
           </Button>
           <Button variant="ghost" size="lg" className="flex-1" onClick={onSkip}>
