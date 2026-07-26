@@ -19,15 +19,17 @@ export const metadata: Metadata = {
  * repeated primary CTA — all things the real homepage's text-only hero
  * currently lacks.
  *
- * Hero photo: "person about to lift the barbel" by Victor Freitas
- * (@victorfreitas) on Unsplash, photo-1517836357463-d25dfeac3438 — free
- * to use under the Unsplash License (unsplash.com/license), hotlinked
- * from Unsplash's own CDN (see next.config.mjs's remotePatterns) rather
- * than downloaded/self-hosted. Swapped in after the first draft used a
- * real app screenshot here instead — a photo of someone actually
- * training reads more human in the hero; the second section further
- * down still uses a real screenshot of the programs list to show the
- * product itself.
+ * Both non-hero-badge images are real photos, not screenshots — the
+ * first draft used real app screenshots in both spots, but a photo of
+ * someone actually training reads more human than UI, in the hero and
+ * in the second section alike. Both hotlinked from Unsplash's own CDN
+ * (see next.config.mjs's remotePatterns) rather than downloaded/
+ * self-hosted, both confirmed free to use under the Unsplash License
+ * (unsplash.com/license):
+ * - Hero: "person about to lift the barbel" by Victor Freitas
+ *   (@victorfreitas), photo-1517836357463-d25dfeac3438.
+ * - Second section: "pair of blue-and-white Adidas running shoes" by
+ *   sporlab (@sporlab), photo-1571008887538-b36bb32f4571.
  *
  * The floating "Logging today's set" card is the one moving element on
  * the page — it reuses BarbellLoader, the app's own branded route-loading
@@ -145,26 +147,26 @@ export default function LandingTestPage() {
         </div>
       </section>
 
-      {/* Second visual — programs, color-coded */}
+      {/* Second visual — breadth of disciplines */}
       <section className="mx-auto max-w-6xl px-6 pb-24">
         <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-8">
-          <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-lg lg:order-2">
+          <div className="overflow-hidden rounded-2xl border border-border shadow-lg lg:order-2">
             <Image
-              src="/marketing/programs-preview.jpg"
-              alt="Deload programs list showing weights, hybrid, and running programs, each color-coded by discipline"
-              width={1456}
-              height={827}
-              className="w-full"
+              src="https://images.unsplash.com/photo-1571008887538-b36bb32f4571?fm=jpg&q=80&w=1600&auto=format&fit=crop"
+              alt="Runner's shoes mid-stride on a road"
+              width={1600}
+              height={1067}
+              className="h-[420px] w-full object-cover"
             />
           </div>
           <div className="flex flex-col gap-4 lg:order-1">
             <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-              Every program, color-coded by discipline
+              Strength or endurance — programmed properly, either way
             </h2>
             <p className="text-muted-foreground">
-              Weights, hybrid, and running programs each get their own color the moment you
-              create them — scan your whole list and know what you&rsquo;re looking at before
-              you read a single word.
+              Deload isn&rsquo;t just a lifting app. Build resistance, running, or hybrid
+              programs with the same rigor — progressive overload, sensible rep ranges, and
+              pacing grounded in published research instead of guesswork.
             </p>
             <p className="text-muted-foreground">
               Start from scratch, or pick one of our ready-made 4-week starter programs and
