@@ -206,3 +206,31 @@ describe("DayColumn keyboard shortcuts", () => {
     expect(screen.getByText("Save as template")).toBeInTheDocument();
   });
 });
+
+/**
+ * ProgramBuilder passes `onDeleteDay` as undefined for the last remaining
+ * day in a week (see its own comment on that prop) so this button simply
+ * doesn't render rather than rendering disabled — these cover both the
+ * "hidden when undefined" case and that clicking it calls straight
+ * through with no confirmation of its own (ProgramBuilder's shared
+ * pendingConfirm dialog owns the "are you sure," not this component).
+ */
+describe("DayColumn delete day button", () => {
+  it("doesn't render when onDeleteDay is undefined (last day in the week)", () => {
+    // Exact match, not a /delete/i regex — the exercise inside makeDay()'s
+    // default block also has its own "Delete Bench Press" button, which
+    // would false-match a looser query.
+    render(<DayColumn day={makeDay()} {...baseProps()} />);
+    expect(screen.queryByRole("button", { name: "Delete Day 1" })).not.toBeInTheDocument();
+  });
+
+  it("calls onDeleteDay when clicked", async () => {
+    const user = userEvent.setup();
+    const onDeleteDay = vi.fn();
+    render(<DayColumn day={makeDay({ label: "Upper Body" })} {...baseProps()} onDeleteDay={onDeleteDay} />);
+
+    await user.click(screen.getByRole("button", { name: "Delete Upper Body" }));
+
+    expect(onDeleteDay).toHaveBeenCalled();
+  });
+});

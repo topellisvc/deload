@@ -392,6 +392,40 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     updateWeek(week.id, (w) => ({ ...w, days: [...w.days, newDay] }));
   }
 
+  /** A plain blank day — the "Add day" button next to the day columns,
+   * same "append at the end" pattern as Add Week and Duplicate Day (just
+   * with nothing cloned into it). */
+  async function handleAddDay() {
+    const { day: newDay, error } = await track(m.addDay(supabase, { weekId: week.id, position: nextPosition(week.days) }));
+    if (error || !newDay) {
+      fail(error ?? "Couldn't add a new day.");
+      return;
+    }
+    updateWeek(week.id, (w) => ({ ...w, days: [...w.days, newDay] }));
+  }
+
+  function handleDeleteDay(dayId: string) {
+    // A week is never allowed to drop below one day, mirroring
+    // handleDeleteWeek's "can't drop below one week" guard — an empty
+    // week isn't a state anything downstream (Preview mode, Training
+    // Mode) is built to handle gracefully.
+    if (week.days.length <= 1) return;
+    const target = week.days.find((d) => d.id === dayId);
+    if (!target) return;
+    setPendingConfirm({
+      title: "Delete day?",
+      description: `Delete ${target.label || `Day ${target.position}`}? This can't be undone.`,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        const remaining = week.days.filter((d) => d.id !== dayId);
+        updateWeek(week.id, (w) => ({ ...w, days: remaining }));
+        setPendingConfirm(null);
+        const { error } = await track(m.deleteDay(supabase, dayId));
+        if (error) fail(error);
+      },
+    });
+  }
+
   /** Composes duplicateExercise + removeExerciseFromBlock/deleteBlock (see
    * mutations.ts's moveExerciseToDay) rather than a real relational move —
    * this codebase has no DB transactions, so the mutation can partially
@@ -910,6 +944,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 onUpdateDay={(patch) => handleUpdateDay(day.id, patch)}
                 onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
                 onDuplicateDay={() => handleDuplicateDay(day.id)}
+                onDeleteDay={week.days.length > 1 ? () => handleDeleteDay(day.id) : undefined}
                 onAddBlock={(role) => handleAddBlock(day.id, role)}
                 onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
                 onReorderBlocks={(_role, orderedBlocks) => handleReorderBlocks(day.id, orderedBlocks)}
@@ -948,6 +983,16 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 onInsertDayTemplate={(template) => handleInsertDayTemplate(day.id, template)}
               />
             ))}
+        {mode !== "preview" && (
+          <button
+            type="button"
+            onClick={handleAddDay}
+            className="flex w-full shrink-0 items-center justify-center gap-1 rounded-2xl border border-dashed border-border-strong px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:w-24"
+          >
+            <Plus className="size-4" />
+            Add day
+          </button>
+        )}
       </ScrollFadeX>
 
       <AddWeekDialog

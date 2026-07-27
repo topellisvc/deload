@@ -28,31 +28,45 @@ vi.mock("@/components/programs/day-column", () => ({
     onCategoryChange,
     onAddExerciseToBlock,
     addingExerciseBlockId,
+    onDeleteDay,
   }: {
     day: DayRow;
     onCategoryChange: (blockId: string, blockExerciseId: string, category: string) => void;
     onAddExerciseToBlock: (blockId: string) => void;
     addingExerciseBlockId: string | null;
+    onDeleteDay?: () => void;
   }) => (
     <div>
       <span>{day.label}</span>
-      <button
-        type="button"
-        onClick={() => {
-          const block = day.blocks[0]!;
-          const exercise = block.exercises[0]!;
-          onCategoryChange(block.id, exercise.id, "running");
-        }}
-      >
-        Switch to running
-      </button>
-      <button type="button" disabled={addingExerciseBlockId === day.blocks[0]!.id} onClick={() => onAddExerciseToBlock(day.blocks[0]!.id)}>
-        {addingExerciseBlockId === day.blocks[0]!.id
-          ? "Adding…"
-          : day.blocks[0]!.exercises.length > 1
-            ? "Add another exercise"
-            : "Make this a superset"}
-      </button>
+      {/* A freshly-added blank day (see the "Add day" tests below) has no
+          blocks yet — guard rather than assume day.blocks[0] exists, same
+          as the real DayColumn does. */}
+      {day.blocks[0] && (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              const block = day.blocks[0]!;
+              const exercise = block.exercises[0]!;
+              onCategoryChange(block.id, exercise.id, "running");
+            }}
+          >
+            Switch to running
+          </button>
+          <button type="button" disabled={addingExerciseBlockId === day.blocks[0].id} onClick={() => onAddExerciseToBlock(day.blocks[0]!.id)}>
+            {addingExerciseBlockId === day.blocks[0].id
+              ? "Adding…"
+              : day.blocks[0].exercises.length > 1
+                ? "Add another exercise"
+                : "Make this a superset"}
+          </button>
+        </>
+      )}
+      {onDeleteDay && (
+        <button type="button" onClick={onDeleteDay}>
+          Delete {day.label || `Day ${day.position}`}
+        </button>
+      )}
     </div>
   ),
 }));
@@ -86,6 +100,8 @@ vi.mock("@/lib/programs/mutations", () => ({
   deactivateProgram: vi.fn(),
   addWeek: vi.fn(),
   deleteWeek: vi.fn(),
+  addDay: vi.fn(),
+  deleteDay: vi.fn(),
   updateDay: vi.fn(),
   copyDayContents: vi.fn(),
   addExerciseBlock: vi.fn(),
@@ -212,6 +228,7 @@ describe("ProgramBuilder shared confirm dialog", () => {
   beforeEach(() => {
     vi.mocked(m.deleteProgram).mockReset();
     vi.mocked(m.deleteWeek).mockReset();
+    vi.mocked(m.deleteDay).mockReset();
     vi.mocked(m.switchExerciseCategory).mockReset();
     routerMock.push.mockClear();
     routerMock.refresh.mockClear();
@@ -253,6 +270,45 @@ describe("ProgramBuilder shared confirm dialog", () => {
   it("never offers a delete-week button when there is only one week", () => {
     render(<ProgramBuilder initialProgram={makeProgram({ weeks: [makeWeek()] })} />);
     expect(screen.queryByRole("button", { name: /delete week 1/i })).not.toBeInTheDocument();
+  });
+
+  it("confirms and calls deleteDay for a non-last day", async () => {
+    vi.mocked(m.deleteDay).mockResolvedValue({ error: null });
+    const user = userEvent.setup();
+    render(
+      <ProgramBuilder
+        initialProgram={makeProgram({
+          weeks: [makeWeek({ days: [makeDay({ id: "day-1", position: 1, label: "Day 1" }), makeDay({ id: "day-2", position: 2, label: "Day 2" })] })],
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Delete Day 1" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Delete Day 1? This can't be undone.")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(m.deleteDay).toHaveBeenCalledWith(expect.anything(), "day-1");
+  });
+
+  it("never offers a delete-day button when there is only one day in the week", () => {
+    render(<ProgramBuilder initialProgram={makeProgram({ weeks: [makeWeek({ days: [makeDay()] })] })} />);
+    expect(screen.queryByRole("button", { name: /delete day 1/i })).not.toBeInTheDocument();
+  });
+
+  it("adds a blank day at the end of the week and it becomes deletable once there's more than one", async () => {
+    vi.mocked(m.addDay).mockResolvedValue({
+      day: { id: "day-2", week_id: "week-1", position: 2, label: null, is_rest_day: false, blocks: [] },
+      error: null,
+    });
+    const user = userEvent.setup();
+    render(<ProgramBuilder initialProgram={makeProgram({ weeks: [makeWeek({ days: [makeDay({ id: "day-1", position: 1 })] })] })} />);
+
+    expect(screen.queryByRole("button", { name: /delete day/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add day" }));
+
+    expect(m.addDay).toHaveBeenCalledWith(expect.anything(), { weekId: "week-1", position: 2 });
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /delete day/i })).toHaveLength(2));
   });
 
   it("confirms before switching exercise category when the exercise already has prescription data", async () => {

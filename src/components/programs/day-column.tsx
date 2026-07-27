@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent, type SensorDescriptor, type SensorOptions } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { BookMarked, Copy, Files, Flame, Plus, Sunrise } from "lucide-react";
+import { BookMarked, Copy, Files, Flame, Plus, Sunrise, Trash2 } from "lucide-react";
 import type { BlockRole, BlockRow, DayRow, DayTemplateRow, ExerciseCategory, ExerciseTemplateRow, PrescriptionType, SetRow } from "@/lib/programs/types";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import type { BuilderMode } from "@/lib/programs/use-builder-mode";
@@ -21,6 +21,12 @@ interface DayColumnProps {
   onUpdateDay: (patch: { label?: string | null; is_rest_day?: boolean }) => void;
   onCopyTo: (targetDayId: string) => void;
   onDuplicateDay: () => void;
+  /** Undefined (not just a no-op) when this is the last day left in the
+   * week — ProgramBuilder passes undefined rather than a guarded handler
+   * so the button itself can just not render, same "hide it, don't
+   * disable it" pattern the week-tabs row already uses for "can't delete
+   * the last week." */
+  onDeleteDay?: () => void;
   onAddBlock: (role: BlockRole) => void;
   onDeleteBlock: (blockId: string) => void;
   onReorderBlocks: (role: BlockRole, orderedBlocks: { id: string; position: number }[]) => void;
@@ -90,6 +96,7 @@ export function DayColumn({
   onUpdateDay,
   onCopyTo,
   onDuplicateDay,
+  onDeleteDay,
   onAddBlock,
   onDeleteBlock,
   onReorderBlocks,
@@ -337,6 +344,18 @@ export function DayColumn({
                 className="pointer-events-none absolute left-1/2 top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 text-muted-foreground peer-disabled:opacity-40"
               />
             </div>
+          )}
+
+          {onDeleteDay && (
+            <button
+              type="button"
+              onClick={onDeleteDay}
+              aria-label={`Delete ${day.label || `Day ${day.position}`}`}
+              title="Delete day"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <Trash2 className="size-4" />
+            </button>
           )}
         </div>
 

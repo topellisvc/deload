@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  addDay,
   addExerciseBlock,
   addExerciseBlockFromTemplate,
   addExerciseToBlock,
@@ -8,6 +9,7 @@ import {
   createProgram,
   createProgramFromSavedTemplate,
   createProgramFromTemplate,
+  deleteDay,
   deleteProgramTemplate,
   duplicateDay,
   duplicateExercise,
@@ -839,9 +841,9 @@ describe("duplicateDay", () => {
 
 /** Extends makeSupabaseMock's insert-only mock with a `.delete().eq()`
  * chain — moveExerciseToDay's removal half (removeExerciseFromBlock /
- * deleteBlock) issues deletes, which the shared mock doesn't model. Kept
- * local to this describe block rather than folded into makeSupabaseMock
- * since no other existing test needs delete support. */
+ * deleteBlock) and deleteDay both issue deletes, which the shared
+ * insert-only mock doesn't model. Kept as its own function rather than
+ * folded into makeSupabaseMock since most other tests only need inserts. */
 function makeSupabaseMockWithDelete(deleteError: string | null = null) {
   const inserted: Record<string, Record<string, unknown>[]> = {};
   const deleted: { table: string; id: unknown }[] = [];
@@ -923,5 +925,42 @@ describe("moveExerciseToDay", () => {
 
     expect(block).not.toBeNull();
     expect(error).toBe("Moved, but couldn't remove it from the original day — you may need to delete it there yourself.");
+  });
+});
+
+describe("addDay", () => {
+  it("inserts a blank, unlabeled day with no blocks at the given position", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const { day, error } = await addDay(supabase as never, { weekId: "week-1", position: 3 });
+
+    expect(error).toBeNull();
+    expect(day!.week_id).toBe("week-1");
+    expect(day!.position).toBe(3);
+    expect(day!.label).toBeNull();
+    expect(day!.is_rest_day).toBe(false);
+    expect(day!.blocks).toEqual([]);
+    expect(inserted.training_days).toEqual([
+      { id: day!.id, week_id: "week-1", position: 3, label: null, is_rest_day: false },
+    ]);
+  });
+});
+
+describe("deleteDay", () => {
+  it("deletes the training_days row by id", async () => {
+    const { supabase, deleted } = makeSupabaseMockWithDelete();
+
+    const { error } = await deleteDay(supabase as never, "day-1");
+
+    expect(error).toBeNull();
+    expect(deleted).toEqual([{ table: "training_days", id: "day-1" }]);
+  });
+
+  it("surfaces the error message when the delete fails", async () => {
+    const { supabase } = makeSupabaseMockWithDelete("network error");
+
+    const { error } = await deleteDay(supabase as never, "day-1");
+
+    expect(error).toBe("network error");
   });
 });

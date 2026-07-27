@@ -666,6 +666,41 @@ export async function updateDay(
 }
 
 /**
+ * "Add day" — a brand-new, empty day appended to the end of the week, same
+ * "add another one" pattern as Add Week (addWeek, below) and Duplicate Day
+ * (duplicateDay, right below this). Unlike duplicateDay this clones
+ * nothing — no source day, no blocks — so it's just the bare
+ * training_days insert every other "new day" mutation already does as its
+ * first step.
+ */
+export async function addDay(
+  supabase: SupabaseClient,
+  params: { weekId: string; position: number }
+): Promise<{ day: DayRow | null; error: string | null }> {
+  const dayId = newId();
+  const { error } = await supabase.from("training_days").insert({
+    id: dayId,
+    week_id: params.weekId,
+    position: params.position,
+    label: null,
+    is_rest_day: false,
+  });
+  if (error) return { day: null, error: error.message };
+  return { day: { id: dayId, week_id: params.weekId, position: params.position, label: null, is_rest_day: false, blocks: [] }, error: null };
+}
+
+/**
+ * Deletes one day out of a week — the counterpart to deleteWeek, just one
+ * level down the tree. Cascades to that day's blocks/exercises/sets at the
+ * DB level (same FK cascade every other delete in this tree relies on),
+ * same as deleteWeek cascading to its days.
+ */
+export async function deleteDay(supabase: SupabaseClient, dayId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("training_days").delete().eq("id", dayId);
+  return { error: error?.message ?? null };
+}
+
+/**
  * "Duplicate this day" — creates a brand-new day in the same week (appended
  * at the end, like Add Week always appends a new week) and clones every
  * block from `sourceDay` into it. Nothing in the schema caps how many days
