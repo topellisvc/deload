@@ -51,10 +51,21 @@ export function buildSetTargets(sets: SetPrescription[]): SetPrescription[] {
  * where auto-advance lands after an exercise is finished (so someone who
  * free-navigated out of order still gets routed to whatever's actually
  * left, not just "the next one in the list"). Returns null once every
- * exercise is fully logged — draft's done, just hasn't been finished yet.
+ * exercise is fully logged (or skipped) — draft's done, just hasn't been
+ * finished yet.
+ *
+ * `skippedExerciseIds` excludes exercises the athlete explicitly chose not
+ * to do today (see SkipExerciseDialog) from "what's incomplete" — a skip
+ * is a deliberate decision to move on, not something that should keep
+ * getting surfaced as the resume target.
  */
-export function findResumeExerciseId(list: BlockExerciseRow[], loggedSetCountByExercise: Map<string, number>): string | null {
+export function findResumeExerciseId(
+  list: BlockExerciseRow[],
+  loggedSetCountByExercise: Map<string, number>,
+  skippedExerciseIds: ReadonlySet<string> = new Set()
+): string | null {
   for (const exercise of list) {
+    if (skippedExerciseIds.has(exercise.id)) continue;
     const targetCount = buildSetTargets(exercise.sets).length;
     const logged = loggedSetCountByExercise.get(exercise.id) ?? 0;
     if (logged < targetCount) return exercise.id;

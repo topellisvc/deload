@@ -9,6 +9,8 @@ interface DraftSessionParams {
   athleteId: string;
   draftSets: DraftSet[];
   exerciseNotes: Record<string, string>;
+  /** block_exercise_id -> optional reason, or null if none given. */
+  skippedExercises: Record<string, string | null>;
   workoutNote: string | null;
 }
 
@@ -30,6 +32,7 @@ export async function saveDraftSession(
         athlete_id: params.athleteId,
         draft_sets: params.draftSets,
         exercise_notes: params.exerciseNotes,
+        skipped_exercises: params.skippedExercises,
         workout_note: params.workoutNote,
         updated_at: new Date().toISOString(),
       },
@@ -119,16 +122,49 @@ export async function finishWorkout(
   // that exercise's last real set. PerformanceRowEditor/PerformanceRowReadOnly
   // already render a sets-only-notes row correctly (nothing else in the app
   // needed to change for these to show up in Coach Review or History).
+  //
+  // maxPositionByExercise is incremented after each notes-only write below
+  // (both here and in the skipped-exercises loop that follows) rather than
+  // being computed once up front — logged_sets has a unique constraint on
+  // (session_log_id, block_exercise_id, position), so a second notes-only
+  // row for the same exercise (a note *and* a skip reason, in the unusual
+  // case both exist) would otherwise collide on the same position.
   for (const [blockExerciseId, note] of Object.entries(params.exerciseNotes)) {
     const trimmed = note.trim();
     if (!trimmed) continue;
+    const position = (maxPositionByExercise.get(blockExerciseId) ?? 0) + 1;
+    maxPositionByExercise.set(blockExerciseId, position);
     writes.push(
       createLoggedSet(supabase, {
         sessionLogId,
         blockExerciseId,
         setPrescriptionId: null,
-        position: (maxPositionByExercise.get(blockExerciseId) ?? 0) + 1,
+        position,
         notes: trimmed,
+      })
+    );
+  }
+
+  // Skipped exercises ("didn't do this one today") become a notes-only row
+  // too, same mechanism as exercise notes above. Guarded by "no real draft
+  // sets were logged for this exercise" — if the athlete skipped, then came
+  // back and actually trained the exercise, it should already have been
+  // dropped from skippedExercises client-side (see training-session.tsx),
+  // but this is a defensive belt-and-suspenders check against writing a
+  // stale "Skipped" row over real logged sets.
+  for (const [blockExerciseId, reason] of Object.entries(params.skippedExercises)) {
+    const hasRealSets = params.draftSets.some((s) => s.blockExerciseId === blockExerciseId);
+    if (hasRealSets) continue;
+    const position = (maxPositionByExercise.get(blockExerciseId) ?? 0) + 1;
+    maxPositionByExercise.set(blockExerciseId, position);
+    const trimmedReason = reason?.trim();
+    writes.push(
+      createLoggedSet(supabase, {
+        sessionLogId,
+        blockExerciseId,
+        setPrescriptionId: null,
+        position,
+        notes: trimmedReason ? `Skipped — ${trimmedReason}` : "Skipped",
       })
     );
   }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen, within, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TrainingSession } from "./training-session";
 import type { DraftSet, TrainingModeSession } from "@/lib/training/types";
@@ -44,10 +44,21 @@ vi.mock("@/components/training/workout-overview-screen", () => ({
   ),
 }));
 vi.mock("@/components/training/exercise-screen", () => ({
-  ExerciseScreen: ({ onEndWorkout, busy }: { onEndWorkout: () => void; busy: boolean }) => (
+  ExerciseScreen: ({
+    onEndWorkout,
+    onSkipExercise,
+    busy,
+  }: {
+    onEndWorkout: () => void;
+    onSkipExercise: () => void;
+    busy: boolean;
+  }) => (
     <div>
       <button type="button" onClick={onEndWorkout} disabled={busy}>
         End workout
+      </button>
+      <button type="button" onClick={onSkipExercise} disabled={busy}>
+        Skip exercise
       </button>
     </div>
   ),
@@ -179,6 +190,7 @@ describe("TrainingSession End Workout dialog", () => {
     updatedAt: "2026-07-25T09:00:00.000Z",
     draftSets: [makeDraftSet()],
     exerciseNotes: {},
+    skippedExercises: {},
     workoutNote: null,
   };
 
@@ -251,6 +263,72 @@ describe("TrainingSession End Workout dialog", () => {
   });
 });
 
+describe("TrainingSession Skip Exercise dialog", () => {
+  const initialDraft: TrainingModeSession = {
+    id: "session-1",
+    trainingDayId: "day-1",
+    athleteId: "athlete-1",
+    startedAt: "2026-07-25T09:00:00.000Z",
+    updatedAt: "2026-07-25T09:00:00.000Z",
+    draftSets: [],
+    exerciseNotes: {},
+    skippedExercises: {},
+    workoutNote: null,
+  };
+
+  beforeEach(() => {
+    vi.mocked(saveDraftSession).mockReset().mockResolvedValue({ session: { ...initialDraft }, error: null });
+  });
+
+  it("opens with the exercise's name, and persists the reason on confirm", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={initialDraft} />);
+
+    await user.click(screen.getByRole("button", { name: "Skip exercise" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Skip Bench Press?")).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByPlaceholderText(/optional/i), { target: { value: "Shoulder felt tight" } });
+    await user.click(within(dialog).getByRole("button", { name: /Skip This Exercise/ }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(saveDraftSession).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ skippedExercises: { "ex-1": "Shoulder felt tight" } })
+      )
+    );
+  });
+
+  it("allows confirming with no reason given — it's optional, not required", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={initialDraft} />);
+
+    await user.click(screen.getByRole("button", { name: "Skip exercise" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Skip This Exercise/ }));
+
+    await waitFor(() =>
+      expect(saveDraftSession).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ skippedExercises: { "ex-1": null } })
+      )
+    );
+  });
+
+  it("does nothing when cancelled", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={initialDraft} />);
+
+    await user.click(screen.getByRole("button", { name: "Skip exercise" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(saveDraftSession).not.toHaveBeenCalled();
+  });
+});
+
 describe("TrainingSession beforeunload guard", () => {
   beforeEach(() => {
     vi.mocked(saveDraftSession).mockReset();
@@ -285,6 +363,7 @@ describe("TrainingSession beforeunload guard", () => {
         updatedAt: "2026-07-25T09:00:00.000Z",
         draftSets: [],
         exerciseNotes: {},
+        skippedExercises: {},
         workoutNote: null,
       },
       error: null,

@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, StopCircle } from "lucide-react";
+import { CheckCircle2, SkipForward, StopCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { buildSetTargets } from "@/lib/training/sequence";
@@ -13,7 +13,9 @@ interface ExerciseListScreenProps {
   currentExerciseId: string | null;
   resumeExerciseId: string | null;
   loggedSetCounts: Map<string, number>;
+  skippedExerciseIds: ReadonlySet<string>;
   onSelect: (exerciseId: string) => void;
+  onSkipExercise: (exerciseId: string) => void;
   onEndWorkout: () => void;
 }
 
@@ -33,7 +35,9 @@ export function ExerciseListScreen({
   currentExerciseId,
   resumeExerciseId,
   loggedSetCounts,
+  skippedExerciseIds,
   onSelect,
+  onSkipExercise,
   onEndWorkout,
 }: ExerciseListScreenProps) {
   const doneCount = exercises.filter((exercise) => {
@@ -54,32 +58,50 @@ export function ExerciseListScreen({
           const targetCount = buildSetTargets(exercise.sets).length;
           const logged = loggedSetCounts.get(exercise.id) ?? 0;
           const done = targetCount > 0 && logged >= targetCount;
+          const skipped = !done && skippedExerciseIds.has(exercise.id);
           const isCurrent = exercise.id === currentExerciseId;
-          const isUpNext = !done && !isCurrent && exercise.id === resumeExerciseId;
+          const isUpNext = !done && !skipped && !isCurrent && exercise.id === resumeExerciseId;
 
           return (
-            <li key={exercise.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(exercise.id)}
-                className={cn(
-                  "flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3.5 text-left transition-colors",
-                  isCurrent ? "border-primary bg-primary/5" : "border-border hover:border-border-strong hover:bg-surface-hover"
-                )}
-              >
+            <li
+              key={exercise.id}
+              className={cn(
+                "flex items-center gap-1 rounded-xl border transition-colors",
+                isCurrent ? "border-primary bg-primary/5" : "border-border hover:border-border-strong hover:bg-surface-hover"
+              )}
+            >
+              <button type="button" onClick={() => onSelect(exercise.id)} className="flex flex-1 items-center justify-between gap-3 px-4 py-3.5 text-left">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">{getExerciseDisplayName(exercise)}</span>
+                  <span className={cn("text-sm font-medium", skipped ? "text-muted-foreground" : "text-foreground")}>
+                    {getExerciseDisplayName(exercise)}
+                  </span>
                   {isCurrent && <span className="text-[11px] font-semibold uppercase tracking-wide text-primary">In progress</span>}
                   {isUpNext && <span className="text-[11px] font-semibold uppercase tracking-wide text-primary">Up next</span>}
                 </div>
                 {done ? (
                   <CheckCircle2 className="size-5 shrink-0 text-success" />
+                ) : skipped ? (
+                  <span className="shrink-0 text-xs font-medium text-muted-foreground">Skipped</span>
                 ) : (
                   <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                     {logged}/{targetCount || 1} sets
                   </span>
                 )}
               </button>
+              {!done && !skipped && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSkipExercise(exercise.id);
+                  }}
+                  aria-label={`Skip ${getExerciseDisplayName(exercise)}`}
+                  title="Skip exercise"
+                  className="mr-2 shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
+                >
+                  <SkipForward className="size-4" />
+                </button>
+              )}
             </li>
           );
         })}
@@ -88,6 +110,7 @@ export function ExerciseListScreen({
       <div className="flex items-center justify-between border-t border-border pt-4">
         <span className="text-xs text-muted-foreground">
           {doneCount} of {exercises.length} done
+          {skippedExerciseIds.size > 0 && ` · ${skippedExerciseIds.size} skipped`}
         </span>
         <Button
           variant="outline"

@@ -169,4 +169,16 @@ describe("findResumeExerciseId", () => {
     // next thing left to do is still ex-1, not "whatever's after ex-2."
     expect(findResumeExerciseId(list, new Map([["ex-2", 2]]))).toBe("ex-1");
   });
+
+  it("skips over an exercise the athlete explicitly skipped", () => {
+    expect(findResumeExerciseId(list, new Map(), new Set(["ex-1"]))).toBe("ex-2");
+  });
+
+  it("returns null once every remaining exercise is either logged or skipped", () => {
+    expect(findResumeExerciseId(list, new Map([["ex-1", 3]]), new Set(["ex-2"]))).toBeNull();
+  });
+
+  it("defaults to no skipped exercises when the third argument is omitted", () => {
+    expect(findResumeExerciseId(list, new Map())).toBe("ex-1");
+  });
 });

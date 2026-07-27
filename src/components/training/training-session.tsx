@@ -22,6 +22,7 @@ import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
 import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
 import { EndWorkoutDialog } from "@/components/training/end-workout-dialog";
+import { SkipExerciseDialog } from "@/components/training/skip-exercise-dialog";
 
 type Phase = "overview" | "exercises" | "exercise" | "rest" | "exercise-complete" | "summary" | "program-complete";
 
@@ -105,12 +106,14 @@ export function TrainingSession({
 
   const [draftSets, setDraftSets] = useState<DraftSet[]>(initialDraft?.draftSets ?? []);
   const [exerciseNotes, setExerciseNotes] = useState<Record<string, string>>(initialDraft?.exerciseNotes ?? {});
+  const [skippedExercises, setSkippedExercises] = useState<Record<string, string | null>>(initialDraft?.skippedExercises ?? {});
   const [workoutNote, setWorkoutNote] = useState(initialDraft?.workoutNote ?? "");
   const [startedAt, setStartedAt] = useState<string | null>(initialDraft?.startedAt ?? null);
+  const [skipDialogExerciseId, setSkipDialogExerciseId] = useState<string | null>(null);
 
   const [currentExerciseId, setCurrentExerciseId] = useState<string | null>(() => {
     if (!initialDraft) return exerciseList[0]?.id ?? null;
-    return findResumeExerciseId(exerciseList, draftSetCounts(initialDraft.draftSets));
+    return findResumeExerciseId(exerciseList, draftSetCounts(initialDraft.draftSets), new Set(Object.keys(initialDraft.skippedExercises)));
   });
   const [phase, setPhase] = useState<Phase>(() => {
     if (!initialDraft) return "overview";
@@ -166,13 +169,19 @@ export function TrainingSession({
   const loggedSetCounts = useMemo(() => draftSetCounts(draftSets), [draftSets]);
   const totals = useMemo(() => computeWorkoutTotals(draftSets), [draftSets]);
 
-  async function persist(overrides: { draftSets?: DraftSet[]; exerciseNotes?: Record<string, string>; workoutNote?: string | null }) {
+  async function persist(overrides: {
+    draftSets?: DraftSet[];
+    exerciseNotes?: Record<string, string>;
+    skippedExercises?: Record<string, string | null>;
+    workoutNote?: string | null;
+  }) {
     const supabase = createClient();
     const { session, error: saveError } = await saveDraftSession(supabase, {
       trainingDayId,
       athleteId,
       draftSets: overrides.draftSets ?? draftSets,
       exerciseNotes: overrides.exerciseNotes ?? exerciseNotes,
+      skippedExercises: overrides.skippedExercises ?? skippedExercises,
       workoutNote: overrides.workoutNote !== undefined ? overrides.workoutNote : workoutNote || null,
     });
     if (session) setStartedAt(session.startedAt);
@@ -188,6 +197,7 @@ export function TrainingSession({
       athleteId,
       draftSets: [],
       exerciseNotes: {},
+      skippedExercises: {},
       workoutNote: null,
     });
     setStarting(false);
@@ -252,6 +262,19 @@ export function TrainingSession({
     setPhase("summary");
   }
 
+  // An exercise the athlete skipped earlier, then came back and actually
+  // trained after all, is no longer "skipped" — clears it from state (and
+  // the persisted draft) the moment a real set lands for it, so it doesn't
+  // show a stale "Skipped" badge or get excluded from the resume sequence
+  // once it genuinely has sets logged.
+  function unskip(blockExerciseId: string): Record<string, string | null> {
+    if (!(blockExerciseId in skippedExercises)) return skippedExercises;
+    const next = { ...skippedExercises };
+    delete next[blockExerciseId];
+    setSkippedExercises(next);
+    return next;
+  }
+
   async function handleCompleteSet(payload: { weight: number | null; reps: number | null; notes: string | null }) {
     if (!currentExercise) return;
     const targets = buildSetTargets(currentExercise.sets);
@@ -277,8 +300,9 @@ export function TrainingSession({
     };
     const next = [...draftSets, newSet];
     setDraftSets(next);
+    const nextSkipped = unskip(currentExercise.id);
     setSaving(true);
-    await persist({ draftSets: next });
+    await persist({ draftSets: next, skippedExercises: nextSkipped });
     setSaving(false);
 
     const updatedCounts = draftSetCounts(next);
@@ -297,7 +321,10 @@ export function TrainingSession({
       // whatever's actually still incomplete (which may not be the next
       // exercise in list order, if the athlete free-navigated earlier).
       setPhase("exercise-complete");
-      transitionTimeout.current = setTimeout(() => goToExercise(findResumeExerciseId(exerciseList, updatedCounts)), 1100);
+      transitionTimeout.current = setTimeout(
+        () => goToExercise(findResumeExerciseId(exerciseList, updatedCounts, new Set(Object.keys(nextSkipped)))),
+        1100
+      );
     }
   }
 
@@ -329,15 +356,19 @@ export function TrainingSession({
     };
     const next = [...draftSets, newSet];
     setDraftSets(next);
+    const nextSkipped = unskip(currentExercise.id);
     setSaving(true);
-    await persist({ draftSets: next });
+    await persist({ draftSets: next, skippedExercises: nextSkipped });
     setSaving(false);
     // Cardio/running exercises are always logged as a single summary form
     // (see ExerciseScreen's category branch), so finishing one always
     // completes it in one shot.
     const updatedCounts = draftSetCounts(next);
     setPhase("exercise-complete");
-    transitionTimeout.current = setTimeout(() => goToExercise(findResumeExerciseId(exerciseList, updatedCounts)), 1100);
+    transitionTimeout.current = setTimeout(
+      () => goToExercise(findResumeExerciseId(exerciseList, updatedCounts, new Set(Object.keys(nextSkipped)))),
+      1100
+    );
   }
 
   // Resting only ever happens between two sets of the SAME exercise now
@@ -357,6 +388,31 @@ export function TrainingSession({
   function handleWorkoutNoteChange(text: string) {
     setWorkoutNote(text);
     void persist({ workoutNote: text || null });
+  }
+
+  // Opened from either the exercise screen (skip the one currently on
+  // screen) or the exercise list (skip any not-yet-done row directly) — see
+  // SkipExerciseDialog. Which exercise it targets is tracked separately
+  // from currentExerciseId since the list lets you skip something you
+  // haven't navigated to yet.
+  function handleOpenSkipDialog(exerciseId: string) {
+    setSkipDialogExerciseId(exerciseId);
+  }
+
+  function handleConfirmSkip(reason: string | null) {
+    const exerciseId = skipDialogExerciseId;
+    setSkipDialogExerciseId(null);
+    if (!exerciseId) return;
+    const next = { ...skippedExercises, [exerciseId]: reason };
+    setSkippedExercises(next);
+    void persist({ skippedExercises: next });
+
+    // Skipping the exercise currently on screen behaves like finishing it
+    // (auto-advance to whatever's next incomplete) — no celebration screen
+    // though, a skip isn't a completion.
+    if (exerciseId === currentExerciseId) {
+      goToExercise(findResumeExerciseId(exerciseList, loggedSetCounts, new Set(Object.keys(next))));
+    }
   }
 
   // Discards this attempt entirely — used by the Overview screen's "Skip
@@ -402,6 +458,7 @@ export function TrainingSession({
       athleteId,
       draftSets,
       exerciseNotes,
+      skippedExercises,
       workoutNote: workoutNote.trim() || null,
     });
     if (finishError) {
@@ -471,9 +528,11 @@ export function TrainingSession({
           dayLabel={dayLabel}
           exercises={exerciseList}
           currentExerciseId={currentExerciseId}
-          resumeExerciseId={findResumeExerciseId(exerciseList, loggedSetCounts)}
+          resumeExerciseId={findResumeExerciseId(exerciseList, loggedSetCounts, new Set(Object.keys(skippedExercises)))}
           loggedSetCounts={loggedSetCounts}
+          skippedExerciseIds={new Set(Object.keys(skippedExercises))}
           onSelect={handleJumpToExercise}
+          onSkipExercise={handleOpenSkipDialog}
           onEndWorkout={handleEndWorkout}
         />
       )}
@@ -493,6 +552,7 @@ export function TrainingSession({
           onCompleteSet={handleCompleteSet}
           onCardioFinish={handleCardioFinish}
           onOpenExerciseList={openExerciseList}
+          onSkipExercise={() => handleOpenSkipDialog(currentExercise.id)}
           onEndWorkout={handleEndWorkout}
           busy={saving}
         />
@@ -535,6 +595,14 @@ export function TrainingSession({
         onSaveAndFinish={handleSaveAndFinish}
         onDiscard={performSkipWorkout}
         discarding={skippingWorkout}
+      />
+
+      <SkipExerciseDialog
+        open={skipDialogExerciseId !== null}
+        exerciseName={skipDialogExerciseId ? getExerciseDisplayName(exerciseList.find((e) => e.id === skipDialogExerciseId)!) : ""}
+        onClose={() => setSkipDialogExerciseId(null)}
+        onConfirm={handleConfirmSkip}
+        skipping={false}
       />
     </div>
   );

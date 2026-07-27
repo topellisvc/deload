@@ -1,6 +1,6 @@
 "use client";
 
-import { ListOrdered, MessageSquareText, PersonStanding } from "lucide-react";
+import { ListOrdered, MessageSquareText, PersonStanding, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
 import { WorkoutProgressBar } from "@/components/training/workout-progress-bar";
@@ -37,6 +37,7 @@ interface ExerciseScreenProps {
     notes: string | null;
   }) => void;
   onOpenExerciseList: () => void;
+  onSkipExercise: () => void;
   onEndWorkout: () => void;
   busy: boolean;
 }
@@ -62,6 +63,7 @@ export function ExerciseScreen({
   onCompleteSet,
   onCardioFinish,
   onOpenExerciseList,
+  onSkipExercise,
   onEndWorkout,
   busy,
 }: ExerciseScreenProps) {
@@ -72,19 +74,25 @@ export function ExerciseScreen({
     <div className="mx-auto flex max-w-lg flex-col gap-4 px-6 py-8">
       <WorkoutProgressBar currentIndex={exerciseIndex} total={totalExercises} />
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button variant="secondary" size="sm" onClick={onOpenExerciseList}>
           <ListOrdered className="size-3.5" />
           All Exercises
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onEndWorkout}
-          className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
-        >
-          End Workout
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onSkipExercise} className="text-muted-foreground hover:text-foreground">
+            <SkipForward className="size-3.5" />
+            Skip
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEndWorkout}
+            className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
+          >
+            End Workout
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2">

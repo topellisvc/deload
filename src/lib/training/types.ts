@@ -38,6 +38,12 @@ export interface TrainingModeSession {
   /** block_exercise_id -> free-text note, folded into a notes-only
    * logged_sets row per exercise at Finish Workout time. */
   exerciseNotes: Record<string, string>;
+  /** block_exercise_id -> optional reason (or null if the athlete didn't
+   * give one). An exercise present here is treated as done for resume
+   * purposes (see findResumeExerciseId) without any logged sets, and is
+   * folded into a notes-only "Skipped" logged_sets row at Finish Workout
+   * time, same mechanism as exerciseNotes. */
+  skippedExercises: Record<string, string | null>;
   workoutNote: string | null;
 }
 
@@ -50,6 +56,7 @@ export interface TrainingModeSessionRow {
   updated_at: string;
   draft_sets: DraftSet[] | null;
   exercise_notes: Record<string, string> | null;
+  skipped_exercises: Record<string, string | null> | null;
   workout_note: string | null;
 }
 
@@ -62,6 +69,7 @@ export function mapTrainingModeSessionRow(row: TrainingModeSessionRow): Training
     updatedAt: row.updated_at,
     draftSets: row.draft_sets ?? [],
     exerciseNotes: row.exercise_notes ?? {},
+    skippedExercises: row.skipped_exercises ?? {},
     workoutNote: row.workout_note,
   };
 }
