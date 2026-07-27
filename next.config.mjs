@@ -31,13 +31,22 @@ const supabaseHostname = (() => {
 // dangerouslySetInnerHTML usage (layout.tsx's dark-mode-flash guard,
 // the JSON-LD blocks in insights pages) rely on inline tags. Tightening
 // this further is a real follow-up, not a small tweak.
+const isProd = process.env.NODE_ENV === "production";
+
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  // 'unsafe-eval' only in dev: `next dev`'s fast-refresh/HMR runtime
+  // relies on eval() to patch modules in place (its default devtool is
+  // eval-source-map), so a strict script-src breaks `npm run dev` outright
+  // — every client component silently stops hydrating (auth state,
+  // ThemeToggle, the notification badge, all of it) with a CSP EvalError
+  // in the console. `next build`'s production output doesn't eval(), so
+  // prod stays on the stricter policy without it.
+  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: https://images.unsplash.com${supabaseHostname ? ` https://${supabaseHostname}` : ""}`,
   "font-src 'self' data:",
-  `connect-src 'self'${supabaseHostname ? ` https://${supabaseHostname} wss://${supabaseHostname}` : ""} https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io`,
+  `connect-src 'self'${supabaseHostname ? ` https://${supabaseHostname} wss://${supabaseHostname}` : ""} https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io${isProd ? "" : " ws://localhost:* http://localhost:*"}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -51,11 +60,12 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
   // Vercel terminates TLS in front of every deployment (prod and preview
-  // alike), so this is safe to send unconditionally. `preload` just
-  // signals intent via the header — it doesn't enroll the domain in
-  // Chrome's HSTS preload list by itself; that's a separate, manual
-  // submission at hstspreload.org if this ever gets used.
-  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+  // alike), so this is safe to send unconditionally there — but sending
+  // it in dev too would make the browser force-upgrade a future plain
+  // `http://localhost` request to https and hard-fail, so it's prod-only.
+  ...(isProd
+    ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]
+    : []),
 ];
 
 /** @type {import('next').NextConfig} */

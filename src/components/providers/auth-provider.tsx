@@ -38,11 +38,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = createClient();
     let cancelled = false;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (cancelled) return;
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (cancelled) return;
+        setUser(session?.user ?? null);
+        setLoading(false);
+      })
+      // Without this, a failed session check (offline, a blocked request,
+      // anything short of a normal resolved/rejected auth response) left
+      // `loading` stuck at `true` forever — every auth-gated nav item
+      // (AuthNavLink, NotificationBell, AuthStatus) stays invisible
+      // indefinitely instead of falling back to "signed out", which is
+      // exactly what a strict-CSP-in-dev bug looked like from the outside
+      // before that got fixed in next.config.mjs. Treating a failed check
+      // as "signed out" is the same tradeoff onAuthStateChange already
+      // makes implicitly (session null -> signed out), just applied to
+      // the failure path too.
+      .catch(() => {
+        if (cancelled) return;
+        setUser(null);
+        setLoading(false);
+      });
 
     const {
       data: { subscription },
