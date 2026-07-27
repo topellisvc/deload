@@ -485,7 +485,10 @@ export async function deactivateProgram(
  * duplicated too — `progressionPercent` scales weight-ish values on rows
  * whose prescription_type is 'fixed_weight' or 'percent_1rm' (the only
  * types where scaling a number by a percentage still means the same
- * thing — scaling an RPE target or a pace target doesn't).
+ * thing — scaling an RPE target or a pace target doesn't), and always
+ * scales distance/duration/calories whenever a row actually has one of
+ * those set, regardless of prescription_type — see the inline comment
+ * further down for why those three aren't gated the same way weight is.
  */
 export async function addWeek(
   supabase: SupabaseClient,
@@ -566,8 +569,21 @@ export async function addWeek(
             scalable && sourceSet.percent_1rm_value != null
               ? Math.round(sourceSet.percent_1rm_value * scale * 10) / 10
               : sourceSet.percent_1rm_value;
+          // distance/duration/calories are all "volume" fields reused
+          // across running and cardio prescription types (a 'time' row's
+          // duration_seconds, a 'calories' row's calories, an 'intervals'
+          // row's distance_meters+duration_seconds together, etc.) — unlike
+          // weight/percent_1rm, scaling isn't gated to specific
+          // prescription_types here because whichever of these three is
+          // actually populated always means "more of this by week N," no
+          // matter which type set it. heart_rate_zone/rpe/pace deliberately
+          // stay untouched — those are intensity targets, not volume, and
+          // scaling "Zone 2" by 108% would be nonsensical.
           const scaledDistance =
             sourceSet.distance_meters != null ? Math.round(sourceSet.distance_meters * scale) : null;
+          const scaledDuration =
+            sourceSet.duration_seconds != null ? Math.round(sourceSet.duration_seconds * scale) : null;
+          const scaledCalories = sourceSet.calories != null ? Math.round(sourceSet.calories * scale) : null;
           const newSet: SetRow = {
             ...sourceSet,
             id: setId,
@@ -575,6 +591,8 @@ export async function addWeek(
             weight_value: scaledWeight,
             percent_1rm_value: scaledPercent,
             distance_meters: scaledDistance,
+            duration_seconds: scaledDuration,
+            calories: scaledCalories,
           };
           setsToInsert.push(setRowInsertPayload(newSet));
           return newSet;

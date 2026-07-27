@@ -27,11 +27,11 @@ export interface StarterProgramTemplate {
   week1: WeekRow;
   /** % load/volume increase for each week after week 1, applied relative
    * to week 1 (not compounding week-over-week) — e.g. [3, 6, 9] on top of
-   * week1 makes a 4-week block. Only fixed_weight/percent_1rm/distance
-   * values actually scale (see addWeek) — the exercise selection and
-   * everything else stays identical across all 4 weeks by design; the
-   * variation that matters for a beginner block is load/mileage, not a
-   * different day pattern each week. */
+   * week1 makes a 4-week block. Only weight/percent_1rm/distance/
+   * duration/calories values actually scale (see addWeek) — the exercise
+   * selection and everything else stays identical across all 4 weeks by
+   * design; the variation that matters for a beginner block is load/
+   * mileage/time, not a different day pattern each week. */
   progressionSteps: number[];
 }
 
@@ -263,12 +263,10 @@ const cardioConditioningBase: StarterProgramTemplate = {
   discipline: "cardio",
   daysPerWeek: 3,
   totalWeeks: 4,
-  // Only distance actually scales week-to-week (see addWeek's comment on
-  // `scalable` above) — duration/heart-rate-zone blocks stay flat across
-  // all 4 weeks, which is why the description above doesn't promise
-  // specific weekly growth the way 5K Base Builder's does (every one of
-  // its blocks is distance-based, so its whole week scales uniformly;
-  // this template's Tempo Row is the only block that does).
+  // Distance, duration, and calories all scale week-to-week (see addWeek);
+  // heart_rate_zone stays fixed since a target zone isn't a volume to
+  // grow. So Steady State's duration and Tempo's distance both build over
+  // the 4 weeks; only the effort level (Zone 2) on Steady State stays put.
   progressionSteps: [8, 16, 24],
   week1: week1Of([
     day("Steady State", false, [

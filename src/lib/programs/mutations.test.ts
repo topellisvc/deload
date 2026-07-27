@@ -132,8 +132,8 @@ describe("createProgramFromTemplate", () => {
     expect(squatIndex).toBeGreaterThanOrEqual(0);
     expect(week2Sets[squatIndex]!.percent_1rm_value).toBeCloseTo(65 * 1.03, 1);
 
-    // Barbell Row is rep_range — addWeek only scales fixed_weight/percent_1rm/distance,
-    // so this should be byte-for-byte identical week over week.
+    // Barbell Row is rep_range, with no weight/distance/duration/calories
+    // set to begin with, so it should be byte-for-byte identical week over week.
     const rowIndex = week1Sets.findIndex((s) => s.prescription_type === "rep_range" && s.min_reps === 8 && s.max_reps === 10);
     expect(rowIndex).toBeGreaterThanOrEqual(0);
     expect(week2Sets[rowIndex]).toMatchObject({ min_reps: 8, max_reps: 10 });
@@ -147,6 +147,39 @@ describe("createProgramFromTemplate", () => {
 
     expect(result.program).toBeNull();
     expect(result.error).toBeTruthy();
+  });
+});
+
+describe("createProgramFromTemplate progression scaling for cardio's volume fields", () => {
+  const cardioTemplate = STARTER_PROGRAM_TEMPLATES.find((t) => t.slug === "cardio-conditioning-base")!;
+
+  beforeEach(() => {
+    vi.mocked(getProgramTree).mockReset();
+    vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-1" } as unknown as ProgramTree);
+  });
+
+  it("scales duration_seconds and distance_meters across progression weeks, but leaves heart_rate_zone fixed", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await createProgramFromTemplate(supabase as never, { template: cardioTemplate, userId: "user-1" });
+
+    const setsPerWeek = countSets(cardioTemplate);
+    const allSets = inserted.set_prescriptions!;
+    const week1Sets = allSets.slice(0, setsPerWeek);
+    const week2Sets = allSets.slice(setsPerWeek, setsPerWeek * 2); // first progression step: +8%
+
+    // Steady State (Stationary Bike): 20 minutes @ Zone 2.
+    const steadyStateIndex = week1Sets.findIndex((s) => s.prescription_type === "heart_rate_zone" && s.duration_seconds === 1200);
+    expect(steadyStateIndex).toBeGreaterThanOrEqual(0);
+    expect(week2Sets[steadyStateIndex]).toMatchObject({
+      duration_seconds: Math.round(1200 * 1.08),
+      heart_rate_zone: 2, // unchanged — a target zone isn't a volume to scale
+    });
+
+    // Tempo (Rowing Machine): 2500m.
+    const tempoIndex = week1Sets.findIndex((s) => s.prescription_type === "distance" && s.distance_meters === 2500);
+    expect(tempoIndex).toBeGreaterThanOrEqual(0);
+    expect(week2Sets[tempoIndex]!.distance_meters).toBe(Math.round(2500 * 1.08));
   });
 });
 
