@@ -7,12 +7,14 @@ import {
   getFeaturedArticle,
   getFeaturedContributors,
   getLatestArticles,
+  getMyContributorProfile,
   getPopularArticles,
 } from "@/lib/insights/queries";
 import { ArticleCard } from "@/components/insights/article-card";
 import { TopicCard } from "@/components/insights/topic-card";
 import { ContributorCard } from "@/components/insights/contributor-card";
 import { SearchBar } from "@/components/insights/search-bar";
+import { InsightsContributeCta } from "@/components/insights/insights-contribute-cta";
 
 const DESCRIPTION = "Evidence-based articles, practical coaching advice and sports science insights from verified professionals.";
 
@@ -48,12 +50,20 @@ const collectionPageJsonLd = {
  */
 export default async function InsightsHomePage() {
   const supabase = await createClient();
-  const [featured, latest, popular, topics, contributors] = await Promise.all([
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const [featured, latest, popular, topics, contributors, contributor] = await Promise.all([
     getFeaturedArticle(supabase),
     getLatestArticles(supabase, 6),
     getPopularArticles(supabase, 4),
     getAllTopics(supabase),
     getFeaturedContributors(supabase, 4),
+    // null for a signed-out visitor — there's nothing to look up without
+    // a profile id, and the CTA below already treats "no contributor" and
+    // "signed out" identically (both just show "Apply to contribute").
+    user ? getMyContributorProfile(supabase, user.id) : Promise.resolve(null),
   ]);
 
   return (
@@ -118,15 +128,7 @@ export default async function InsightsHomePage() {
         </section>
       )}
 
-      <section className="mx-auto w-full max-w-2xl rounded-2xl border border-border bg-muted/30 px-6 py-8 text-center">
-        <p className="text-sm text-muted-foreground">
-          Are you a coach, sports scientist, or clinician?{" "}
-          <Link href="/insights/contribute" className="font-medium text-primary underline underline-offset-2">
-            Apply to contribute
-          </Link>
-          .
-        </p>
-      </section>
+      <InsightsContributeCta contributor={contributor} />
     </div>
   );
 }
