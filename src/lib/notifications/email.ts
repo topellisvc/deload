@@ -1,5 +1,14 @@
 export interface NotificationEmailParams {
-  to: string;
+  /** Who this is for — NOT an email address. The API route re-derives the
+   * actual send-to address itself from an active coach_clients row
+   * involving both the caller and this id (RLS-scoped, same as any other
+   * query), rather than trusting a client-submitted address. A raw `to`
+   * string used to be accepted directly here and forwarded to Resend
+   * as-is, which meant anyone who could reach the endpoint with a valid
+   * session (i.e. any signed-in user, via curl/devtools rather than the
+   * app's own UI) could make it send arbitrary email to arbitrary
+   * addresses using this app's sending domain. */
+  recipientId: string;
   subject: string;
   heading: string;
   message: string;

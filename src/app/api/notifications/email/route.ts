@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 interface NotificationEmailBody {
-  to: string;
+  /** Who this is for — not an email address. See below for why the address
+   * itself is looked up here rather than accepted from the caller. */
+  recipientId: string;
   subject: string;
   heading: string;
   message: string;
@@ -10,11 +12,17 @@ interface NotificationEmailBody {
   ctaHref?: string;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function isValidBody(body: unknown): body is NotificationEmailBody {
   if (!body || typeof body !== "object") return false;
   const b = body as Record<string, unknown>;
   return (
-    typeof b.to === "string" &&
+    // Strictly UUID-shaped, not just "a string" — recipientId gets
+    // interpolated into a PostgREST .or() filter string below, so anything
+    // containing `,`/`(`/`)` could otherwise inject extra filter clauses.
+    typeof b.recipientId === "string" &&
+    UUID_RE.test(b.recipientId) &&
     typeof b.subject === "string" &&
     typeof b.heading === "string" &&
     typeof b.message === "string"
@@ -25,10 +33,21 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** Only allow http(s) links in the CTA button — blocks `javascript:`/`data:`
+ * URIs a caller could otherwise pass through ctaHref (it's always been
+ * free-form text; nothing upstream constrains it to a same-origin path). */
+function isSafeCtaHref(href: string): boolean {
+  try {
+    return ["http:", "https:"].includes(new URL(href).protocol);
+  } catch {
+    return false;
+  }
+}
+
 function renderHtml(body: NotificationEmailBody): string {
   const cta =
-    body.ctaHref && body.ctaLabel
-      ? `<p style="margin:24px 0;"><a href="${body.ctaHref}" style="background:#111;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-family:sans-serif;font-size:14px;">${escapeHtml(body.ctaLabel)}</a></p>`
+    body.ctaHref && body.ctaLabel && isSafeCtaHref(body.ctaHref)
+      ? `<p style="margin:24px 0;"><a href="${escapeHtml(body.ctaHref)}" style="background:#111;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-family:sans-serif;font-size:14px;">${escapeHtml(body.ctaLabel)}</a></p>`
       : "";
   return `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
@@ -60,6 +79,18 @@ function renderHtml(body: NotificationEmailBody): string {
  * new package. Requires a signed-in session (this app's normal auth
  * cookie) so it can't be used as an open mail relay by an unauthenticated
  * caller who finds the endpoint.
+ *
+ * The request body only ever names a recipientId, never an email address —
+ * the address itself is resolved here from coach_clients, using the
+ * request's own session so RLS ("coaches can view their own roster" /
+ * "clients can see relationships naming them", 0003_coach_clients.sql)
+ * limits the lookup to relationships the caller is actually part of. This
+ * used to accept a raw `to` address straight from the request body and
+ * hand it to Resend as-is: since sendNotificationEmail is a plain
+ * client-side fetch(), anyone with a valid session could call this route
+ * directly (curl, devtools) with any `to` they liked and use this app's
+ * sending domain as an open relay to arbitrary addresses. Deriving the
+ * address server-side from a real, RLS-visible relationship closes that.
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -86,12 +117,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
+  const { data: relationship } = await supabase
+    .from("coach_clients")
+    .select("coach_id, coach_email, client_id, client_email")
+    .eq("status", "active")
+    .or(`and(coach_id.eq.${user.id},client_id.eq.${body.recipientId}),and(coach_id.eq.${body.recipientId},client_id.eq.${user.id})`)
+    .maybeSingle<{ coach_id: string; coach_email: string; client_id: string | null; client_email: string }>();
+
+  if (!relationship) {
+    return NextResponse.json({ error: "No active relationship with recipient" }, { status: 403 });
+  }
+  const to = relationship.coach_id === body.recipientId ? relationship.coach_email : relationship.client_email;
+
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from,
-      to: body.to,
+      to,
       subject: body.subject,
       html: renderHtml(body),
     }),
