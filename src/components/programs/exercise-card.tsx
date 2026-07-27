@@ -114,6 +114,15 @@ export function ExerciseCard({
       <div className="flex items-center gap-1 px-3 py-2.5">
         <button
           type="button"
+          id={`exercise-toggle-${exercise.id}`}
+          // Both read by DayColumn's single delegated keydown handler (see
+          // its own doc comment) — the data attribute identifies which
+          // exercise a keyboard shortcut applies to purely from
+          // e.target/e.currentTarget, and the id is how ArrowUp/ArrowDown
+          // move focus to a sibling exercise's toggle. Enter/Space already
+          // expand or collapse for free once this button has focus — that's
+          // native <button> behavior, nothing to wire up.
+          data-exercise-toggle={exercise.id}
           onClick={onToggleExpand}
           aria-expanded={expanded}
           className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left transition-colors hover:bg-surface-hover"

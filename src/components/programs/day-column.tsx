@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent, type SensorDescriptor, type SensorOptions } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { BookMarked, Copy, Files, Flame, Plus, Sunrise } from "lucide-react";
 import type { BlockRole, BlockRow, DayRow, DayTemplateRow, ExerciseCategory, ExerciseTemplateRow, PrescriptionType, SetRow } from "@/lib/programs/types";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import type { BuilderMode } from "@/lib/programs/use-builder-mode";
+import { buildExerciseList } from "@/lib/training/sequence";
 import { ExerciseBlockCard } from "@/components/programs/exercise-block-card";
 import { WorkoutSummaryBar } from "@/components/programs/workout-summary-bar";
 import { cn } from "@/lib/utils";
@@ -141,6 +142,62 @@ export function DayColumn({
     if (!trimmed) setLabel(day.label ?? "");
   }
 
+  // Warm-up → main → conditioning, same order the athlete sees (see
+  // buildExerciseList's own doc comment) — this is what ArrowUp/ArrowDown
+  // walk below, so keyboard order matches visual/tab order regardless of
+  // each section's raw (per-role-scoped) positions.
+  const orderedExercises = useMemo(() => buildExerciseList(day.blocks), [day.blocks]);
+
+  /**
+   * One delegated keydown listener for the whole day, rather than one per
+   * exercise — every shortcut here only fires when e.target is a specific
+   * exercise's collapse/expand toggle button (identified via its
+   * data-exercise-toggle attribute, set in exercise-card.tsx), which for
+   * free means none of them fire while focus is inside that exercise's own
+   * expanded body (a text input, the notes field, etc.) — no separate
+   * "am I typing right now" guard needed. Enter/Space already expand or
+   * collapse via native <button> semantics, so only Arrow/Delete/Cmd+D/
+   * Escape need handling here.
+   */
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const exerciseId = (e.target as HTMLElement).dataset.exerciseToggle;
+    if (!exerciseId) return;
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const ids = orderedExercises.map((ex) => ex.id);
+      const index = ids.indexOf(exerciseId);
+      if (index === -1) return;
+      const targetId = ids[e.key === "ArrowDown" ? index + 1 : index - 1];
+      if (targetId) document.getElementById(`exercise-toggle-${targetId}`)?.focus();
+      return;
+    }
+
+    if (e.key === "Escape") {
+      if (expandedExerciseId === exerciseId) {
+        e.preventDefault();
+        setExpandedExerciseId(null);
+      }
+      return;
+    }
+
+    const exercise = orderedExercises.find((ex) => ex.id === exerciseId);
+    const block = exercise && day.blocks.find((b) => b.id === exercise.block_id);
+    if (!exercise || !block) return;
+
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      if (block.exercises.length > 1) onRemoveExerciseFromBlock(block.id, exerciseId);
+      else onDeleteBlock(block.id);
+      return;
+    }
+
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      onDuplicateExercise(block.id, exerciseId);
+    }
+  }
+
   const warmupBlocks = day.blocks.filter((b) => b.block_role === "warmup").sort((a, b) => a.position - b.position);
   const mainBlocks = day.blocks.filter((b) => b.block_role === "main").sort((a, b) => a.position - b.position);
   const conditioningBlocks = day.blocks.filter((b) => b.block_role === "conditioning").sort((a, b) => a.position - b.position);
@@ -176,7 +233,10 @@ export function DayColumn({
   };
 
   return (
-    <div className="flex w-full shrink-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 lg:w-96">
+    <div
+      onKeyDown={handleKeyDown}
+      className="flex w-full shrink-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 lg:w-96"
+    >
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <input
