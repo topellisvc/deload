@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { BottomNav } from "@/components/bottom-nav";
 import { RoleOnboarding } from "@/components/onboarding/role-onboarding";
 import { ToastProvider } from "@/components/ui/toast";
 import { AuthProvider } from "@/components/providers/auth-provider";
@@ -115,9 +116,14 @@ export default function RootLayout({
           <ToastProvider>
             <div className="flex min-h-screen flex-col">
               <SiteHeader />
-              <main className="flex-1">{children}</main>
+              {/* Bottom padding clears the fixed BottomNav bar (h-16 plus
+                  its own safe-area inset) on mobile only — lg:pb-0 cancels
+                  it out once BottomNav hides itself at the same lg
+                  breakpoint. */}
+              <main className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</main>
               <SiteFooter />
             </div>
+            <BottomNav />
             <RoleOnboarding />
           </ToastProvider>
         </AuthProvider>

@@ -46,7 +46,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[100] flex flex-col items-center gap-2 px-4 sm:items-end sm:px-6">
+      {/* bottom-20 clears the fixed BottomNav tab bar (h-16, plus its own
+          safe-area padding) on mobile, where it's visible; lg:bottom-4
+          drops back to a plain corner toast once BottomNav hides itself
+          at the same lg breakpoint. */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-20 z-[100] flex flex-col items-center gap-2 px-4 sm:items-end sm:px-6 lg:bottom-4">
         {toasts.map((toast) => (
           <div
             key={toast.id}
