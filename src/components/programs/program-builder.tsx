@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { BlockRow, DayRow, ExerciseCategory, PrescriptionType, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
+import type { BlockRole, BlockRow, DayRow, ExerciseCategory, PrescriptionType, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
 import { defaultCategoryForDiscipline, defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import * as m from "@/lib/programs/mutations";
@@ -222,11 +222,10 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleCopyDayTo(sourceDay: DayRow, targetDayId: string) {
     const targetDay = week.days.find((d) => d.id === targetDayId);
     if (!targetDay) return;
-    const targetStartPosition = nextPosition(targetDay.blocks);
     const { blocks, error } = await m.copyDayContents(supabase, {
       sourceDay,
       targetDayId,
-      targetStartPosition,
+      targetDayBlocks: targetDay.blocks,
     });
     if (error) {
       fail(error);
@@ -236,13 +235,14 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   }
 
   // ---- blocks ----
-  async function handleAddBlock(dayId: string) {
+  async function handleAddBlock(dayId: string, role: BlockRole = "main") {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
     const { block, error } = await m.addExerciseBlock(supabase, {
       dayId,
-      position: nextPosition(day.blocks),
+      position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
       category: defaultCategoryForDiscipline(program.discipline),
+      role,
     });
     if (error || !block) {
       fail(error ?? "Couldn't add exercise.");
@@ -368,9 +368,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
   async function handleDuplicateExercise(dayId: string, blockId: string, blockExerciseId: string) {
     const day = week.days.find((d) => d.id === dayId);
-    const exercise = day?.blocks.find((b) => b.id === blockId)?.exercises.find((ex) => ex.id === blockExerciseId);
-    if (!day || !exercise) return;
-    const { block, error } = await m.duplicateExercise(supabase, { dayId, position: nextPosition(day.blocks), exercise });
+    const sourceBlock = day?.blocks.find((b) => b.id === blockId);
+    const exercise = sourceBlock?.exercises.find((ex) => ex.id === blockExerciseId);
+    if (!day || !sourceBlock || !exercise) return;
+    const { block, error } = await m.duplicateExercise(supabase, {
+      dayId,
+      position: nextPosition(day.blocks.filter((b) => b.block_role === sourceBlock.block_role)),
+      exercise,
+      blockRole: sourceBlock.block_role,
+    });
     if (error || !block) {
       fail(error ?? "Couldn't duplicate that exercise.");
       return;
@@ -378,6 +384,10 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, block] }));
   }
 
+  // `role` isn't needed here — block ids are globally unique regardless of
+  // section, so the optimistic position-patch below works the same either
+  // way. It's only in BlockSection's callback signature because each
+  // section is its own independent drag surface (see day-column.tsx).
   function handleReorderBlocks(dayId: string, orderedBlocks: { id: string; position: number }[]) {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
@@ -636,9 +646,9 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 onCreateCustomExercise={handleCreateCustomExercise}
                 onUpdateDay={(patch) => handleUpdateDay(day.id, patch)}
                 onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
-                onAddBlock={() => handleAddBlock(day.id)}
+                onAddBlock={(role) => handleAddBlock(day.id, role)}
                 onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
-                onReorderBlocks={(orderedBlocks) => handleReorderBlocks(day.id, orderedBlocks)}
+                onReorderBlocks={(_role, orderedBlocks) => handleReorderBlocks(day.id, orderedBlocks)}
                 onAddExerciseToBlock={(blockId) => handleAddExerciseToBlock(day.id, blockId)}
                 addingExerciseBlockId={addingExerciseBlockId}
                 onRemoveExerciseFromBlock={(blockId, blockExerciseId) =>

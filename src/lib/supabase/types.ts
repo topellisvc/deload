@@ -165,11 +165,24 @@ export interface TrainingDay {
 
 export type BlockType = "straight" | "superset" | "circuit" | "dropset";
 
+/**
+ * Which section of the day a block belongs to (migration 0032) — the
+ * Program Builder's Warm-up and Conditioning/Finisher sections, both
+ * visually separate from the main workout. 'main' is the default so every
+ * block created before this existed keeps rendering exactly where it
+ * always did. Position uniqueness is scoped to (day_id, block_role,
+ * position), not just (day_id, position) — each section manages its own
+ * independent ordering, the same way block_exercises are scoped to their
+ * block and set_prescriptions to their block_exercise.
+ */
+export type BlockRole = "warmup" | "main" | "conditioning";
+
 export interface ExerciseBlock {
   id: string;
   day_id: string;
   position: number;
   block_type: BlockType;
+  block_role: BlockRole;
   rounds: number;
 }
 

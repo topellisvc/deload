@@ -38,6 +38,7 @@ function makeBlocks(): BlockRow[] {
       day_id: "day-1",
       position: 1,
       block_type: "straight",
+      block_role: "main",
       rounds: 1,
       exercises: [
         {

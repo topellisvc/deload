@@ -86,7 +86,7 @@ function ex(name: string, category: ExerciseCategory, set: SetRow, notes: string
  * of these templates use supersets, keeping a first program as simple to
  * read (and to later edit in the builder) as possible. */
 function b(exercise: BlockExerciseRow): BlockRow {
-  return { id: "", day_id: "", position: 1, block_type: "straight", rounds: 1, exercises: [exercise] };
+  return { id: "", day_id: "", position: 1, block_type: "straight", block_role: "main", rounds: 1, exercises: [exercise] };
 }
 
 function day(label: string, isRestDay: boolean, blocks: BlockRow[] = []): DayRow {

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   BlockExerciseRow,
+  BlockRole,
   BlockRow,
   BlockType,
   DayRow,
@@ -547,6 +548,7 @@ export async function addWeek(
         day_id: dayId,
         position: sourceBlock.position,
         block_type: sourceBlock.block_type,
+        block_role: sourceBlock.block_role,
         rounds: sourceBlock.rounds,
       });
 
@@ -665,23 +667,42 @@ export async function updateDay(
  * Duplicates every block in `sourceDay` and appends the copies to the end
  * of the target day (non-destructive — existing content on the target day
  * is left alone).
+ *
+ * Position is scoped per (day_id, block_role) (migration 0032), so a
+ * single shared "next position" counter across the whole target day would
+ * both misorder sections and risk colliding with an existing block in a
+ * different role that happens to occupy the same number. Each role gets
+ * its own counter, seeded from that role's actual next position in
+ * `targetDayBlocks` — the target day's *current* blocks, passed in rather
+ * than re-fetched, since the caller (ProgramBuilder) already has them in
+ * local state.
  */
 export async function copyDayContents(
   supabase: SupabaseClient,
-  params: { sourceDay: DayRow; targetDayId: string; targetStartPosition: number }
+  params: { sourceDay: DayRow; targetDayId: string; targetDayBlocks: BlockRow[] }
 ): Promise<{ blocks: BlockRow[]; error: string | null }> {
   const blocksToInsert: Record<string, unknown>[] = [];
   const exercisesToInsert: Record<string, unknown>[] = [];
   const setsToInsert: Record<string, unknown>[] = [];
 
-  const newBlocks: BlockRow[] = params.sourceDay.blocks.map((sourceBlock, i) => {
+  const nextPositionByRole = new Map<BlockRole, number>();
+  function nextPositionFor(role: BlockRole): number {
+    const current =
+      nextPositionByRole.get(role) ??
+      Math.max(0, ...params.targetDayBlocks.filter((b) => b.block_role === role).map((b) => b.position)) + 1;
+    nextPositionByRole.set(role, current + 1);
+    return current;
+  }
+
+  const newBlocks: BlockRow[] = params.sourceDay.blocks.map((sourceBlock) => {
     const blockId = newId();
-    const position = params.targetStartPosition + i;
+    const position = nextPositionFor(sourceBlock.block_role);
     blocksToInsert.push({
       id: blockId,
       day_id: params.targetDayId,
       position,
       block_type: sourceBlock.block_type,
+      block_role: sourceBlock.block_role,
       rounds: sourceBlock.rounds,
     });
 
@@ -741,16 +762,23 @@ export async function copyDayContents(
  */
 export async function duplicateExercise(
   supabase: SupabaseClient,
-  params: { dayId: string; position: number; exercise: BlockExerciseRow }
+  /** `blockRole` defaults to 'main' — every existing call site predates
+   * Warm-up/Conditioning sections and still means "duplicate into the main
+   * workout." Callers that know the source block's role (see
+   * ProgramBuilder's handleDuplicateExercise) should pass it through so a
+   * warm-up exercise's duplicate lands back in Warm-up, not Main. */
+  params: { dayId: string; position: number; exercise: BlockExerciseRow; blockRole?: BlockRole }
 ): Promise<{ block: BlockRow | null; error: string | null }> {
   const blockId = newId();
   const exerciseId = newId();
+  const blockRole: BlockRole = params.blockRole ?? "main";
 
   const { error: blockError } = await supabase.from("exercise_blocks").insert({
     id: blockId,
     day_id: params.dayId,
     position: params.position,
     block_type: "straight",
+    block_role: blockRole,
     rounds: 1,
   });
   if (blockError) return { block: null, error: blockError.message };
@@ -782,6 +810,7 @@ export async function duplicateExercise(
     day_id: params.dayId,
     position: params.position,
     block_type: "straight",
+    block_role: blockRole,
     rounds: 1,
     exercises: [
       {
@@ -809,11 +838,12 @@ export async function addExerciseBlock(
    * program's new blocks don't all need switching by hand before they're
    * usable. Either way this is only ever a starting point:
    * switchExerciseCategory changes it same as before. */
-  params: { dayId: string; position: number; category?: ExerciseCategory }
+  params: { dayId: string; position: number; category?: ExerciseCategory; role?: BlockRole }
 ): Promise<{ block: BlockRow | null; error: string | null }> {
   const blockId = newId();
   const exerciseId = newId();
   const category: ExerciseCategory = params.category ?? "strength";
+  const role: BlockRole = params.role ?? "main";
   const prescriptionType = defaultPrescriptionType(category);
 
   const { error: blockError } = await supabase.from("exercise_blocks").insert({
@@ -821,6 +851,7 @@ export async function addExerciseBlock(
     day_id: params.dayId,
     position: params.position,
     block_type: "straight",
+    block_role: role,
     rounds: 1,
   });
   if (blockError) return { block: null, error: blockError.message };
@@ -846,6 +877,7 @@ export async function addExerciseBlock(
       day_id: params.dayId,
       position: params.position,
       block_type: "straight",
+      block_role: role,
       rounds: 1,
       exercises: [
         {

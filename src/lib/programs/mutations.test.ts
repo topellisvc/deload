@@ -3,6 +3,7 @@ import {
   addExerciseBlock,
   addExerciseToBlock,
   cloneProgram,
+  copyDayContents,
   createProgram,
   createProgramFromSavedTemplate,
   createProgramFromTemplate,
@@ -12,7 +13,7 @@ import {
   reorderSets,
   saveProgramAsTemplate,
 } from "./mutations";
-import type { BlockExerciseRow } from "./types";
+import type { BlockExerciseRow, BlockRow, DayRow } from "./types";
 import { getProgramTree } from "./queries";
 import { STARTER_PROGRAM_TEMPLATES } from "./starter-templates";
 import type { ProgramTemplateRow, ProgramTree } from "./types";
@@ -77,6 +78,22 @@ describe("addExerciseBlock / addExerciseToBlock category default", () => {
 
     expect(inserted.block_exercises![0]).toMatchObject({ exercise_category: "cardio" });
     expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "time" });
+  });
+
+  it("addExerciseBlock defaults to block_role 'main' when no role is passed", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseBlock(supabase as never, { dayId: "day-1", position: 1 });
+
+    expect(inserted.exercise_blocks![0]).toMatchObject({ block_role: "main" });
+  });
+
+  it("addExerciseBlock uses the passed role for the Warm-up / Conditioning sections", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseBlock(supabase as never, { dayId: "day-1", position: 1, role: "warmup" });
+
+    expect(inserted.exercise_blocks![0]).toMatchObject({ block_role: "warmup" });
   });
 });
 
@@ -538,6 +555,57 @@ describe("reorderSets", () => {
   });
 });
 
+describe("copyDayContents", () => {
+  function makeBlock(overrides: Partial<BlockRow> & Pick<BlockRow, "id" | "position" | "block_role">): BlockRow {
+    return {
+      day_id: "source-day",
+      block_type: "straight",
+      rounds: 1,
+      exercises: [
+        { id: `${overrides.id}-ex`, block_id: overrides.id, position: 1, exercise_id: null, custom_name: "Exercise", notes: null, exercise_category: "strength", sets: [] },
+      ],
+      ...overrides,
+    };
+  }
+
+  /** Position is scoped per (day_id, block_role) (migration 0032) — a
+   * shared "append at the end of the day" counter would misorder sections
+   * and could collide with an existing block in a different role. Each
+   * role needs its own next-position counter, seeded from the target
+   * day's *existing* blocks in that role. */
+  it("seeds each role's position from the target day's existing blocks in that same role, independently", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    const sourceDay: DayRow = {
+      id: "source-day",
+      week_id: "week-1",
+      position: 1,
+      label: null,
+      is_rest_day: false,
+      blocks: [
+        makeBlock({ id: "src-warmup", position: 1, block_role: "warmup" }),
+        makeBlock({ id: "src-main-1", position: 1, block_role: "main" }),
+        makeBlock({ id: "src-main-2", position: 2, block_role: "main" }),
+      ],
+    };
+
+    // Target day already has one warmup block (position 1) and no main
+    // blocks — so the copied warmup should land at position 2, while the
+    // two copied main blocks start fresh at positions 1 and 2.
+    const targetDayBlocks: BlockRow[] = [makeBlock({ id: "existing-warmup", day_id: "target-day", position: 1, block_role: "warmup" })];
+
+    const { blocks, error } = await copyDayContents(supabase as never, { sourceDay, targetDayId: "target-day", targetDayBlocks });
+
+    expect(error).toBeNull();
+    expect(blocks).toHaveLength(3);
+    const warmupCopy = blocks.find((b) => b.block_role === "warmup");
+    const mainCopies = blocks.filter((b) => b.block_role === "main").sort((a, b) => a.position - b.position);
+
+    expect(warmupCopy!.position).toBe(2);
+    expect(mainCopies.map((b) => b.position)).toEqual([1, 2]);
+  });
+});
+
 describe("duplicateExercise", () => {
   function makeSourceExercise(overrides: Partial<BlockExerciseRow> = {}): BlockExerciseRow {
     return {
@@ -583,7 +651,9 @@ describe("duplicateExercise", () => {
     const result = await duplicateExercise(supabase as never, { dayId: "day-1", position: 2, exercise: makeSourceExercise() });
 
     expect(result.error).toBeNull();
-    expect(inserted.exercise_blocks).toEqual([{ id: expect.any(String), day_id: "day-1", position: 2, block_type: "straight", rounds: 1 }]);
+    expect(inserted.exercise_blocks).toEqual([
+      { id: expect.any(String), day_id: "day-1", position: 2, block_type: "straight", block_role: "main", rounds: 1 },
+    ]);
     expect(inserted.block_exercises![0]).toMatchObject({ custom_name: "Bench Press", notes: "Control the eccentric", exercise_category: "strength" });
     expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "fixed_weight", sets: 4, reps: "6", weight_value: 100, rest_seconds: 120 });
 

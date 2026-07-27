@@ -1,5 +1,6 @@
 import type {
   BlockExercise,
+  BlockRole,
   BlockType,
   CardioPrescriptionType,
   ExerciseBlock,
@@ -16,6 +17,7 @@ import type {
 } from "@/lib/supabase/types";
 
 export type {
+  BlockRole,
   BlockType,
   CardioPrescriptionType,
   ExerciseCategory,

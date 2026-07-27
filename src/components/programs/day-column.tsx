@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { useEffect, useState, type ReactNode } from "react";
+import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent, type SensorDescriptor, type SensorOptions } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { Copy, Plus } from "lucide-react";
-import type { DayRow, ExerciseCategory, PrescriptionType, SetRow } from "@/lib/programs/types";
+import { Copy, Flame, Plus, Sunrise } from "lucide-react";
+import type { BlockRole, BlockRow, DayRow, ExerciseCategory, PrescriptionType, SetRow } from "@/lib/programs/types";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import type { BuilderMode } from "@/lib/programs/use-builder-mode";
 import { ExerciseBlockCard } from "@/components/programs/exercise-block-card";
@@ -19,9 +19,9 @@ interface DayColumnProps {
   onCreateCustomExercise: (name: string, category: ExerciseCategory) => void;
   onUpdateDay: (patch: { label?: string | null; is_rest_day?: boolean }) => void;
   onCopyTo: (targetDayId: string) => void;
-  onAddBlock: () => void;
+  onAddBlock: (role: BlockRole) => void;
   onDeleteBlock: (blockId: string) => void;
-  onReorderBlocks: (orderedBlocks: { id: string; position: number }[]) => void;
+  onReorderBlocks: (role: BlockRole, orderedBlocks: { id: string; position: number }[]) => void;
   onAddExerciseToBlock: (blockId: string) => void;
   /** Block id currently awaiting its "add exercise" network round-trip, if
    * any — see ProgramBuilder's addingExerciseBlockId comment for why this
@@ -50,10 +50,15 @@ interface DayColumnProps {
  * time" (spec) is scoped per day, not globally across the whole visible
  * week, since every day in the week renders simultaneously and forcing a
  * click in one day to collapse something open in a different day would be
- * surprising. Also owns the DndContext for this day's block reordering —
- * each day is its own independent drag surface, dragging a block from one
- * day's list into another isn't supported (that's what "copy to another
- * day" and, later, a real cross-day move are for).
+ * surprising.
+ *
+ * A day's blocks are split into three sections by `block_role` (migration
+ * 0032) — Warm-up, the main workout, and Conditioning/Finisher — each
+ * visually separate per spec, each its own independent drag surface (a
+ * block dragged within Warm-up reorders Warm-up; it can't be dragged into
+ * Main). Warm-up and Conditioning are optional and start collapsed to a
+ * single "+" affordance when empty, so a day with neither still reads as
+ * "just a workout," matching how every day looked before this existed.
  */
 export function DayColumn({
   day,
@@ -88,7 +93,10 @@ export function DayColumn({
   // A distance-based activation constraint (rather than firing on the very
   // first pixel of movement) is what lets the drag handle still register a
   // plain click/tap without the pointer sensor eating it as a micro-drag —
-  // dnd-kit's own recommended pattern for drag-handle-only sortables.
+  // dnd-kit's own recommended pattern for drag-handle-only sortables. One
+  // sensor pair is shared across all three sections' DndContexts below —
+  // sensors hold no per-list state, so there's no reason to instantiate
+  // three.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -98,21 +106,39 @@ export function DayColumn({
     setExpandedExerciseId((current) => (current === exerciseId ? null : exerciseId));
   }
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = day.blocks.findIndex((b) => b.id === active.id);
-    const newIndex = day.blocks.findIndex((b) => b.id === over.id);
-    if (oldIndex < 0 || newIndex < 0) return;
-    const reordered = arrayMove(day.blocks, oldIndex, newIndex);
-    onReorderBlocks(reordered.map((b, i) => ({ id: b.id, position: i + 1 })));
-  }
-
   function commitLabel() {
     const trimmed = label.trim();
     if (trimmed !== (day.label ?? "")) onUpdateDay({ label: trimmed || null });
     if (!trimmed) setLabel(day.label ?? "");
   }
+
+  const warmupBlocks = day.blocks.filter((b) => b.block_role === "warmup").sort((a, b) => a.position - b.position);
+  const mainBlocks = day.blocks.filter((b) => b.block_role === "main").sort((a, b) => a.position - b.position);
+  const conditioningBlocks = day.blocks.filter((b) => b.block_role === "conditioning").sort((a, b) => a.position - b.position);
+
+  const sectionProps = {
+    sensors,
+    mode,
+    library,
+    onCreateCustomExercise,
+    expandedExerciseId,
+    toggleExpand,
+    onDeleteBlock,
+    onReorderBlocks,
+    onAddExerciseToBlock,
+    addingExerciseBlockId,
+    onRemoveExerciseFromBlock,
+    onDuplicateExercise,
+    onRoundsChange,
+    onExerciseChange,
+    onNoteChange,
+    onCategoryChange,
+    onPrescriptionTypeChange,
+    onAddSet,
+    onSetChange,
+    onDeleteSet,
+    onReorderSets,
+  };
 
   return (
     <div className="flex w-full shrink-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 lg:w-96">
@@ -185,52 +211,181 @@ export function DayColumn({
 
       {!day.is_rest_day && (
         <>
-          <WorkoutSummaryBar blocks={day.blocks} />
+          <WorkoutSummaryBar blocks={mainBlocks} />
 
-          <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-            <SortableContext items={day.blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
-              <div className="flex flex-col gap-2">
-                {day.blocks.map((block) => (
-                  <ExerciseBlockCard
-                    key={block.id}
-                    block={block}
-                    expandedExerciseId={expandedExerciseId}
-                    onToggleExpand={toggleExpand}
-                    mode={mode}
-                    library={library}
-                    onCreateCustomExercise={onCreateCustomExercise}
-                    onDeleteBlock={() => onDeleteBlock(block.id)}
-                    onAddExerciseToBlock={() => onAddExerciseToBlock(block.id)}
-                    isAddingExercise={addingExerciseBlockId === block.id}
-                    onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
-                    onDuplicateExercise={(blockExerciseId) => onDuplicateExercise(block.id, blockExerciseId)}
-                    onRoundsChange={(rounds) => onRoundsChange(block.id, rounds)}
-                    onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
-                    onNoteChange={(blockExerciseId, notes) => onNoteChange(block.id, blockExerciseId, notes)}
-                    onCategoryChange={(blockExerciseId, category) => onCategoryChange(block.id, blockExerciseId, category)}
-                    onPrescriptionTypeChange={(blockExerciseId, prescriptionType) =>
-                      onPrescriptionTypeChange(block.id, blockExerciseId, prescriptionType)
-                    }
-                    onAddSet={(blockExerciseId) => onAddSet(block.id, blockExerciseId)}
-                    onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
-                    onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}
-                    onReorderSets={(blockExerciseId, orderedSets) => onReorderSets(block.id, blockExerciseId, orderedSets)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+          <BlockSection
+            role="warmup"
+            blocks={warmupBlocks}
+            icon={<Sunrise className="size-3.5" />}
+            sectionLabel="Warm-up"
+            addLabel={warmupBlocks.length === 0 ? "Add warm-up" : "Add to warm-up"}
+            emptyAddLabel="Add warm-up"
+            onAddBlock={onAddBlock}
+            {...sectionProps}
+          />
 
-          <button
-            type="button"
-            onClick={onAddBlock}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border-strong py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <Plus className="size-4" />
-            Add exercise
-          </button>
+          <BlockSection role="main" blocks={mainBlocks} addLabel="Add exercise" onAddBlock={onAddBlock} {...sectionProps} />
+
+          <BlockSection
+            role="conditioning"
+            blocks={conditioningBlocks}
+            icon={<Flame className="size-3.5" />}
+            sectionLabel="Conditioning / Finisher"
+            addLabel={conditioningBlocks.length === 0 ? "Add conditioning" : "Add to conditioning"}
+            emptyAddLabel="Add conditioning"
+            onAddBlock={onAddBlock}
+            {...sectionProps}
+          />
         </>
       )}
+    </div>
+  );
+}
+
+interface BlockSectionProps {
+  role: BlockRole;
+  blocks: BlockRow[];
+  /** Present for warmup/conditioning; omitted for 'main', which renders
+   * with no header at all — it's the default content, not a labeled
+   * add-on. */
+  sectionLabel?: string;
+  icon?: ReactNode;
+  addLabel: string;
+  /** Only set for warmup/conditioning — collapses the whole section to a
+   * single ghost "+" button while empty, so a day using neither still
+   * looks exactly like a plain workout. */
+  emptyAddLabel?: string;
+  onAddBlock: (role: BlockRole) => void;
+  sensors: SensorDescriptor<SensorOptions>[];
+  mode: Exclude<BuilderMode, "preview">;
+  library: ExerciseSearchResult[];
+  onCreateCustomExercise: (name: string, category: ExerciseCategory) => void;
+  expandedExerciseId: string | null;
+  toggleExpand: (exerciseId: string) => void;
+  onDeleteBlock: (blockId: string) => void;
+  onReorderBlocks: (role: BlockRole, orderedBlocks: { id: string; position: number }[]) => void;
+  onAddExerciseToBlock: (blockId: string) => void;
+  addingExerciseBlockId: string | null;
+  onRemoveExerciseFromBlock: (blockId: string, blockExerciseId: string) => void;
+  onDuplicateExercise: (blockId: string, blockExerciseId: string) => void;
+  onRoundsChange: (blockId: string, rounds: number) => void;
+  onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
+  onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
+  onCategoryChange: (blockId: string, blockExerciseId: string, category: ExerciseCategory) => void;
+  onPrescriptionTypeChange: (blockId: string, blockExerciseId: string, prescriptionType: PrescriptionType) => void;
+  onAddSet: (blockId: string, blockExerciseId: string) => void;
+  onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
+  onDeleteSet: (blockId: string, blockExerciseId: string, setId: string) => void;
+  onReorderSets: (blockId: string, blockExerciseId: string, orderedSets: { id: string; position: number }[]) => void;
+}
+
+function BlockSection({
+  role,
+  blocks,
+  sectionLabel,
+  icon,
+  addLabel,
+  emptyAddLabel,
+  onAddBlock,
+  sensors,
+  mode,
+  library,
+  onCreateCustomExercise,
+  expandedExerciseId,
+  toggleExpand,
+  onDeleteBlock,
+  onReorderBlocks,
+  onAddExerciseToBlock,
+  addingExerciseBlockId,
+  onRemoveExerciseFromBlock,
+  onDuplicateExercise,
+  onRoundsChange,
+  onExerciseChange,
+  onNoteChange,
+  onCategoryChange,
+  onPrescriptionTypeChange,
+  onAddSet,
+  onSetChange,
+  onDeleteSet,
+  onReorderSets,
+}: BlockSectionProps) {
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = blocks.findIndex((b) => b.id === active.id);
+    const newIndex = blocks.findIndex((b) => b.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reordered = arrayMove(blocks, oldIndex, newIndex);
+    onReorderBlocks(role, reordered.map((b, i) => ({ id: b.id, position: i + 1 })));
+  }
+
+  if (blocks.length === 0 && emptyAddLabel) {
+    return (
+      <button
+        type="button"
+        onClick={() => onAddBlock(role)}
+        className="flex items-center gap-1.5 self-start rounded-md px-1 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <Plus className="size-3.5" />
+        {emptyAddLabel}
+      </button>
+    );
+  }
+
+  return (
+    <div className={cn("flex flex-col gap-2", sectionLabel && "rounded-xl border border-dashed border-border p-2.5")}>
+      {sectionLabel && (
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {icon}
+          {sectionLabel}
+        </div>
+      )}
+
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <SortableContext items={blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+          <div className="flex flex-col gap-2">
+            {blocks.map((block) => (
+              <ExerciseBlockCard
+                key={block.id}
+                block={block}
+                expandedExerciseId={expandedExerciseId}
+                onToggleExpand={toggleExpand}
+                mode={mode}
+                library={library}
+                onCreateCustomExercise={onCreateCustomExercise}
+                onDeleteBlock={() => onDeleteBlock(block.id)}
+                onAddExerciseToBlock={() => onAddExerciseToBlock(block.id)}
+                isAddingExercise={addingExerciseBlockId === block.id}
+                onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
+                onDuplicateExercise={(blockExerciseId) => onDuplicateExercise(block.id, blockExerciseId)}
+                onRoundsChange={(rounds) => onRoundsChange(block.id, rounds)}
+                onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
+                onNoteChange={(blockExerciseId, notes) => onNoteChange(block.id, blockExerciseId, notes)}
+                onCategoryChange={(blockExerciseId, category) => onCategoryChange(block.id, blockExerciseId, category)}
+                onPrescriptionTypeChange={(blockExerciseId, prescriptionType) =>
+                  onPrescriptionTypeChange(block.id, blockExerciseId, prescriptionType)
+                }
+                onAddSet={(blockExerciseId) => onAddSet(block.id, blockExerciseId)}
+                onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
+                onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}
+                onReorderSets={(blockExerciseId, orderedSets) => onReorderSets(block.id, blockExerciseId, orderedSets)}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      <button
+        type="button"
+        onClick={() => onAddBlock(role)}
+        className={cn(
+          "flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+          sectionLabel ? "border border-dashed border-border text-xs" : "border border-dashed border-border-strong"
+        )}
+      >
+        <Plus className="size-4" />
+        {addLabel}
+      </button>
     </div>
   );
 }

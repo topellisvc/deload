@@ -1,9 +1,10 @@
-import { Moon, MessageSquareText, PersonStanding } from "lucide-react";
+import type { ReactNode } from "react";
+import { Flame, Moon, MessageSquareText, PersonStanding, Sunrise } from "lucide-react";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { EXERCISE_CATEGORY_LABELS } from "@/lib/programs/prescription-types";
 import { SetDetails } from "@/components/programs/set-details";
 import { WorkoutSummaryBar } from "@/components/programs/workout-summary-bar";
-import type { BlockExerciseRow, DayRow } from "@/lib/programs/types";
+import type { BlockExerciseRow, BlockRow, DayRow } from "@/lib/programs/types";
 
 interface AthletePreviewDayProps {
   day: DayRow;
@@ -24,6 +25,14 @@ interface AthletePreviewDayProps {
  * walks) rather than stepping through one at a time the way live Training
  * Mode does — a coach verifying a day wants to see the whole thing, not
  * click through it exercise by exercise.
+ *
+ * Warm-up and Conditioning/Finisher (migration 0032's block_role) render
+ * as their own visually separate sections, matching the spec's Athlete
+ * Preview requirements exactly — and matching what the Program Builder
+ * itself shows (day-column.tsx's BlockSection), so a coach previewing a
+ * day sees the same section boundaries they just built. The main
+ * workout keeps its "Exercise X of Y" numbering scoped to just the main
+ * section; warm-up/conditioning exercises aren't part of that count.
  */
 export function AthletePreviewDay({ day }: AthletePreviewDayProps) {
   if (day.is_rest_day) {
@@ -36,35 +45,73 @@ export function AthletePreviewDay({ day }: AthletePreviewDayProps) {
     );
   }
 
-  const exercises = [...day.blocks]
-    .sort((a, b) => a.position - b.position)
-    .flatMap((block) => [...block.exercises].sort((a, b) => a.position - b.position));
+  const warmupBlocks = day.blocks.filter((b) => b.block_role === "warmup");
+  const mainBlocks = day.blocks.filter((b) => b.block_role === "main");
+  const conditioningBlocks = day.blocks.filter((b) => b.block_role === "conditioning");
 
-  if (exercises.length === 0) {
+  const warmupExercises = flattenExercises(warmupBlocks);
+  const mainExercises = flattenExercises(mainBlocks);
+  const conditioningExercises = flattenExercises(conditioningBlocks);
+
+  if (warmupExercises.length === 0 && mainExercises.length === 0 && conditioningExercises.length === 0) {
     return <p className="rounded-2xl border border-dashed border-border-strong p-8 text-center text-sm text-muted-foreground">Nothing added to this day yet.</p>;
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <WorkoutSummaryBar blocks={day.blocks} />
-      {exercises.map((exercise, i) => (
-        <ExercisePreviewCard key={exercise.id} exercise={exercise} index={i} total={exercises.length} />
+      {warmupExercises.length > 0 && (
+        <PreviewSection label="Warm-up" icon={<Sunrise className="size-3.5" />}>
+          {warmupExercises.map((exercise) => (
+            <ExercisePreviewCard key={exercise.id} exercise={exercise} />
+          ))}
+        </PreviewSection>
+      )}
+
+      <WorkoutSummaryBar blocks={mainBlocks} />
+      {mainExercises.map((exercise, i) => (
+        <ExercisePreviewCard key={exercise.id} exercise={exercise} index={i} total={mainExercises.length} />
       ))}
+
+      {conditioningExercises.length > 0 && (
+        <PreviewSection label="Conditioning / Finisher" icon={<Flame className="size-3.5" />}>
+          {conditioningExercises.map((exercise) => (
+            <ExercisePreviewCard key={exercise.id} exercise={exercise} />
+          ))}
+        </PreviewSection>
+      )}
     </div>
   );
 }
 
-function ExercisePreviewCard({ exercise, index, total }: { exercise: BlockExerciseRow; index: number; total: number }) {
+function flattenExercises(blocks: BlockRow[]): BlockExerciseRow[] {
+  return [...blocks].sort((a, b) => a.position - b.position).flatMap((block) => [...block.exercises].sort((a, b) => a.position - b.position));
+}
+
+function PreviewSection({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-border p-3">
+      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ExercisePreviewCard({ exercise, index, total }: { exercise: BlockExerciseRow; index?: number; total?: number }) {
   const category = exercise.exercise_category;
   const name = getExerciseDisplayName(exercise);
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Exercise {index + 1} of {total}
-        </span>
-      </div>
+      {index !== undefined && total !== undefined && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Exercise {index + 1} of {total}
+          </span>
+        </div>
+      )}
 
       <div className="flex flex-col gap-1">
         <h3 className="text-base font-semibold text-foreground">{name}</h3>
