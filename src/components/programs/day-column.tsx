@@ -198,9 +198,17 @@ export function DayColumn({
     }
   }
 
-  const warmupBlocks = day.blocks.filter((b) => b.block_role === "warmup").sort((a, b) => a.position - b.position);
-  const mainBlocks = day.blocks.filter((b) => b.block_role === "main").sort((a, b) => a.position - b.position);
-  const conditioningBlocks = day.blocks.filter((b) => b.block_role === "conditioning").sort((a, b) => a.position - b.position);
+  // Re-filtering/sorting day.blocks three times on every keystroke anywhere
+  // in this day (every edit re-renders the whole day — see this component's
+  // performance-pass note further down) is wasted work once a day has a
+  // realistic number of blocks; useMemo skips it unless day.blocks itself
+  // changed.
+  const warmupBlocks = useMemo(() => day.blocks.filter((b) => b.block_role === "warmup").sort((a, b) => a.position - b.position), [day.blocks]);
+  const mainBlocks = useMemo(() => day.blocks.filter((b) => b.block_role === "main").sort((a, b) => a.position - b.position), [day.blocks]);
+  const conditioningBlocks = useMemo(
+    () => day.blocks.filter((b) => b.block_role === "conditioning").sort((a, b) => a.position - b.position),
+    [day.blocks]
+  );
 
   const sectionProps = {
     sensors,

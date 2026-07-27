@@ -89,6 +89,36 @@ interface ProgramBuilderProps {
  * keystroke — full rollback isn't implemented for v1, since with RLS
  * already enforcing access and the network being the main realistic
  * failure mode, a visible retry-or-refresh prompt is enough for now.
+ *
+ * Performance for large programs (20+ weeks, hundreds of exercises), what
+ * was and wasn't done:
+ * - Already true by construction, not new work: only the *selected* week's
+ *   days ever mount (`week = program.weeks.find(...)`) — a 20-week program
+ *   costs what a 1-week program costs to render; the week-tabs row is the
+ *   only thing that scales with week count, and it's cheap (labels only).
+ * - Done this pass: the per-day block-role filter/sort in day-column.tsx
+ *   and the exercise-ordering used by its keyboard shortcuts are memoized
+ *   (useMemo) so they don't re-run on every keystroke. `otherDays` (every
+ *   day's "copy/move to…" picker options) used to be an O(days²)
+ *   `.filter().map()` recomputed from scratch on *every* render of this
+ *   whole component; it's now memoized keyed on a flattened
+ *   id/label/position string (dayMetaKey below) rather than on
+ *   `week.days` itself, since that array gets a new reference on every
+ *   edit anywhere in the week (see updateDay/updateWeek) — keying on the
+ *   array reference would have recomputed just as often as not memoizing.
+ * - Not done: per-exercise/per-day React.memo. Every handler passed to
+ *   DayColumn/ExerciseBlockCard/ExerciseCard is still a fresh inline
+ *   closure created on every render of this component (e.g. `onCopyTo=
+ *   {(targetDayId) => handleCopyDayTo(day, targetDayId)}`), so React.memo
+ *   on those components wouldn't currently skip anything — editing one
+ *   exercise still re-renders every visible day and exercise. Fixing that
+ *   for real means restructuring these handlers to take ids as arguments
+ *   instead of having them curried in per list item, and reading current
+ *   state from a ref or the setState updater instead of closing over
+ *   `program`/`week` — a real, larger refactor across most of this file's
+ *   handlers, not attempted here to avoid rushing something this
+ *   load-bearing this late. No virtualization either: a single day with
+ *   hundreds of exercises in one column still mounts all of them.
  */
 export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   const router = useRouter();
@@ -164,6 +194,27 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // narrowing from a guard here wouldn't carry into their bodies, but the
   // variable's actual type does.
   const week = (program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0])!;
+
+  // Performance: `week.days` gets a brand-new array reference on *every*
+  // edit anywhere in the week (updateDay/updateWeek's immutable helpers
+  // always `.map()` the days array, even when only one exercise deep inside
+  // one day actually changed — see those helpers' own comments). Keying a
+  // memo directly on `week.days` would therefore recompute on every single
+  // keystroke, same as not memoizing at all. Keying on this flattened
+  // "id:label:position" string instead means it only recomputes when a day
+  // is actually added, removed, reordered, or relabeled — not when
+  // something inside one changes — which is what actually matters for
+  // otherDays (every other day's picker options). Otherwise this was a
+  // `.filter().map()` re-run per day, per render (O(days²) every render)
+  // for something that only changes when the day list itself changes.
+  const dayMetaKey = week.days.map((d) => `${d.id}:${d.label ?? ""}:${d.position}`).join("|");
+  const otherDaysByDayId = useMemo(() => {
+    const meta = week.days.map((d) => ({ id: d.id, label: d.label, position: d.position }));
+    const map = new Map<string, typeof meta>();
+    for (const d of meta) map.set(d.id, meta.filter((m) => m.id !== d.id));
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dayMetaKey is the real dependency (see comment above); week.days itself would defeat the memo.
+  }, [dayMetaKey]);
 
   function fail(message: string) {
     setSaveError(message);
@@ -852,9 +903,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
               <DayColumn
                 key={day.id}
                 day={day}
-                otherDays={week.days
-                  .filter((d) => d.id !== day.id)
-                  .map((d) => ({ id: d.id, label: d.label, position: d.position }))}
+                otherDays={otherDaysByDayId.get(day.id) ?? []}
                 mode={mode}
                 library={library}
                 onCreateCustomExercise={handleCreateCustomExercise}
