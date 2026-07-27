@@ -110,7 +110,7 @@ export function ExerciseBlockCard({
           {...attributes}
           {...listeners}
           aria-label="Drag to reorder"
-          className="flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground active:cursor-grabbing"
+          className="flex h-9 w-9 shrink-0 touch-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground active:cursor-grabbing lg:h-7 lg:w-7"
         >
           <GripVertical className="size-4" />
         </button>
@@ -139,7 +139,7 @@ export function ExerciseBlockCard({
             onClick={onDeleteBlock}
             aria-label="Delete whole superset"
             title="Delete whole superset"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-7 lg:w-7"
           >
             <Trash2 className="size-3.5" />
           </button>

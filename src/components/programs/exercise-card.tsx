@@ -148,7 +148,7 @@ export function ExerciseCard({
             onClick={onDuplicate}
             aria-label={`Duplicate ${exerciseName}`}
             title="Duplicate"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-7 lg:w-7"
           >
             <Copy className="size-3.5" />
           </button>
@@ -158,7 +158,7 @@ export function ExerciseCard({
               onClick={onRemoveFromBlock}
               aria-label={`Remove ${exerciseName} from this superset`}
               title="Remove from superset"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-7 lg:w-7"
             >
               <X className="size-3.5" />
             </button>
@@ -168,7 +168,7 @@ export function ExerciseCard({
               onClick={onDelete}
               aria-label={`Delete ${exerciseName}`}
               title="Delete"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-7 lg:w-7"
             >
               <Trash2 className="size-3.5" />
             </button>

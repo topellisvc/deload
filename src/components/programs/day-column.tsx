@@ -276,7 +276,7 @@ export function DayColumn({
                   if (template) onInsertDayTemplate(template);
                   e.target.value = "";
                 }}
-                className="peer h-8 w-8 cursor-pointer appearance-none rounded-md border border-border bg-surface text-transparent"
+                className="peer h-9 w-9 cursor-pointer appearance-none rounded-md border border-border bg-surface text-transparent lg:h-8 lg:w-8"
               >
                 <option value="" disabled>
                   Insert template…
@@ -300,7 +300,7 @@ export function DayColumn({
               onClick={onSaveDayAsTemplate}
               aria-label="Save this day as a template"
               title="Save day as template"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-8 lg:w-8"
             >
               <BookMarked className="size-4" />
             </button>
@@ -312,7 +312,7 @@ export function DayColumn({
               onClick={onDuplicateDay}
               aria-label="Duplicate this day"
               title="Duplicate day"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-8 lg:w-8"
             >
               <Files className="size-4" />
             </button>
@@ -328,7 +328,7 @@ export function DayColumn({
                   e.target.value = "";
                 }}
                 disabled={day.blocks.length === 0}
-                className="peer h-8 w-8 cursor-pointer appearance-none rounded-md border border-border bg-surface text-transparent disabled:cursor-not-allowed disabled:opacity-40"
+                className="peer h-9 w-9 cursor-pointer appearance-none rounded-md border border-border bg-surface text-transparent disabled:cursor-not-allowed disabled:opacity-40 lg:h-8 lg:w-8"
               >
                 <option value="" disabled>
                   Copy to…
@@ -352,7 +352,7 @@ export function DayColumn({
               onClick={onDeleteDay}
               aria-label={`Delete ${day.label || `Day ${day.position}`}`}
               title="Delete day"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-8 lg:w-8"
             >
               <Trash2 className="size-4" />
             </button>
@@ -610,7 +610,7 @@ function TemplateInsertSelect({
           if (template) onInsert(role, template);
           e.target.value = "";
         }}
-        className="peer h-8 w-8 cursor-pointer appearance-none rounded-md border border-dashed border-border bg-surface text-transparent"
+        className="peer h-9 w-9 cursor-pointer appearance-none rounded-md border border-dashed border-border bg-surface text-transparent lg:h-8 lg:w-8"
       >
         <option value="" disabled>
           Insert template…
