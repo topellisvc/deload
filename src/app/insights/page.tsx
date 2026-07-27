@@ -117,6 +117,16 @@ export default async function InsightsHomePage() {
           </div>
         </section>
       )}
+
+      <section className="mx-auto w-full max-w-2xl rounded-2xl border border-border bg-muted/30 px-6 py-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          Are you a coach, sports scientist, or clinician?{" "}
+          <Link href="/insights/contribute" className="font-medium text-primary underline underline-offset-2">
+            Apply to contribute
+          </Link>
+          .
+        </p>
+      </section>
     </div>
   );
 }

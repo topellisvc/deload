@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyProfileDetails } from "@/lib/profile/queries";
 import { getAdminRoster } from "@/lib/admin/queries";
+import { getPendingContributorApplications } from "@/lib/insights/queries";
 import { AdminRosterTable } from "@/components/admin/admin-roster-table";
+import { ContributorApplicationQueue } from "@/components/admin/contributor-application-queue";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -38,18 +40,29 @@ export default async function AdminPage() {
     redirect("/dashboard");
   }
 
-  const roster = await getAdminRoster(supabase);
+  const [roster, pendingApplications] = await Promise.all([getAdminRoster(supabase), getPendingContributorApplications(supabase)]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-12">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">All accounts</h1>
-        <p className="text-sm text-muted-foreground">
-          {roster.length} {roster.length === 1 ? "account" : "accounts"} signed up.
-        </p>
+    <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12">
+      <div className="flex flex-col gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">All accounts</h1>
+          <p className="text-sm text-muted-foreground">
+            {roster.length} {roster.length === 1 ? "account" : "accounts"} signed up.
+          </p>
+        </div>
+        <AdminRosterTable roster={roster} />
       </div>
 
-      <AdminRosterTable roster={roster} />
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-foreground">Insights: Contributor Applications</h2>
+          <p className="text-sm text-muted-foreground">
+            {pendingApplications.length} pending {pendingApplications.length === 1 ? "application" : "applications"}.
+          </p>
+        </div>
+        <ContributorApplicationQueue initial={pendingApplications} />
+      </div>
     </div>
   );
 }
