@@ -3,9 +3,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyProfileDetails } from "@/lib/profile/queries";
 import { getAdminRoster } from "@/lib/admin/queries";
-import { getPendingContributorApplications } from "@/lib/insights/queries";
+import { getArticlesByStatusForAdmin, getPendingContributorApplications } from "@/lib/insights/queries";
 import { AdminRosterTable } from "@/components/admin/admin-roster-table";
 import { ContributorApplicationQueue } from "@/components/admin/contributor-application-queue";
+import { ArticleReviewQueue } from "@/components/admin/article-review-queue";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -40,7 +41,13 @@ export default async function AdminPage() {
     redirect("/dashboard");
   }
 
-  const [roster, pendingApplications] = await Promise.all([getAdminRoster(supabase), getPendingContributorApplications(supabase)]);
+  const [roster, pendingApplications, inReview, approved, published] = await Promise.all([
+    getAdminRoster(supabase),
+    getPendingContributorApplications(supabase),
+    getArticlesByStatusForAdmin(supabase, "in_review"),
+    getArticlesByStatusForAdmin(supabase, "approved"),
+    getArticlesByStatusForAdmin(supabase, "published"),
+  ]);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12">
@@ -62,6 +69,14 @@ export default async function AdminPage() {
           </p>
         </div>
         <ContributorApplicationQueue initial={pendingApplications} />
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-foreground">Insights: Article Review</h2>
+          <p className="text-sm text-muted-foreground">Awaiting review, approved, and published articles.</p>
+        </div>
+        <ArticleReviewQueue inReview={inReview} approved={approved} published={published} />
       </div>
     </div>
   );

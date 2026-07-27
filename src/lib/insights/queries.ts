@@ -503,21 +503,25 @@ export async function getArticleForEditing(supabase: SupabaseClient, articleId: 
 }
 
 /**
- * Admin's article review queue — pass `"in_review"` for articles waiting
- * on a decision, or `"approved"` for ones already signed off and just
- * waiting to be published. Kept as one parameterized function rather
- * than two near-identical ones, the same call this file already made for
- * queryPublishedArticles' newest/popular sort.
+ * Admin's article queues by status — `"in_review"` for articles waiting
+ * on a decision, `"approved"` for ones signed off and waiting to be
+ * published, or `"published"` for the "manage live articles" list an
+ * admin needs in order to unpublish one. Kept as one parameterized
+ * function across all three rather than near-identical copies, the same
+ * call this file already made for queryPublishedArticles' newest/popular
+ * sort. Only ever returns anything for an actual admin — RLS's "admins
+ * can read all articles" policy (0023) is what a non-admin caller would
+ * be missing, not a check in this function.
  */
-export async function getArticlesPendingReview(
+export async function getArticlesByStatusForAdmin(
   supabase: SupabaseClient,
-  status: "in_review" | "approved"
+  status: InsightsArticleStatus
 ): Promise<InsightsReviewQueueArticle[]> {
   const { data, error } = await supabase
     .from("insights_articles")
     .select("id, slug, title, excerpt, status, updated_at, contributor:insights_contributors!insights_articles_contributor_id_fkey ( id, name )")
     .eq("status", status)
-    .order("updated_at", { ascending: true });
+    .order("updated_at", { ascending: status !== "published" });
   if (error) throw error;
 
   type Row = {
