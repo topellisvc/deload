@@ -1,12 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Calculator, CheckCircle2, ClipboardList, ShieldCheck, Sparkles, Users } from "lucide-react";
+import { ArrowRight, Calculator, CheckCircle2, ClipboardList, Newspaper, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ToolCard } from "@/components/tool-card";
 import { HomeRedirect } from "@/components/home-redirect";
 import { BarbellLoader } from "@/components/ui/barbell-loader";
 import { StarterProgramPicker } from "@/components/programs/starter-program-picker";
+import { ArticleCard } from "@/components/insights/article-card";
+import { createClient } from "@/lib/supabase/server";
+import { getFeaturedArticle, getLatestArticles } from "@/lib/insights/queries";
 import { TOOLS } from "@/lib/tools-registry";
 
 const FEATURED_TOOL_SLUGS = ["one-rep-max", "running-pace-calculator", "quick-workout"];
@@ -30,7 +33,7 @@ const softwareApplicationJsonLd = {
   applicationCategory: "HealthApplication",
   operatingSystem: "Web",
   description:
-    "Evidence-based training software for coaches and athletes — build real programs, track training live, and use free calculators backed by published research.",
+    "Evidence-based training software for anyone serious about how they train — coaches, trainers, and athletes get real programs, live tracking, and free calculators backed by published research.",
   offers: {
     "@type": "Offer",
     price: "0",
@@ -71,11 +74,27 @@ const softwareApplicationJsonLd = {
  * unchanged from the pre-redesign homepage — real, working conversion
  * paths that the redesign was never meant to remove, just give a
  * stronger opening above.
+ *
+ * The Insights section follows the same "real product surfaces, not
+ * mockups" rule: it renders actual published articles (ArticleCard, the
+ * same component /insights itself uses) via getFeaturedArticle +
+ * getLatestArticles rather than hand-written placeholder cards, so it
+ * never drifts out of sync with what's actually published. It hides
+ * itself entirely if there's nothing published yet, same "degrade
+ * gracefully" rule the Insights homepage already follows.
  */
-export default function HomePage() {
+export default async function HomePage() {
   const featuredTools = FEATURED_TOOL_SLUGS.map((slug) => TOOLS.find((t) => t.slug === slug)).filter(
     (t): t is (typeof TOOLS)[number] => t !== undefined
   );
+
+  const supabase = await createClient();
+  // featured + 2 latest = 3 distinct articles, newest-first — same combo
+  // /insights itself uses (getLatestArticles already excludes whatever
+  // getFeaturedArticle returns, see that function's own comment), just a
+  // smaller teaser than the full homepage grid.
+  const [featuredArticle, latestArticles] = await Promise.all([getFeaturedArticle(supabase), getLatestArticles(supabase, 2)]);
+  const showcaseArticles = [featuredArticle, ...latestArticles].filter((a) => a !== null);
 
   return (
     <>
@@ -98,12 +117,12 @@ export default function HomePage() {
               Free while we&rsquo;re building this out — no trial, no card
             </span>
             <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
-              Build training programs your clients actually follow
+              Build training programs you&rsquo;ll actually follow
             </h1>
             <p className="max-w-xl text-lg text-muted-foreground">
-              Deload is evidence-based training software for coaches and athletes — a real
-              program builder, live tracking, and coaching tools, backed by published research
-              instead of guesswork.
+              Deload is evidence-based training software for anyone serious about how they
+              train — coaches, personal trainers, and athletes get a real program builder,
+              live tracking, and tools backed by published research instead of guesswork.
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <Link href="/programs" className={buttonVariants({ size: "lg" })}>
@@ -125,7 +144,7 @@ export default function HomePage() {
               </span>
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="size-4 text-success" />
-                For coaches and athletes
+                For coaches, trainers, and athletes
               </span>
             </div>
           </div>
@@ -162,7 +181,7 @@ export default function HomePage() {
 
       {/* Pillars */}
       <section className="mx-auto max-w-6xl px-6 py-24">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <PillarCard
             icon={Calculator}
             colorClass="bg-primary/10 text-primary"
@@ -186,6 +205,14 @@ export default function HomePage() {
             description="Invite clients, assign them programs, and see what actually got done — free while we're building this out."
             href="/coaching"
             cta="Become a coach"
+          />
+          <PillarCard
+            icon={Newspaper}
+            colorClass="bg-zone-cardio/15 text-zone-cardio"
+            title="Insights"
+            description="Evidence-based articles on training, recovery, and nutrition from verified coaches and sports scientists — not guesswork."
+            href="/insights"
+            cta="Read the insights"
           />
         </div>
       </section>
@@ -250,6 +277,33 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {showcaseArticles.length > 0 && (
+        <section className="mx-auto max-w-6xl px-6 pb-24">
+          <div className="mb-6 flex items-baseline justify-between">
+            <div className="flex flex-col gap-1.5">
+              <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                From Insights
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Evidence-based articles from verified coaches and sports scientists.
+              </p>
+            </div>
+            <Link
+              href="/insights"
+              className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            >
+              View all insights
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {showcaseArticles.map((article) => (
+              <ArticleCard key={article.id} article={article} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Final CTA */}
       <section className="mx-auto max-w-6xl px-6 pb-24">
