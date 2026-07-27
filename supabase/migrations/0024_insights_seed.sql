@@ -1,17 +1,26 @@
 -- Seed content for Insights (Phase 1: public reading experience, seeded
 -- directly via SQL rather than through a contributor UI -- that's Phase
 -- 2). Real, evidence-based articles from real published research (see
--- each article's References), attributed to five fictional-but-realistic
--- contributor personas matching the roles named in the spec (S&C coach,
--- sports scientist, physiotherapist, dietitian, exercise physiologist).
+-- each article's References), attributed to a single "DeloadHQ" house
+-- byline rather than invented individual personas -- presenting a
+-- fictional person with fabricated credentials as a "verified
+-- professional" would be misleading on a real, live product, even with
+-- accurate article content underneath. Real named contributors (with
+-- real credentials, reviewed through Phase 2's approval workflow) can be
+-- added later without touching any of this -- insights_contributors
+-- stays a normal table either way.
 -- Featured images are real, free-to-use Unsplash photos (verified
 -- "Free to use under the Unsplash License" before use, same as the
 -- homepage's hero photos).
 --
 -- Fixed UUIDs throughout so topic/contributor/article rows can reference
 -- each other across separate insert statements without needing
--- `returning` round-trips. Safe to re-run (every insert is idempotent
--- via ON CONFLICT DO NOTHING / DO UPDATE).
+-- `returning` round-trips. Safe to re-run (every insert is idempotent via
+-- ON CONFLICT DO UPDATE), including re-running this on top of an earlier
+-- version of this file that seeded five individual personas -- every
+-- article is repointed to the DeloadHQ contributor below, and the four
+-- now-unused persona rows are deleted at the end, after the repointing
+-- clears their foreign-key references.
 
 -- ============================================================
 -- Topics
@@ -33,50 +42,24 @@ on conflict (id) do update set
 -- ============================================================
 -- Contributors
 -- ============================================================
+-- A single house byline for every article until real verified
+-- professionals are onboarded through Phase 2's contributor workflow.
+-- Reuses UUID ...0001 (previously "Sarah Chen" in an earlier version of
+-- this file) rather than a fresh id, so a database that already ran that
+-- version gets this row updated in place instead of ending up with an
+-- orphaned extra contributor.
 insert into public.insights_contributors (id, profile_id, name, title, organisation, qualifications, bio, photo_url, expertise) values
   (
     '22222222-0000-0000-0000-000000000001', null,
-    'Sarah Chen', 'Strength & Conditioning Coach', 'Meridian Performance Lab',
-    'MSc Sports Science, CSCS',
-    'Sarah has spent the last decade coaching strength athletes and team-sport competitors, with a particular focus on translating resistance training research into programs that hold up under a real training schedule. She writes about progressive overload, programming, and the gap between what studies show and what actually works in a gym.',
+    'DeloadHQ', 'Editorial Team', null,
     null,
-    array['Strength', 'Programming', 'Hypertrophy']
-  ),
-  (
-    '22222222-0000-0000-0000-000000000002', null,
-    'Dr. James Whitfield', 'Sports Scientist', 'Whitfield Athletic Research',
-    'PhD Exercise Physiology',
-    'James researches training load, injury risk, and endurance physiology, and has consulted for professional running and team-sport programs. His writing focuses on separating well-supported findings from the oversimplified rules of thumb that tend to circulate in coaching circles.',
+    'Articles researched and written in-house by the DeloadHQ team, drawing directly on published, peer-reviewed research in strength training, endurance, nutrition, recovery, and sports science. As Insights grows, individual verified coaches, scientists, and clinicians will begin publishing under their own bylines.',
     null,
-    array['Sports Science', 'Running', 'Endurance', 'Injury Prevention']
-  ),
-  (
-    '22222222-0000-0000-0000-000000000003', null,
-    'Emily Novak', 'Physiotherapist', 'Northbridge Sports Physiotherapy',
-    'DPT, Sports Physiotherapy',
-    'Emily specializes in rehabilitating athletes back to full training load after injury, and is a vocal advocate for criteria-based (rather than calendar-based) return-to-play decisions. She writes about recovery, rehabilitation, and injury prevention grounded in the physiotherapy literature.',
-    null,
-    array['Recovery', 'Injury Prevention', 'Coaching']
-  ),
-  (
-    '22222222-0000-0000-0000-000000000004', null,
-    'Priya Anand', 'Accredited Dietitian', 'Anand Nutrition Clinic',
-    'APD, MSc Nutrition & Dietetics',
-    'Priya works with recreational and competitive athletes on nutrition strategies for performance and body composition. She writes about the nutrition claims that hold up under scrutiny and the ones that mostly just sell supplements.',
-    null,
-    array['Nutrition']
-  ),
-  (
-    '22222222-0000-0000-0000-000000000005', null,
-    'Marcus Webb', 'Exercise Physiologist', 'Webb Human Performance',
-    'MSc Exercise Physiology, AEP',
-    'Marcus works in clinical exercise physiology, helping athletes and general clients alike understand how their bodies respond and adapt to training. He plans to contribute Insights articles on training adaptation and periodization soon.',
-    null,
-    array['Sports Science', 'Programming']
+    array['Strength', 'Nutrition', 'Recovery', 'Sports Science']
   )
 on conflict (id) do update set
   name = excluded.name, title = excluded.title, organisation = excluded.organisation,
-  qualifications = excluded.qualifications, bio = excluded.bio, expertise = excluded.expertise;
+  qualifications = excluded.qualifications, bio = excluded.bio, photo_url = excluded.photo_url, expertise = excluded.expertise;
 
 -- ============================================================
 -- Articles
@@ -221,7 +204,7 @@ A practical rule used across much of the endurance coaching literature is that m
 ## The takeaway
 
 If race performance has stalled despite a program full of hard sessions, the missing piece is often not another interval workout — it's more consistent easy mileage, run patiently enough to actually stay easy.$md$,
-  '22222222-0000-0000-0000-000000000002',
+  '22222222-0000-0000-0000-000000000001',
   'published',
   'Running Economy Explained: Why Easy Runs Matter Most',
   'The physiology behind running economy, and why aerobic base volume — not interval training — is what improves it.',
@@ -274,7 +257,7 @@ During a calorie deficit (intentional fat loss), protein needs shift upward — 
 ## The takeaway
 
 For most people training for strength or muscle gain in a calorie-maintenance or surplus, 1.6 g/kg per day covers what the evidence actually supports. Consistency in hitting that number across most days matters far more than chasing a higher one.$md$,
-  '22222222-0000-0000-0000-000000000004',
+  '22222222-0000-0000-0000-000000000001',
   'published',
   'Protein Intake for Muscle Growth: The Evidence-Based Range',
   'What a landmark protein meta-analysis actually found, and why the evidence-supported range is lower than most marketing suggests.',
@@ -333,7 +316,7 @@ Unlike many recovery interventions with thin evidence, sleep hygiene changes are
 ## The takeaway
 
 No recovery gadget on the market has evidence behind it as consistent as sleep does. If recovery is a genuine limiter on training progress, sleep is very often the highest-leverage place to start — not the newest tool being marketed as a shortcut around it.$md$,
-  '22222222-0000-0000-0000-000000000003',
+  '22222222-0000-0000-0000-000000000001',
   'published',
   'Sleep and Athletic Performance: The Recovery Tool You''re Ignoring',
   'What the research on sleep and athletic performance shows, and why it likely matters more than most popular recovery tools.',
@@ -383,7 +366,7 @@ Rather than a single pass/fail test, return-to-play is better understood as a ri
 ## The takeaway
 
 If a return-to-play plan is built entirely around a date on the calendar, it's missing the part of the decision that actually predicts whether the athlete stays healthy afterward. Time matters, but it's a proxy for healing, not a substitute for actually measuring it.$md$,
-  '22222222-0000-0000-0000-000000000003',
+  '22222222-0000-0000-0000-000000000001',
   'published',
   'Return-to-Play Criteria After Injury: Beyond the Timeline',
   'Why criteria-based return-to-play decisions outperform fixed timelines, based on international sports physiotherapy consensus guidelines.',
@@ -438,7 +421,7 @@ A more defensible approach treats ACWR as one input into a broader monitoring pi
 ## The takeaway
 
 ACWR is a reasonable tool for catching load spikes a coach might otherwise miss in a busy training block. It is not a validated injury-prediction formula precise enough to bet an individual athlete's health on a specific decimal cutoff — treat the number as a prompt to look closer, not a verdict.$md$,
-  '22222222-0000-0000-0000-000000000002',
+  '22222222-0000-0000-0000-000000000001',
   'published',
   'Acute:Chronic Workload Ratio (ACWR) Explained for Coaches',
   'What ACWR actually measures, the methodological critiques of the popular "sweet spot" range, and how to use it responsibly.',
@@ -457,3 +440,20 @@ insert into public.insights_references (article_id, journal_title, authors, year
   ('33333333-0000-0000-0000-000000000007', 'British Journal of Sports Medicine', 'Gabbett TJ', 2016, null, 1),
   ('33333333-0000-0000-0000-000000000007', 'International Journal of Sports Physiology and Performance', 'Impellizzeri FM, Woodcock S, Coutts AJ, et al.', 2020, null, 2)
 on conflict do nothing;
+
+-- ============================================================
+-- Cleanup: remove the four now-unused persona rows (previously "James
+-- Whitfield," "Emily Novak," "Priya Anand," "Marcus Webb") left over from
+-- an earlier version of this file, if this is being re-run on a database
+-- that already applied that version. Every article above has already
+-- been repointed to the single DeloadHQ contributor, so no
+-- insights_articles row still references these -- safe to delete. A
+-- no-op on a fresh database that never had them.
+-- ============================================================
+delete from public.insights_contributors
+where id in (
+  '22222222-0000-0000-0000-000000000002',
+  '22222222-0000-0000-0000-000000000003',
+  '22222222-0000-0000-0000-000000000004',
+  '22222222-0000-0000-0000-000000000005'
+);

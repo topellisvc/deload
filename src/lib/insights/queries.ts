@@ -229,11 +229,11 @@ export async function getTopicBySlug(supabase: SupabaseClient, slug: string): Pr
 }
 
 /** "Featured Contributors" on the homepage — every contributor with at
- * least one published article, most-recently-published first. Marcus
- * Webb (seeded with zero articles, see 0024_insights_seed.sql) is
- * intentionally excluded here, since a contributor card with no article
- * links to show would be a dead end for a reader — he'll appear once his
- * first article is published. */
+ * least one published article, most-recently-published first. A
+ * contributor with zero published articles is naturally excluded here
+ * (rather than needing a special case), since a card with no article
+ * links to show would be a dead end for a reader — they'll appear once
+ * their first article is published. */
 export async function getFeaturedContributors(supabase: SupabaseClient, limit = 4): Promise<InsightsContributor[]> {
   const { data, error } = await supabase
     .from("insights_articles")

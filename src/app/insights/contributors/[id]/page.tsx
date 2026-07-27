@@ -27,10 +27,9 @@ export async function generateMetadata({ params }: ContributorPageProps): Promis
 /**
  * A contributor's public profile — photo, credentials, bio, and every
  * published article of theirs, per the spec's "showcase verified
- * professionals" goal. Marcus Webb (seeded with zero articles, see
- * 0024_insights_seed.sql) still gets a real profile page here even
- * though he's excluded from the homepage's "Featured Contributors" —
- * this page doesn't require any articles to exist, it's linked from
+ * professionals" goal. Doesn't require any articles to exist (a
+ * contributor added ahead of their first publish still gets a real page,
+ * just with an empty article list) — it's linked from
  * /insights/contributors regardless.
  */
 export default async function ContributorPage({ params }: ContributorPageProps) {
