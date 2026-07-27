@@ -228,7 +228,7 @@ export default function HomePage() {
             Pick a 4-week program and we&rsquo;ll set it up for you — sign in once and it&rsquo;s ready to go.
           </p>
         </div>
-        <StarterProgramPicker mode="redirect" />
+        <StarterProgramPicker mode="redirect" gridClassName="sm:grid-cols-2 lg:grid-cols-4" />
       </section>
 
       <section className="mx-auto max-w-6xl px-6 pb-24">

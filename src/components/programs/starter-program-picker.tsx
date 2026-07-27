@@ -21,15 +21,29 @@ interface StarterProgramPickerProps {
    */
   mode: "redirect" | "create";
   userId?: string;
+  /**
+   * The two places this renders sit in very differently-sized containers
+   * — the homepage section is `max-w-6xl` (1152px), the dashboard empty
+   * state is `max-w-4xl` (896px) — and Tailwind's responsive prefixes key
+   * off viewport width, not the actual container width, so one hardcoded
+   * `lg:grid-cols-4` can't fit both: at 896px it was cramming all 4 cards
+   * into ~200px each regardless of how wide the browser window actually
+   * was, since the container itself never grows past 896px. Each caller
+   * now says what actually fits its own container instead. Defaults to
+   * never going past 2 columns — the safe choice for a narrower
+   * container; the homepage opts into more.
+   */
+  gridClassName?: string;
 }
 
 /**
  * "Pick a starter program to get going" — same card grid in both places
  * it's shown (signed-out homepage, dashboard's empty state for a
  * signed-in athlete with no active program), only what a click actually
- * does differs (see mode above).
+ * does differs (see mode above) and how many columns fit (see
+ * gridClassName above).
  */
-export function StarterProgramPicker({ mode, userId }: StarterProgramPickerProps) {
+export function StarterProgramPicker({ mode, userId, gridClassName = "sm:grid-cols-2" }: StarterProgramPickerProps) {
   const router = useRouter();
   const [pendingSlug, setPendingSlug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,19 +72,23 @@ export function StarterProgramPicker({ mode, userId }: StarterProgramPickerProps
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={cn("grid grid-cols-1 gap-4", gridClassName)}>
         {STARTER_PROGRAM_TEMPLATES.map((template) => {
           const { Icon, badgeClass } = DISCIPLINE_META[template.discipline];
           const isPending = pendingSlug === template.slug;
           return (
-            <div key={template.slug} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5">
+            <div key={template.slug} className="flex h-full flex-col gap-3 rounded-2xl border border-border bg-surface p-5">
               <div className="flex items-center gap-2">
                 <div className={cn("flex size-9 items-center justify-center rounded-lg", badgeClass)}>
                   <Icon className="size-5" />
                 </div>
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{DISCIPLINE_META[template.discipline].label}</span>
               </div>
-              <div className="flex flex-col gap-1">
+              {/* flex-1 so this absorbs the height difference between a
+                  short and a long description, keeping the weeks/days
+                  line and the button below it aligned across a row
+                  regardless of which card's text wraps more. */}
+              <div className="flex flex-1 flex-col gap-1">
                 <h3 className="text-base font-semibold text-foreground">{template.name}</h3>
                 <p className="text-sm text-muted-foreground">{template.description}</p>
               </div>
