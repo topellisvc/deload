@@ -112,7 +112,9 @@ Progressive overload isn't a hack or a specific method — it's the reason train
   now() - interval '21 days',
   now() - interval '21 days'
 ) on conflict (id) do update set
-  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status;
+  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status,
+  contributor_id = excluded.contributor_id, featured_image_url = excluded.featured_image_url,
+  published_at = excluded.published_at, updated_at = excluded.updated_at;
 
 insert into public.insights_article_topics (article_id, topic_id) values
   ('33333333-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000001'),
@@ -162,7 +164,9 @@ The goal isn't to match a published average. It's to find the highest volume you
   now() - interval '14 days',
   now() - interval '3 days'
 ) on conflict (id) do update set
-  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status;
+  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status,
+  contributor_id = excluded.contributor_id, featured_image_url = excluded.featured_image_url,
+  published_at = excluded.published_at, updated_at = excluded.updated_at;
 
 insert into public.insights_article_topics (article_id, topic_id) values
   ('33333333-0000-0000-0000-000000000002', '11111111-0000-0000-0000-000000000002'),
@@ -211,7 +215,9 @@ If race performance has stalled despite a program full of hard sessions, the mis
   now() - interval '9 days',
   now() - interval '9 days'
 ) on conflict (id) do update set
-  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status;
+  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status,
+  contributor_id = excluded.contributor_id, featured_image_url = excluded.featured_image_url,
+  published_at = excluded.published_at, updated_at = excluded.updated_at;
 
 insert into public.insights_article_topics (article_id, topic_id) values
   ('33333333-0000-0000-0000-000000000003', '11111111-0000-0000-0000-000000000003'),
@@ -264,7 +270,9 @@ For most people training for strength or muscle gain in a calorie-maintenance or
   now() - interval '6 days',
   now() - interval '6 days'
 ) on conflict (id) do update set
-  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status;
+  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status,
+  contributor_id = excluded.contributor_id, featured_image_url = excluded.featured_image_url,
+  published_at = excluded.published_at, updated_at = excluded.updated_at;
 
 insert into public.insights_article_topics (article_id, topic_id) values
   ('33333333-0000-0000-0000-000000000004', '11111111-0000-0000-0000-000000000005')
@@ -323,7 +331,9 @@ No recovery gadget on the market has evidence behind it as consistent as sleep d
   now() - interval '4 days',
   now() - interval '4 days'
 ) on conflict (id) do update set
-  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status;
+  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status,
+  contributor_id = excluded.contributor_id, featured_image_url = excluded.featured_image_url,
+  published_at = excluded.published_at, updated_at = excluded.updated_at;
 
 insert into public.insights_article_topics (article_id, topic_id) values
   ('33333333-0000-0000-0000-000000000005', '11111111-0000-0000-0000-000000000006')
@@ -373,7 +383,9 @@ If a return-to-play plan is built entirely around a date on the calendar, it's m
   now() - interval '2 days',
   now() - interval '2 days'
 ) on conflict (id) do update set
-  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status;
+  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status,
+  contributor_id = excluded.contributor_id, featured_image_url = excluded.featured_image_url,
+  published_at = excluded.published_at, updated_at = excluded.updated_at;
 
 insert into public.insights_article_topics (article_id, topic_id) values
   ('33333333-0000-0000-0000-000000000006', '11111111-0000-0000-0000-000000000010'),
@@ -428,7 +440,9 @@ ACWR is a reasonable tool for catching load spikes a coach might otherwise miss 
   now() - interval '1 day',
   now() - interval '1 day'
 ) on conflict (id) do update set
-  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status;
+  title = excluded.title, excerpt = excluded.excerpt, body = excluded.body, status = excluded.status,
+  contributor_id = excluded.contributor_id, featured_image_url = excluded.featured_image_url,
+  published_at = excluded.published_at, updated_at = excluded.updated_at;
 
 insert into public.insights_article_topics (article_id, topic_id) values
   ('33333333-0000-0000-0000-000000000007', '11111111-0000-0000-0000-000000000009'),
