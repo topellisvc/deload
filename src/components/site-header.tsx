@@ -12,19 +12,21 @@ import { isActivePath, navLinkActiveClassName, navLinkClassName } from "@/lib/na
 import { cn } from "@/lib/utils";
 
 /**
- * Dashboard, Programs, History, Coaching, Tools, Profile, plus auth status
- * and the theme toggle — eight items total once everything's auth-gated in,
- * too many to stay inline once the viewport narrows. Collapses into a
- * hamburger below `lg` (1024px); at `lg` and above it's the same flat row
- * as before. Every item — auth-gated ones via AuthNavLink, the two static
- * ones (Programs, Tools) inline here — highlights itself as the current
- * page via lib/nav.ts's isActivePath, so it's always clear where you are.
+ * Dashboard, Programs, History, Coaching, Insights, Tools, Profile, plus
+ * auth status and the theme toggle — nine items total once everything's
+ * auth-gated in, too many to stay inline once the viewport narrows.
+ * Collapses into a hamburger below `lg` (1024px); at `lg` and above it's
+ * the same flat row as before. Every item — auth-gated ones via
+ * AuthNavLink, the static ones (Programs, Insights, Tools) inline here —
+ * highlights itself as the current page via lib/nav.ts's isActivePath, so
+ * it's always clear where you are.
  */
 export function SiteHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
   const programsActive = isActivePath(pathname, "/programs");
+  const insightsActive = isActivePath(pathname, "/insights");
   const toolsActive = isActivePath(pathname, "/tools");
 
   return (
@@ -48,6 +50,13 @@ export function SiteHeader() {
           </Link>
           <AuthNavLink href="/history" label="History" />
           <AuthNavLink href="/coaching" label="Coaching" />
+          {/* Static link, not AuthNavLink — Insights must be visible and
+              crawlable for signed-out visitors and search engines (the
+              spec's whole SEO/discovery goal depends on that), unlike the
+              rest of the app's auth-gated islands. */}
+          <Link href="/insights" aria-current={insightsActive ? "page" : undefined} className={cn(navLinkClassName, insightsActive && navLinkActiveClassName)}>
+            Insights
+          </Link>
           <Link href="/tools" aria-current={toolsActive ? "page" : undefined} className={cn(navLinkClassName, toolsActive && navLinkActiveClassName)}>
             Tools
           </Link>
@@ -88,6 +97,13 @@ export function SiteHeader() {
           </Link>
           <AuthNavLink href="/history" label="History" />
           <AuthNavLink href="/coaching" label="Coaching" />
+          {/* Static link, not AuthNavLink — Insights must be visible and
+              crawlable for signed-out visitors and search engines (the
+              spec's whole SEO/discovery goal depends on that), unlike the
+              rest of the app's auth-gated islands. */}
+          <Link href="/insights" aria-current={insightsActive ? "page" : undefined} className={cn(navLinkClassName, insightsActive && navLinkActiveClassName)}>
+            Insights
+          </Link>
           <Link href="/tools" aria-current={toolsActive ? "page" : undefined} className={cn(navLinkClassName, toolsActive && navLinkActiveClassName)}>
             Tools
           </Link>
