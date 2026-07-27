@@ -18,6 +18,8 @@ import { CoachingSummaryCard } from "@/components/profile/coaching-summary";
 import { AthleteSummaryCard } from "@/components/profile/athlete-summary";
 import { Achievements } from "@/components/profile/achievements";
 import { AccountSettings } from "@/components/profile/account-settings";
+import { InsightsContributorCard } from "@/components/profile/insights-contributor-card";
+import { getMyContributorProfile } from "@/lib/insights/queries";
 
 export const metadata: Metadata = {
   title: "Profile",
@@ -51,12 +53,13 @@ export default async function ProfilePage() {
   // above resolves), not any of the other four results — it used to run
   // as an extra sequential round-trip after this Promise.all instead of
   // inside it.
-  const [stats, currentProgram, records, athleteSummary, coachingSummary] = await Promise.all([
+  const [stats, currentProgram, records, athleteSummary, coachingSummary, contributor] = await Promise.all([
     getMyStats(supabase, user.id, profile.role),
     getCurrentProgram(supabase, user.id),
     getPersonalRecords(supabase, user.id),
     getAthleteSummary(supabase, user.id),
     profile.role === "coach" ? getCoachingSummary(supabase, user.id) : Promise.resolve(null),
+    getMyContributorProfile(supabase, user.id),
   ]);
 
   return (
@@ -80,6 +83,8 @@ export default async function ProfilePage() {
       {coachingSummary && <CoachingSummaryCard summary={coachingSummary} />}
 
       {athleteSummary && <AthleteSummaryCard summary={athleteSummary} />}
+
+      <InsightsContributorCard contributor={contributor} />
 
       <Achievements
         input={{
