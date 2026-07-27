@@ -1,21 +1,48 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { BlockRow, DayRow, ExerciseCategory, PrescriptionType, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
+import type {
+  BlockExerciseRow,
+  BlockRole,
+  BlockRow,
+  DayRow,
+  DayTemplateRow,
+  ExerciseCategory,
+  ExerciseTemplateRow,
+  PrescriptionType,
+  ProgramDiscipline,
+  ProgramTree,
+  SetRow,
+  WeekRow,
+} from "@/lib/programs/types";
 import { defaultCategoryForDiscipline, defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import * as m from "@/lib/programs/mutations";
+import { getExerciseLibrary, addToExerciseLibrary } from "@/lib/programs/exercise-library";
+import { getExerciseTemplates } from "@/lib/programs/exercise-templates";
+import { getDayTemplates } from "@/lib/programs/day-templates";
+import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
+import { useBuilderMode, type BuilderMode } from "@/lib/programs/use-builder-mode";
 import { DayColumn } from "@/components/programs/day-column";
+import { AthletePreviewDay } from "@/components/programs/athlete-preview";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
+import { SaveExerciseTemplateDialog } from "@/components/programs/save-exercise-template-dialog";
+import { SaveDayTemplateDialog } from "@/components/programs/save-day-template-dialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScrollFadeX } from "@/components/ui/scroll-fade-x";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
+
+const BUILDER_MODE_OPTIONS: { value: BuilderMode; label: string }[] = [
+  { value: "simple", label: "Simple" },
+  { value: "advanced", label: "Advanced" },
+  { value: "preview", label: "Preview" },
+];
 
 /** One shared confirm dialog for this whole builder rather than a
  * separate open/target state per confirmable action (delete program,
@@ -62,6 +89,36 @@ interface ProgramBuilderProps {
  * keystroke — full rollback isn't implemented for v1, since with RLS
  * already enforcing access and the network being the main realistic
  * failure mode, a visible retry-or-refresh prompt is enough for now.
+ *
+ * Performance for large programs (20+ weeks, hundreds of exercises), what
+ * was and wasn't done:
+ * - Already true by construction, not new work: only the *selected* week's
+ *   days ever mount (`week = program.weeks.find(...)`) — a 20-week program
+ *   costs what a 1-week program costs to render; the week-tabs row is the
+ *   only thing that scales with week count, and it's cheap (labels only).
+ * - Done this pass: the per-day block-role filter/sort in day-column.tsx
+ *   and the exercise-ordering used by its keyboard shortcuts are memoized
+ *   (useMemo) so they don't re-run on every keystroke. `otherDays` (every
+ *   day's "copy/move to…" picker options) used to be an O(days²)
+ *   `.filter().map()` recomputed from scratch on *every* render of this
+ *   whole component; it's now memoized keyed on a flattened
+ *   id/label/position string (dayMetaKey below) rather than on
+ *   `week.days` itself, since that array gets a new reference on every
+ *   edit anywhere in the week (see updateDay/updateWeek) — keying on the
+ *   array reference would have recomputed just as often as not memoizing.
+ * - Not done: per-exercise/per-day React.memo. Every handler passed to
+ *   DayColumn/ExerciseBlockCard/ExerciseCard is still a fresh inline
+ *   closure created on every render of this component (e.g. `onCopyTo=
+ *   {(targetDayId) => handleCopyDayTo(day, targetDayId)}`), so React.memo
+ *   on those components wouldn't currently skip anything — editing one
+ *   exercise still re-renders every visible day and exercise. Fixing that
+ *   for real means restructuring these handlers to take ids as arguments
+ *   instead of having them curried in per list item, and reading current
+ *   state from a ref or the setState updater instead of closing over
+ *   `program`/`week` — a real, larger refactor across most of this file's
+ *   handlers, not attempted here to avoid rushing something this
+ *   load-bearing this late. No virtualization either: a single day with
+ *   hundreds of exercises in one column still mounts all of them.
  */
 export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   const router = useRouter();
@@ -83,8 +140,52 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // read as "the first click didn't register" when actually the request
   // just hadn't resolved yet).
   const [addingExerciseBlockId, setAddingExerciseBlockId] = useState<string | null>(null);
+  // Mirrors addingExerciseBlockId's rationale — "move to another day" is a
+  // duplicate-then-remove round trip (see moveExerciseToDay's own comment),
+  // so this disables the source select and shows "Moving…" for the one
+  // exercise in flight rather than letting a second click during that
+  // window fire a duplicate move.
+  const [movingExerciseId, setMovingExerciseId] = useState<string | null>(null);
+  const [mode, setMode] = useBuilderMode();
+  // The coach's own saved custom exercises (migration 0031) — fetched once
+  // on mount, not per-keystroke of every search box on the page (see
+  // exercise-search.ts's own doc comment). `program.owner_id` is safe to
+  // use as the library's owner here specifically because this component
+  // only ever renders for the program's owner — the edit page redirects
+  // anyone else back to the read-only view before ProgramBuilder mounts.
+  const [library, setLibrary] = useState<ExerciseSearchResult[]>([]);
+  // Saved exercise/day templates (migration 0033) — fetched once alongside
+  // the exercise library, same reasoning: one small per-owner list, not
+  // worth a live query per render. `onSaved` on each save dialog appends
+  // straight into this state so a freshly-saved template appears in every
+  // "insert template" control immediately, no refetch.
+  const [exerciseTemplates, setExerciseTemplates] = useState<ExerciseTemplateRow[]>([]);
+  const [dayTemplates, setDayTemplates] = useState<DayTemplateRow[]>([]);
+  // Which exercise/day the "Save as template" dialog is currently open
+  // for — null means closed. Holding the actual row (not just an id) is
+  // simplest here since the dialog needs the live BlockExerciseRow/DayRow
+  // to snapshot, and the caller already has it in hand at the moment the
+  // action is triggered.
+  const [saveExerciseTemplateFor, setSaveExerciseTemplateFor] = useState<BlockExerciseRow | null>(null);
+  const [saveDayTemplateFor, setSaveDayTemplateFor] = useState<DayRow | null>(null);
 
   useEffect(() => setNameDraft(program.name), [program.name]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getExerciseLibrary(supabase, program.owner_id).then((entries) => {
+      if (!cancelled) setLibrary(entries.map((e) => ({ id: null, name: e.name, category: e.category })));
+    });
+    getExerciseTemplates(supabase, program.owner_id).then((templates) => {
+      if (!cancelled) setExerciseTemplates(templates);
+    });
+    getDayTemplates(supabase, program.owner_id).then((templates) => {
+      if (!cancelled) setDayTemplates(templates);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, program.owner_id]);
 
   // Every program is created with a first week and never allowed to drop
   // below one (handleDeleteWeek blocks removing the last week), so this is
@@ -94,8 +195,50 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // variable's actual type does.
   const week = (program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0])!;
 
+  // Performance: `week.days` gets a brand-new array reference on *every*
+  // edit anywhere in the week (updateDay/updateWeek's immutable helpers
+  // always `.map()` the days array, even when only one exercise deep inside
+  // one day actually changed — see those helpers' own comments). Keying a
+  // memo directly on `week.days` would therefore recompute on every single
+  // keystroke, same as not memoizing at all. Keying on this flattened
+  // "id:label:position" string instead means it only recomputes when a day
+  // is actually added, removed, reordered, or relabeled — not when
+  // something inside one changes — which is what actually matters for
+  // otherDays (every other day's picker options). Otherwise this was a
+  // `.filter().map()` re-run per day, per render (O(days²) every render)
+  // for something that only changes when the day list itself changes.
+  const dayMetaKey = week.days.map((d) => `${d.id}:${d.label ?? ""}:${d.position}`).join("|");
+  const otherDaysByDayId = useMemo(() => {
+    const meta = week.days.map((d) => ({ id: d.id, label: d.label, position: d.position }));
+    const map = new Map<string, typeof meta>();
+    for (const d of meta) map.set(d.id, meta.filter((m) => m.id !== d.id));
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dayMetaKey is the real dependency (see comment above); week.days itself would defeat the memo.
+  }, [dayMetaKey]);
+
   function fail(message: string) {
     setSaveError(message);
+  }
+
+  // ---- autosave status ----
+  // Every edit here applies to local state immediately and fires its
+  // Supabase write in the background (see this component's own doc
+  // comment) — nothing already surfaces that the write is actually
+  // happening or has landed. `track` wraps each of those background
+  // promises to drive a subtle "Saving…/All changes saved" indicator.
+  // `pendingSavesRef` is a plain counter (not state) since only "is it
+  // zero or not" needs to be reactive — every individual increment
+  // shouldn't force a re-render.
+  const pendingSavesRef = useRef(0);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  function track<T>(promise: Promise<T>): Promise<T> {
+    pendingSavesRef.current += 1;
+    setSaveStatus("saving");
+    return promise.finally(() => {
+      pendingSavesRef.current -= 1;
+      if (pendingSavesRef.current === 0) setSaveStatus("saved");
+    });
   }
 
   // ---- immutable tree-update helpers ----
@@ -117,13 +260,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       return;
     }
     setProgram((p) => ({ ...p, name: trimmed }));
-    const { error } = await m.updateProgram(supabase, program.id, { name: trimmed });
+    const { error } = await track(m.updateProgram(supabase, program.id, { name: trimmed }));
     if (error) fail(error);
   }
 
   async function handleDisciplineChange(discipline: ProgramDiscipline) {
     setProgram((p) => ({ ...p, discipline }));
-    const { error } = await m.updateProgram(supabase, program.id, { discipline });
+    const { error } = await track(m.updateProgram(supabase, program.id, { discipline }));
     if (error) fail(error);
   }
 
@@ -151,13 +294,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const lastWeek = program.weeks[program.weeks.length - 1];
     if (!lastWeek) return "This program has no weeks yet.";
     const dayTemplate = lastWeek.days.map((d) => ({ label: d.label, is_rest_day: d.is_rest_day }));
-    const { week: newWeek, error } = await m.addWeek(supabase, {
-      programId: program.id,
-      position: nextPosition(program.weeks),
-      dayTemplate,
-      sourceWeek: params.sourceWeek,
-      progressionPercent: params.progressionPercent,
-    });
+    const { week: newWeek, error } = await track(
+      m.addWeek(supabase, {
+        programId: program.id,
+        position: nextPosition(program.weeks),
+        dayTemplate,
+        sourceWeek: params.sourceWeek,
+        progressionPercent: params.progressionPercent,
+      })
+    );
     if (error || !newWeek) return error ?? "Something went wrong adding the week.";
     setProgram((p) => ({ ...p, weeks: [...p.weeks, newWeek] }));
     setSelectedWeekId(newWeek.id);
@@ -177,7 +322,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         setProgram((p) => ({ ...p, weeks: remaining }));
         if (selectedWeekId === weekId) setSelectedWeekId(remaining[0]?.id ?? "");
         setPendingConfirm(null);
-        const { error } = await m.deleteWeek(supabase, weekId);
+        const { error } = await track(m.deleteWeek(supabase, weekId));
         if (error) fail(error);
       },
     });
@@ -186,7 +331,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // ---- days ----
   function handleUpdateDay(dayId: string, patch: { label?: string | null; is_rest_day?: boolean }) {
     updateDay(week.id, dayId, (d) => ({ ...d, ...patch }));
-    m.updateDay(supabase, dayId, patch).then(({ error }) => {
+    track(m.updateDay(supabase, dayId, patch)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -194,12 +339,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleCopyDayTo(sourceDay: DayRow, targetDayId: string) {
     const targetDay = week.days.find((d) => d.id === targetDayId);
     if (!targetDay) return;
-    const targetStartPosition = nextPosition(targetDay.blocks);
-    const { blocks, error } = await m.copyDayContents(supabase, {
-      sourceDay,
-      targetDayId,
-      targetStartPosition,
-    });
+    const { blocks, error } = await track(
+      m.copyDayContents(supabase, {
+        sourceDay,
+        targetDayId,
+        targetDayBlocks: targetDay.blocks,
+      })
+    );
     if (error) {
       fail(error);
       return;
@@ -207,15 +353,147 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     updateDay(week.id, targetDayId, (d) => ({ ...d, blocks: [...d.blocks, ...blocks] }));
   }
 
+  function handleOpenSaveDayTemplate(dayId: string) {
+    const day = week.days.find((d) => d.id === dayId);
+    if (day) setSaveDayTemplateFor(day);
+  }
+
+  async function handleInsertDayTemplate(dayId: string, template: DayTemplateRow) {
+    const targetDay = week.days.find((d) => d.id === dayId);
+    if (!targetDay) return;
+    const { blocks, error } = await track(
+      m.insertDayTemplate(supabase, {
+        targetDayId: dayId,
+        targetDayBlocks: targetDay.blocks,
+        template,
+      })
+    );
+    if (error) {
+      fail(error);
+      return;
+    }
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, ...blocks] }));
+  }
+
+  async function handleDuplicateDay(dayId: string) {
+    const sourceDay = week.days.find((d) => d.id === dayId);
+    if (!sourceDay) return;
+    const { day: newDay, error } = await track(
+      m.duplicateDay(supabase, {
+        sourceDay,
+        weekId: week.id,
+        position: nextPosition(week.days),
+      })
+    );
+    if (error || !newDay) {
+      fail(error ?? "Couldn't duplicate that day.");
+      return;
+    }
+    updateWeek(week.id, (w) => ({ ...w, days: [...w.days, newDay] }));
+  }
+
+  /** A plain blank day — the "Add day" button next to the day columns,
+   * same "append at the end" pattern as Add Week and Duplicate Day (just
+   * with nothing cloned into it). */
+  async function handleAddDay() {
+    const { day: newDay, error } = await track(m.addDay(supabase, { weekId: week.id, position: nextPosition(week.days) }));
+    if (error || !newDay) {
+      fail(error ?? "Couldn't add a new day.");
+      return;
+    }
+    updateWeek(week.id, (w) => ({ ...w, days: [...w.days, newDay] }));
+  }
+
+  function handleDeleteDay(dayId: string) {
+    // A week is never allowed to drop below one day, mirroring
+    // handleDeleteWeek's "can't drop below one week" guard — an empty
+    // week isn't a state anything downstream (Preview mode, Training
+    // Mode) is built to handle gracefully.
+    if (week.days.length <= 1) return;
+    const target = week.days.find((d) => d.id === dayId);
+    if (!target) return;
+    setPendingConfirm({
+      title: "Delete day?",
+      description: `Delete ${target.label || `Day ${target.position}`}? This can't be undone.`,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        const remaining = week.days.filter((d) => d.id !== dayId);
+        updateWeek(week.id, (w) => ({ ...w, days: remaining }));
+        setPendingConfirm(null);
+        const { error } = await track(m.deleteDay(supabase, dayId));
+        if (error) fail(error);
+      },
+    });
+  }
+
+  /** Composes duplicateExercise + removeExerciseFromBlock/deleteBlock (see
+   * mutations.ts's moveExerciseToDay) rather than a real relational move —
+   * this codebase has no DB transactions, so the mutation can partially
+   * fail (exercise copied to the target day but the original couldn't be
+   * removed). That case still returns the new block, just with a non-null
+   * error, so the target day gets the copy either way and the source day is
+   * only touched once removal actually succeeds. */
+  async function handleMoveExerciseToDay(sourceDayId: string, blockId: string, blockExerciseId: string, targetDayId: string) {
+    if (movingExerciseId === blockExerciseId) return;
+    const sourceDay = week.days.find((d) => d.id === sourceDayId);
+    const sourceBlock = sourceDay?.blocks.find((b) => b.id === blockId);
+    const exercise = sourceBlock?.exercises.find((ex) => ex.id === blockExerciseId);
+    const targetDay = week.days.find((d) => d.id === targetDayId);
+    if (!sourceDay || !sourceBlock || !exercise || !targetDay) return;
+
+    const sourceBlockHasOtherExercises = sourceBlock.exercises.length > 1;
+    setMovingExerciseId(blockExerciseId);
+    const { block, error } = await track(
+      m.moveExerciseToDay(supabase, {
+        targetDayId,
+        targetPosition: nextPosition(targetDay.blocks.filter((b) => b.block_role === sourceBlock.block_role)),
+        blockRole: sourceBlock.block_role,
+        exercise,
+        sourceBlockId: blockId,
+        sourceBlockHasOtherExercises,
+      })
+    );
+    setMovingExerciseId(null);
+    if (!block) {
+      fail(error ?? "Couldn't move that exercise.");
+      return;
+    }
+    setProgram((p) => ({
+      ...p,
+      weeks: p.weeks.map((w) => {
+        if (w.id !== week.id) return w;
+        return {
+          ...w,
+          days: w.days.map((d) => {
+            if (d.id === targetDayId) return { ...d, blocks: [...d.blocks, block] };
+            if (d.id === sourceDayId && !error) {
+              return {
+                ...d,
+                blocks: sourceBlockHasOtherExercises
+                  ? d.blocks.map((b) => (b.id === blockId ? { ...b, exercises: b.exercises.filter((ex) => ex.id !== blockExerciseId) } : b))
+                  : d.blocks.filter((b) => b.id !== blockId),
+              };
+            }
+            return d;
+          }),
+        };
+      }),
+    }));
+    if (error) fail(error);
+  }
+
   // ---- blocks ----
-  async function handleAddBlock(dayId: string) {
+  async function handleAddBlock(dayId: string, role: BlockRole = "main") {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
-    const { block, error } = await m.addExerciseBlock(supabase, {
-      dayId,
-      position: nextPosition(day.blocks),
-      category: defaultCategoryForDiscipline(program.discipline),
-    });
+    const { block, error } = await track(
+      m.addExerciseBlock(supabase, {
+        dayId,
+        position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
+        category: defaultCategoryForDiscipline(program.discipline),
+        role,
+      })
+    );
     if (error || !block) {
       fail(error ?? "Couldn't add exercise.");
       return;
@@ -223,34 +501,29 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, block] }));
   }
 
-  function handleDeleteBlock(dayId: string, blockId: string) {
-    updateDay(week.id, dayId, (d) => ({ ...d, blocks: d.blocks.filter((b) => b.id !== blockId) }));
-    m.deleteBlock(supabase, blockId).then(({ error }) => {
-      if (error) fail(error);
-    });
-  }
-
-  function handleMoveBlock(dayId: string, blockId: string, direction: "up" | "down") {
+  async function handleInsertExerciseTemplate(dayId: string, role: BlockRole, template: ExerciseTemplateRow) {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
-    const index = day.blocks.findIndex((b) => b.id === blockId);
-    const swapIndex = direction === "up" ? index - 1 : index + 1;
-    if (index < 0 || swapIndex < 0 || swapIndex >= day.blocks.length) return;
-
-    const a = day.blocks[index];
-    const b = day.blocks[swapIndex];
-    if (!a || !b) return;
-    const reordered = [...day.blocks];
-    reordered[index] = { ...b, position: a.position };
-    reordered[swapIndex] = { ...a, position: b.position };
-    reordered.sort((x, y) => x.position - y.position);
-    updateDay(week.id, dayId, (d) => ({ ...d, blocks: reordered }));
-
-    m.swapBlockPositions(supabase, { id: a.id, position: a.position }, { id: b.id, position: b.position }).then(
-      ({ error }) => {
-        if (error) fail(error);
-      }
+    const { block, error } = await track(
+      m.addExerciseBlockFromTemplate(supabase, {
+        dayId,
+        position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
+        role,
+        template,
+      })
     );
+    if (error || !block) {
+      fail(error ?? "Couldn't insert that template.");
+      return;
+    }
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, block] }));
+  }
+
+  function handleDeleteBlock(dayId: string, blockId: string) {
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: d.blocks.filter((b) => b.id !== blockId) }));
+    track(m.deleteBlock(supabase, blockId)).then(({ error }) => {
+      if (error) fail(error);
+    });
   }
 
   // ---- superset/circuit grouping ----
@@ -266,11 +539,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     // strength block shouldn't suddenly default its 2nd exercise to
     // "cardio" just because the program as a whole mixes both.
     const category = block.exercises[0]?.exercise_category ?? defaultCategoryForDiscipline(program.discipline);
-    const { exercise, error } = await m.addExerciseToBlock(supabase, {
-      blockId,
-      position: nextPosition(block.exercises),
-      category,
-    });
+    const { exercise, error } = await track(
+      m.addExerciseToBlock(supabase, {
+        blockId,
+        position: nextPosition(block.exercises),
+        category,
+      })
+    );
     setAddingExerciseBlockId(null);
     if (error || !exercise) {
       fail(error ?? "Couldn't add exercise.");
@@ -283,7 +558,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       block_type: becomesGrouped ? "superset" : b.block_type,
     }));
     if (becomesGrouped) {
-      m.updateBlockType(supabase, blockId, "superset").then(({ error: e }) => {
+      track(m.updateBlockType(supabase, blockId, "superset")).then(({ error: e }) => {
         if (e) fail(e);
       });
     }
@@ -302,11 +577,11 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       exercises: b.exercises.filter((ex) => ex.id !== blockExerciseId),
       block_type: becomesUngrouped ? "straight" : b.block_type,
     }));
-    m.removeExerciseFromBlock(supabase, blockExerciseId).then(({ error }) => {
+    track(m.removeExerciseFromBlock(supabase, blockExerciseId)).then(({ error }) => {
       if (error) fail(error);
     });
     if (becomesUngrouped) {
-      m.updateBlockType(supabase, blockId, "straight").then(({ error }) => {
+      track(m.updateBlockType(supabase, blockId, "straight")).then(({ error }) => {
         if (error) fail(error);
       });
     }
@@ -314,7 +589,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
   function handleRoundsChange(dayId: string, blockId: string, rounds: number) {
     updateBlock(week.id, dayId, blockId, (b) => ({ ...b, rounds }));
-    m.updateBlockRounds(supabase, blockId, rounds).then(({ error }) => {
+    track(m.updateBlockRounds(supabase, blockId, rounds)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -330,7 +605,88 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       ...b,
       exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, ...patch } : ex)),
     }));
-    m.updateBlockExercise(supabase, blockExerciseId, patch).then(({ error }) => {
+    track(m.updateBlockExercise(supabase, blockExerciseId, patch)).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
+  function handleNoteChange(dayId: string, blockId: string, blockExerciseId: string, notes: string | null) {
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, notes } : ex)),
+    }));
+    track(m.updateBlockExercise(supabase, blockExerciseId, { notes })).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
+  /** A name typed into the exercise search that didn't match anything
+   * existing (built-in or already-saved) gets remembered here so it's a
+   * real search result for every future exercise, in this program and
+   * every other one — not just this one row's custom_name. Applied
+   * optimistically to local `library` state (so it's searchable again
+   * immediately, in the same session) with the actual save firing in the
+   * background; a failure here is low-stakes enough (the exercise the
+   * coach just picked is already attached to this block_exercise via the
+   * normal onExerciseChange path regardless) not to surface its own error
+   * banner. */
+  function handleCreateCustomExercise(name: string, category: ExerciseCategory) {
+    const alreadyKnown = library.some((e) => e.category === category && e.name.toLowerCase() === name.toLowerCase());
+    if (!alreadyKnown) setLibrary((prev) => [...prev, { id: null, name, category }]);
+    void addToExerciseLibrary(supabase, { ownerId: program.owner_id, name, category });
+  }
+
+  async function handleDuplicateExercise(dayId: string, blockId: string, blockExerciseId: string) {
+    const day = week.days.find((d) => d.id === dayId);
+    const sourceBlock = day?.blocks.find((b) => b.id === blockId);
+    const exercise = sourceBlock?.exercises.find((ex) => ex.id === blockExerciseId);
+    if (!day || !sourceBlock || !exercise) return;
+    const { block, error } = await track(
+      m.duplicateExercise(supabase, {
+        dayId,
+        position: nextPosition(day.blocks.filter((b) => b.block_role === sourceBlock.block_role)),
+        exercise,
+        blockRole: sourceBlock.block_role,
+      })
+    );
+    if (error || !block) {
+      fail(error ?? "Couldn't duplicate that exercise.");
+      return;
+    }
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, block] }));
+  }
+
+  function handleOpenSaveExerciseTemplate(dayId: string, blockId: string, blockExerciseId: string) {
+    const exercise = week.days.find((d) => d.id === dayId)?.blocks.find((b) => b.id === blockId)?.exercises.find((ex) => ex.id === blockExerciseId);
+    if (exercise) setSaveExerciseTemplateFor(exercise);
+  }
+
+  // `role` isn't needed here — block ids are globally unique regardless of
+  // section, so the optimistic position-patch below works the same either
+  // way. It's only in BlockSection's callback signature because each
+  // section is its own independent drag surface (see day-column.tsx).
+  function handleReorderBlocks(dayId: string, orderedBlocks: { id: string; position: number }[]) {
+    const day = week.days.find((d) => d.id === dayId);
+    if (!day) return;
+    const positionById = new Map(orderedBlocks.map((b) => [b.id, b.position]));
+    const reordered = [...day.blocks].map((b) => ({ ...b, position: positionById.get(b.id) ?? b.position })).sort((a, b) => a.position - b.position);
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: reordered }));
+    track(m.reorderBlocks(supabase, orderedBlocks)).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
+  function handleReorderSets(dayId: string, blockId: string, blockExerciseId: string, orderedSets: { id: string; position: number }[]) {
+    const positionById = new Map(orderedSets.map((s) => [s.id, s.position]));
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.map((ex) =>
+        ex.id === blockExerciseId
+          ? { ...ex, sets: [...ex.sets].map((s) => ({ ...s, position: positionById.get(s.id) ?? s.position })).sort((a, c) => a.position - c.position) }
+          : ex
+      ),
+    }));
+    track(m.reorderSets(supabase, orderedSets)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -342,13 +698,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     if (!exercise) return;
     const lastSet = exercise.sets[exercise.sets.length - 1];
     const prescriptionType = lastSet?.prescription_type ?? defaultPrescriptionType(exercise.exercise_category);
-    const { set, error } = await m.addSetRow(supabase, {
-      blockExerciseId: exercise.id,
-      position: nextPosition(exercise.sets),
-      category: exercise.exercise_category,
-      prescriptionType,
-      copyFrom: lastSet,
-    });
+    const { set, error } = await track(
+      m.addSetRow(supabase, {
+        blockExerciseId: exercise.id,
+        position: nextPosition(exercise.sets),
+        category: exercise.exercise_category,
+        prescriptionType,
+        copyFrom: lastSet,
+      })
+    );
     if (error || !set) {
       fail(error ?? "Couldn't add set.");
       return;
@@ -360,7 +718,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   }
 
   async function performCategoryChange(dayId: string, blockId: string, blockExerciseId: string, category: ExerciseCategory) {
-    const { set, error } = await m.switchExerciseCategory(supabase, { blockExerciseId, category });
+    const { set, error } = await track(m.switchExerciseCategory(supabase, { blockExerciseId, category }));
     if (error || !set) {
       fail(error ?? "Couldn't switch exercise category.");
       return;
@@ -414,7 +772,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         ex.id === blockExerciseId ? { ...ex, sets: ex.sets.map((s) => ({ ...s, prescription_type: prescriptionType })) } : ex
       ),
     }));
-    const { error } = await m.updatePrescriptionType(supabase, { blockExerciseId, prescriptionType });
+    const { error } = await track(m.updatePrescriptionType(supabase, { blockExerciseId, prescriptionType }));
     if (error) fail(error);
   }
 
@@ -425,7 +783,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         ex.id === blockExerciseId ? { ...ex, sets: ex.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)) } : ex
       ),
     }));
-    m.updateSetRow(supabase, setId, patch).then(({ error }) => {
+    track(m.updateSetRow(supabase, setId, patch)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -437,7 +795,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         ex.id === blockExerciseId ? { ...ex, sets: ex.sets.filter((s) => s.id !== setId) } : ex
       ),
     }));
-    m.deleteSetRow(supabase, setId).then(({ error }) => {
+    track(m.deleteSetRow(supabase, setId)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -476,7 +834,29 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             className="w-fit"
           />
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex items-center gap-3 self-start sm:self-end">
+            {saveStatus !== "idle" && (
+              <span
+                role="status"
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+              >
+                {saveStatus === "saving" ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <Check className="size-3.5 text-primary" />
+                    All changes saved
+                  </>
+                )}
+              </span>
+            )}
+            <SegmentedControl aria-label="Editing mode" options={BUILDER_MODE_OPTIONS} value={mode} onChange={setMode} className="w-fit" />
+          </div>
+          <div className="flex items-center gap-2 self-start sm:self-end">
           <Link
             href={`/programs/${program.id}`}
             className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -487,6 +867,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             <Trash2 className="size-4" />
             Delete program
           </Button>
+          </div>
         </div>
       </div>
 
@@ -543,40 +924,75 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
           the row that actually caused the bug in practice, since it's the
           one people hover over while editing exercises. */}
       <ScrollFadeX className="flex flex-col gap-4 lg:flex-row lg:flex-nowrap lg:items-start lg:overflow-x-auto lg:overflow-y-visible lg:pb-2">
-        {week.days.map((day) => (
-          <DayColumn
-            key={day.id}
-            day={day}
-            otherDays={week.days
-              .filter((d) => d.id !== day.id)
-              .map((d) => ({ id: d.id, label: d.label, position: d.position }))}
-            onUpdateDay={(patch) => handleUpdateDay(day.id, patch)}
-            onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
-            onAddBlock={() => handleAddBlock(day.id)}
-            onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
-            onMoveBlock={(blockId, direction) => handleMoveBlock(day.id, blockId, direction)}
-            onAddExerciseToBlock={(blockId) => handleAddExerciseToBlock(day.id, blockId)}
-            addingExerciseBlockId={addingExerciseBlockId}
-            onRemoveExerciseFromBlock={(blockId, blockExerciseId) =>
-              handleRemoveExerciseFromBlock(day.id, blockId, blockExerciseId)
-            }
-            onRoundsChange={(blockId, rounds) => handleRoundsChange(day.id, blockId, rounds)}
-            onExerciseChange={(blockId, blockExerciseId, patch) =>
-              handleExerciseChange(day.id, blockId, blockExerciseId, patch)
-            }
-            onCategoryChange={(blockId, blockExerciseId, category) =>
-              handleCategoryChange(day.id, blockId, blockExerciseId, category)
-            }
-            onPrescriptionTypeChange={(blockId, blockExerciseId, prescriptionType) =>
-              handlePrescriptionTypeChange(day.id, blockId, blockExerciseId, prescriptionType)
-            }
-            onAddSet={(blockId, blockExerciseId) => handleAddSet(day.id, blockId, blockExerciseId)}
-            onSetChange={(blockId, blockExerciseId, setId, patch) =>
-              handleSetChange(day.id, blockId, blockExerciseId, setId, patch)
-            }
-            onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
-          />
-        ))}
+        {mode === "preview"
+          ? week.days.map((day) => (
+              <div key={day.id} className="flex w-full shrink-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 lg:w-96">
+                <h2 className={cn("text-base font-semibold text-foreground", day.is_rest_day && "text-muted-foreground")}>
+                  {day.label || `Day ${day.position}`}
+                </h2>
+                <AthletePreviewDay day={day} />
+              </div>
+            ))
+          : week.days.map((day) => (
+              <DayColumn
+                key={day.id}
+                day={day}
+                otherDays={otherDaysByDayId.get(day.id) ?? []}
+                mode={mode}
+                library={library}
+                onCreateCustomExercise={handleCreateCustomExercise}
+                onUpdateDay={(patch) => handleUpdateDay(day.id, patch)}
+                onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
+                onDuplicateDay={() => handleDuplicateDay(day.id)}
+                onDeleteDay={week.days.length > 1 ? () => handleDeleteDay(day.id) : undefined}
+                onAddBlock={(role) => handleAddBlock(day.id, role)}
+                onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
+                onReorderBlocks={(_role, orderedBlocks) => handleReorderBlocks(day.id, orderedBlocks)}
+                onAddExerciseToBlock={(blockId) => handleAddExerciseToBlock(day.id, blockId)}
+                addingExerciseBlockId={addingExerciseBlockId}
+                onRemoveExerciseFromBlock={(blockId, blockExerciseId) =>
+                  handleRemoveExerciseFromBlock(day.id, blockId, blockExerciseId)
+                }
+                onDuplicateExercise={(blockId, blockExerciseId) => handleDuplicateExercise(day.id, blockId, blockExerciseId)}
+                onMoveExerciseToDay={(blockId, blockExerciseId, targetDayId) =>
+                  handleMoveExerciseToDay(day.id, blockId, blockExerciseId, targetDayId)
+                }
+                movingExerciseId={movingExerciseId}
+                onRoundsChange={(blockId, rounds) => handleRoundsChange(day.id, blockId, rounds)}
+                onExerciseChange={(blockId, blockExerciseId, patch) =>
+                  handleExerciseChange(day.id, blockId, blockExerciseId, patch)
+                }
+                onNoteChange={(blockId, blockExerciseId, notes) => handleNoteChange(day.id, blockId, blockExerciseId, notes)}
+                onCategoryChange={(blockId, blockExerciseId, category) =>
+                  handleCategoryChange(day.id, blockId, blockExerciseId, category)
+                }
+                onPrescriptionTypeChange={(blockId, blockExerciseId, prescriptionType) =>
+                  handlePrescriptionTypeChange(day.id, blockId, blockExerciseId, prescriptionType)
+                }
+                onAddSet={(blockId, blockExerciseId) => handleAddSet(day.id, blockId, blockExerciseId)}
+                onSetChange={(blockId, blockExerciseId, setId, patch) =>
+                  handleSetChange(day.id, blockId, blockExerciseId, setId, patch)
+                }
+                onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
+                onReorderSets={(blockId, blockExerciseId, orderedSets) => handleReorderSets(day.id, blockId, blockExerciseId, orderedSets)}
+                exerciseTemplates={exerciseTemplates}
+                dayTemplates={dayTemplates}
+                onSaveAsTemplate={(blockId, blockExerciseId) => handleOpenSaveExerciseTemplate(day.id, blockId, blockExerciseId)}
+                onInsertExerciseTemplate={(role, template) => handleInsertExerciseTemplate(day.id, role, template)}
+                onSaveDayAsTemplate={() => handleOpenSaveDayTemplate(day.id)}
+                onInsertDayTemplate={(template) => handleInsertDayTemplate(day.id, template)}
+              />
+            ))}
+        {mode !== "preview" && (
+          <button
+            type="button"
+            onClick={handleAddDay}
+            className="flex w-full shrink-0 items-center justify-center gap-1 rounded-2xl border border-dashed border-border-strong px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:w-24"
+          >
+            <Plus className="size-4" />
+            Add day
+          </button>
+        )}
       </ScrollFadeX>
 
       <AddWeekDialog
@@ -594,6 +1010,26 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         description={pendingConfirm?.description ?? ""}
         confirmLabel={pendingConfirm?.confirmLabel}
       />
+
+      {saveExerciseTemplateFor && (
+        <SaveExerciseTemplateDialog
+          open
+          onClose={() => setSaveExerciseTemplateFor(null)}
+          exercise={saveExerciseTemplateFor}
+          currentUserId={program.owner_id}
+          onSaved={(template) => setExerciseTemplates((prev) => [template, ...prev])}
+        />
+      )}
+
+      {saveDayTemplateFor && (
+        <SaveDayTemplateDialog
+          open
+          onClose={() => setSaveDayTemplateFor(null)}
+          day={saveDayTemplateFor}
+          currentUserId={program.owner_id}
+          onSaved={(template) => setDayTemplates((prev) => [template, ...prev])}
+        />
+      )}
     </div>
   );
 }

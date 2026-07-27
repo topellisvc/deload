@@ -1,9 +1,17 @@
-import type { BlockExerciseRow, BlockRow, SetPrescription } from "@/lib/programs/types";
+import type { BlockExerciseRow, BlockRole, BlockRow, SetPrescription } from "@/lib/programs/types";
+
+/** Warm-up first, then the main workout, then Conditioning/Finisher —
+ * regardless of what each section's blocks happen to be positioned at
+ * (position is scoped per (day_id, block_role) as of migration 0032, so a
+ * warmup block and a main block can both legitimately be position 1). */
+const BLOCK_ROLE_ORDER: Record<BlockRole, number> = { warmup: 0, main: 1, conditioning: 2 };
 
 /**
- * Flat, ordered list of every distinct exercise in a day — block position
- * then exercise position order. This is what Training Mode's default
- * auto-advance and its exercise picker both walk.
+ * Flat, ordered list of every distinct exercise in a day — role, then
+ * block position, then exercise position. This is what Training Mode's
+ * default auto-advance and its exercise picker both walk, so a warm-up
+ * always comes before the main workout and a finisher always comes after,
+ * with no separate "which section am I in" logic anywhere downstream.
  *
  * Superset/circuit blocks used to force a round-robin turn order (A1, B1,
  * A2, B2...) so partner exercises alternated set-by-set. That was dropped
@@ -16,7 +24,7 @@ import type { BlockExerciseRow, BlockRow, SetPrescription } from "@/lib/programs
  * this list, same as any other pair of exercises in a block.
  */
 export function buildExerciseList(blocks: BlockRow[]): BlockExerciseRow[] {
-  const sortedBlocks = [...blocks].sort((a, b) => a.position - b.position);
+  const sortedBlocks = [...blocks].sort((a, b) => BLOCK_ROLE_ORDER[a.block_role] - BLOCK_ROLE_ORDER[b.block_role] || a.position - b.position);
   const list: BlockExerciseRow[] = [];
   for (const block of sortedBlocks) {
     const sortedExercises = [...block.exercises].sort((a, b) => a.position - b.position);

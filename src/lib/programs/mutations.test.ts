@@ -1,14 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  addDay,
   addExerciseBlock,
+  addExerciseBlockFromTemplate,
   addExerciseToBlock,
   cloneProgram,
+  copyDayContents,
   createProgram,
   createProgramFromSavedTemplate,
   createProgramFromTemplate,
+  deleteDay,
   deleteProgramTemplate,
+  duplicateDay,
+  duplicateExercise,
+  insertDayTemplate,
+  moveExerciseToDay,
+  reorderBlocks,
+  reorderSets,
   saveProgramAsTemplate,
 } from "./mutations";
+import type { BlockExerciseRow, BlockRow, DayRow, DayTemplateRow, ExerciseTemplateRow } from "./types";
 import { getProgramTree } from "./queries";
 import { STARTER_PROGRAM_TEMPLATES } from "./starter-templates";
 import type { ProgramTemplateRow, ProgramTree } from "./types";
@@ -73,6 +84,22 @@ describe("addExerciseBlock / addExerciseToBlock category default", () => {
 
     expect(inserted.block_exercises![0]).toMatchObject({ exercise_category: "cardio" });
     expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "time" });
+  });
+
+  it("addExerciseBlock defaults to block_role 'main' when no role is passed", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseBlock(supabase as never, { dayId: "day-1", position: 1 });
+
+    expect(inserted.exercise_blocks![0]).toMatchObject({ block_role: "main" });
+  });
+
+  it("addExerciseBlock uses the passed role for the Warm-up / Conditioning sections", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseBlock(supabase as never, { dayId: "day-1", position: 1, role: "warmup" });
+
+    expect(inserted.exercise_blocks![0]).toMatchObject({ block_role: "warmup" });
   });
 });
 
@@ -423,5 +450,517 @@ describe("createProgramFromSavedTemplate", () => {
 
     expect(result.program).toBeNull();
     expect(result.error).toBeTruthy();
+  });
+});
+
+describe("reorderBlocks", () => {
+  /** Captures every update() call, per table, in call order — enough to
+   * verify reorderBlocks' two-phase (stage-negative, then-final) approach
+   * without a real Postgres unique constraint to violate. */
+  function makeUpdateMock() {
+    const updates: { table: string; id: string; position: number }[] = [];
+    const supabase = {
+      from: vi.fn((table: string) => ({
+        update: vi.fn((patch: { position: number }) => ({
+          eq: vi.fn((_col: string, id: string) => {
+            updates.push({ table, id, position: patch.position });
+            return Promise.resolve({ error: null });
+          }),
+        })),
+      })),
+    };
+    return { supabase, updates };
+  }
+
+  it("stages every block through a negative position before any real final position is written", async () => {
+    const { supabase, updates } = makeUpdateMock();
+
+    await reorderBlocks(supabase as never, [
+      { id: "block-a", position: 2 },
+      { id: "block-b", position: 1 },
+      { id: "block-c", position: 3 },
+    ]);
+
+    expect(updates).toHaveLength(6);
+    const [first, second, third, fourth, fifth, sixth] = updates;
+    // Phase 1: every block gets a negative temp position, in input order.
+    expect(first!.id).toBe("block-a");
+    expect(first!.position).toBeLessThan(0);
+    expect(second!.id).toBe("block-b");
+    expect(second!.position).toBeLessThan(0);
+    expect(third!.id).toBe("block-c");
+    expect(third!.position).toBeLessThan(0);
+    // Phase 2: every block lands on its real, positive final position.
+    expect(fourth).toEqual({ table: "exercise_blocks", id: "block-a", position: 2 });
+    expect(fifth).toEqual({ table: "exercise_blocks", id: "block-b", position: 1 });
+    expect(sixth).toEqual({ table: "exercise_blocks", id: "block-c", position: 3 });
+  });
+
+  it("propagates an error from the first failing write instead of silently continuing", async () => {
+    const supabase = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => Promise.resolve({ error: { message: "boom" } })),
+        })),
+      })),
+    };
+
+    const result = await reorderBlocks(supabase as never, [{ id: "block-a", position: 1 }]);
+    expect(result.error).toBe("boom");
+  });
+});
+
+describe("reorderSets", () => {
+  /** Same staged-negative-position mechanics as reorderBlocks, just against
+   * set_prescriptions — the Cardio Builder's drag-and-drop interval
+   * reordering relies on this. */
+  function makeUpdateMock() {
+    const updates: { table: string; id: string; position: number }[] = [];
+    const supabase = {
+      from: vi.fn((table: string) => ({
+        update: vi.fn((patch: { position: number }) => ({
+          eq: vi.fn((_col: string, id: string) => {
+            updates.push({ table, id, position: patch.position });
+            return Promise.resolve({ error: null });
+          }),
+        })),
+      })),
+    };
+    return { supabase, updates };
+  }
+
+  it("stages every set through a negative position before any real final position is written", async () => {
+    const { supabase, updates } = makeUpdateMock();
+
+    await reorderSets(supabase as never, [
+      { id: "set-a", position: 2 },
+      { id: "set-b", position: 1 },
+    ]);
+
+    expect(updates).toHaveLength(4);
+    const [first, second, third, fourth] = updates;
+    expect(first!.id).toBe("set-a");
+    expect(first!.position).toBeLessThan(0);
+    expect(second!.id).toBe("set-b");
+    expect(second!.position).toBeLessThan(0);
+    expect(third).toEqual({ table: "set_prescriptions", id: "set-a", position: 2 });
+    expect(fourth).toEqual({ table: "set_prescriptions", id: "set-b", position: 1 });
+  });
+
+  it("propagates an error from the first failing write instead of silently continuing", async () => {
+    const supabase = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => Promise.resolve({ error: { message: "boom" } })),
+        })),
+      })),
+    };
+
+    const result = await reorderSets(supabase as never, [{ id: "set-a", position: 1 }]);
+    expect(result.error).toBe("boom");
+  });
+});
+
+describe("copyDayContents", () => {
+  function makeBlock(overrides: Partial<BlockRow> & Pick<BlockRow, "id" | "position" | "block_role">): BlockRow {
+    return {
+      day_id: "source-day",
+      block_type: "straight",
+      rounds: 1,
+      exercises: [
+        { id: `${overrides.id}-ex`, block_id: overrides.id, position: 1, exercise_id: null, custom_name: "Exercise", notes: null, exercise_category: "strength", sets: [] },
+      ],
+      ...overrides,
+    };
+  }
+
+  /** Position is scoped per (day_id, block_role) (migration 0032) — a
+   * shared "append at the end of the day" counter would misorder sections
+   * and could collide with an existing block in a different role. Each
+   * role needs its own next-position counter, seeded from the target
+   * day's *existing* blocks in that role. */
+  it("seeds each role's position from the target day's existing blocks in that same role, independently", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    const sourceDay: DayRow = {
+      id: "source-day",
+      week_id: "week-1",
+      position: 1,
+      label: null,
+      is_rest_day: false,
+      blocks: [
+        makeBlock({ id: "src-warmup", position: 1, block_role: "warmup" }),
+        makeBlock({ id: "src-main-1", position: 1, block_role: "main" }),
+        makeBlock({ id: "src-main-2", position: 2, block_role: "main" }),
+      ],
+    };
+
+    // Target day already has one warmup block (position 1) and no main
+    // blocks — so the copied warmup should land at position 2, while the
+    // two copied main blocks start fresh at positions 1 and 2.
+    const targetDayBlocks: BlockRow[] = [makeBlock({ id: "existing-warmup", day_id: "target-day", position: 1, block_role: "warmup" })];
+
+    const { blocks, error } = await copyDayContents(supabase as never, { sourceDay, targetDayId: "target-day", targetDayBlocks });
+
+    expect(error).toBeNull();
+    expect(blocks).toHaveLength(3);
+    const warmupCopy = blocks.find((b) => b.block_role === "warmup");
+    const mainCopies = blocks.filter((b) => b.block_role === "main").sort((a, b) => a.position - b.position);
+
+    expect(warmupCopy!.position).toBe(2);
+    expect(mainCopies.map((b) => b.position)).toEqual([1, 2]);
+  });
+});
+
+describe("duplicateExercise", () => {
+  function makeSourceExercise(overrides: Partial<BlockExerciseRow> = {}): BlockExerciseRow {
+    return {
+      id: "ex-1",
+      block_id: "block-1",
+      position: 1,
+      exercise_id: null,
+      custom_name: "Bench Press",
+      notes: "Control the eccentric",
+      exercise_category: "strength",
+      sets: [
+        {
+          id: "set-1",
+          block_exercise_id: "ex-1",
+          position: 1,
+          prescription_type: "fixed_weight",
+          sets: 4,
+          reps: "6",
+          min_reps: null,
+          max_reps: null,
+          weight_value: 100,
+          percent_1rm_value: null,
+          pr_record_type: null,
+          rpe_value: null,
+          rir_value: null,
+          heart_rate_zone: null,
+          calories: null,
+          rest_seconds: 120,
+          notes: null,
+          distance_meters: null,
+          duration_seconds: null,
+          pace_seconds_per_km: null,
+          advanced_config: null,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("creates a new standalone block with a copy of the exercise and its set rows, all with fresh ids", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const result = await duplicateExercise(supabase as never, { dayId: "day-1", position: 2, exercise: makeSourceExercise() });
+
+    expect(result.error).toBeNull();
+    expect(inserted.exercise_blocks).toEqual([
+      { id: expect.any(String), day_id: "day-1", position: 2, block_type: "straight", block_role: "main", rounds: 1 },
+    ]);
+    expect(inserted.block_exercises![0]).toMatchObject({ custom_name: "Bench Press", notes: "Control the eccentric", exercise_category: "strength" });
+    expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "fixed_weight", sets: 4, reps: "6", weight_value: 100, rest_seconds: 120 });
+
+    // Every id in the returned block is new — not a copy of the source's ids.
+    expect(result.block!.id).not.toBe("block-1");
+    expect(result.block!.exercises[0]!.id).not.toBe("ex-1");
+    expect(result.block!.exercises[0]!.sets[0]!.id).not.toBe("set-1");
+    // But the block_exercise_id on the new set row points at the *new*
+    // exercise id, not the stale source one — otherwise it'd reference an
+    // exercise that no longer exists from this new set row's perspective.
+    expect(result.block!.exercises[0]!.sets[0]!.block_exercise_id).toBe(result.block!.exercises[0]!.id);
+  });
+
+  it("copies every set row when the exercise has more than one prescription row (e.g. a drop set)", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+    const source = makeSourceExercise({
+      sets: [
+        { ...makeSourceExercise().sets[0]!, id: "set-1", position: 1 },
+        { ...makeSourceExercise().sets[0]!, id: "set-2", position: 2, weight_value: 80 },
+      ],
+    });
+
+    await duplicateExercise(supabase as never, { dayId: "day-1", position: 2, exercise: source });
+
+    expect(inserted.set_prescriptions).toHaveLength(2);
+    expect(inserted.set_prescriptions![1]).toMatchObject({ weight_value: 80, position: 2 });
+  });
+});
+
+describe("addExerciseBlockFromTemplate", () => {
+  const template: ExerciseTemplateRow = {
+    id: "template-1",
+    owner_id: "user-1",
+    name: "Bench 5x5",
+    exercise_category: "strength",
+    template_data: {
+      id: "stale-ex-id",
+      block_id: "stale-block-id",
+      position: 1,
+      exercise_id: null,
+      custom_name: "Bench Press",
+      notes: "Heavy day",
+      exercise_category: "strength",
+      sets: [
+        {
+          id: "stale-set-id",
+          block_exercise_id: "stale-ex-id",
+          position: 1,
+          prescription_type: "fixed_weight",
+          sets: 5,
+          reps: "5",
+          min_reps: null,
+          max_reps: null,
+          weight_value: 100,
+          percent_1rm_value: null,
+          pr_record_type: null,
+          rpe_value: null,
+          rir_value: null,
+          heart_rate_zone: null,
+          calories: null,
+          rest_seconds: 120,
+          notes: null,
+          distance_meters: null,
+          duration_seconds: null,
+          pace_seconds_per_km: null,
+          advanced_config: null,
+        },
+      ],
+    },
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  // A template's stored ids are structural only, same as
+  // ProgramTemplateRow's — this is really the same clone-with-fresh-ids
+  // operation duplicateExercise already does, just sourced from a stored
+  // snapshot instead of a live exercise.
+  it("inserts a new block+exercise+sets from the template, with fresh ids and the requested role", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const result = await addExerciseBlockFromTemplate(supabase as never, { dayId: "day-1", position: 1, role: "warmup", template });
+
+    expect(result.error).toBeNull();
+    expect(inserted.exercise_blocks![0]).toMatchObject({ day_id: "day-1", position: 1, block_role: "warmup" });
+    expect(inserted.block_exercises![0]).toMatchObject({ custom_name: "Bench Press", notes: "Heavy day" });
+    expect(inserted.set_prescriptions![0]).toMatchObject({ sets: 5, reps: "5", weight_value: 100 });
+
+    expect(result.block!.id).not.toBe("stale-block-id");
+    expect(result.block!.exercises[0]!.id).not.toBe("stale-ex-id");
+    expect(result.block!.exercises[0]!.sets[0]!.id).not.toBe("stale-set-id");
+  });
+});
+
+describe("insertDayTemplate", () => {
+  const template: DayTemplateRow = {
+    id: "day-template-1",
+    owner_id: "user-1",
+    name: "Upper Strength",
+    template_data: {
+      blocks: [
+        {
+          id: "stale-block-id",
+          day_id: "stale-day-id",
+          position: 1,
+          block_type: "straight",
+          block_role: "main",
+          rounds: 1,
+          exercises: [
+            { id: "stale-ex-id", block_id: "stale-block-id", position: 1, exercise_id: null, custom_name: "Bench Press", notes: null, exercise_category: "strength", sets: [] },
+          ],
+        },
+      ],
+    },
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("inserts the template's blocks into the target day with fresh ids, seeded from the target's existing blocks", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    const { blocks, error } = await insertDayTemplate(supabase as never, { targetDayId: "target-day", targetDayBlocks: [], template });
+
+    expect(error).toBeNull();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.id).not.toBe("stale-block-id");
+    expect(blocks[0]!.day_id).toBe("target-day");
+    expect(blocks[0]!.position).toBe(1);
+    expect(blocks[0]!.exercises[0]!.custom_name).toBe("Bench Press");
+  });
+});
+
+describe("duplicateDay", () => {
+  const sourceDay: DayRow = {
+    id: "source-day",
+    week_id: "week-1",
+    position: 1,
+    label: "Upper Strength",
+    is_rest_day: false,
+    blocks: [
+      {
+        id: "src-block",
+        day_id: "source-day",
+        position: 1,
+        block_type: "straight",
+        block_role: "main",
+        rounds: 1,
+        exercises: [
+          { id: "src-ex", block_id: "src-block", position: 1, exercise_id: null, custom_name: "Bench Press", notes: null, exercise_category: "strength", sets: [] },
+        ],
+      },
+    ],
+  };
+
+  it("inserts a new day labeled '<original> copy' with fresh-id copies of every block", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const { day, error } = await duplicateDay(supabase as never, { sourceDay, weekId: "week-1", position: 2 });
+
+    expect(error).toBeNull();
+    expect(day!.label).toBe("Upper Strength copy");
+    expect(day!.week_id).toBe("week-1");
+    expect(day!.position).toBe(2);
+    expect(day!.id).not.toBe("source-day");
+    expect(inserted.training_days).toEqual([
+      { id: day!.id, week_id: "week-1", position: 2, label: "Upper Strength copy", is_rest_day: false },
+    ]);
+    expect(day!.blocks).toHaveLength(1);
+    expect(day!.blocks[0]!.id).not.toBe("src-block");
+    expect(day!.blocks[0]!.day_id).toBe(day!.id);
+    expect(day!.blocks[0]!.exercises[0]!.custom_name).toBe("Bench Press");
+  });
+
+  it("leaves the label null when the source day has none, instead of '<null> copy'", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    const { day } = await duplicateDay(supabase as never, { sourceDay: { ...sourceDay, label: null }, weekId: "week-1", position: 2 });
+
+    expect(day!.label).toBeNull();
+  });
+});
+
+/** Extends makeSupabaseMock's insert-only mock with a `.delete().eq()`
+ * chain — moveExerciseToDay's removal half (removeExerciseFromBlock /
+ * deleteBlock) and deleteDay both issue deletes, which the shared
+ * insert-only mock doesn't model. Kept as its own function rather than
+ * folded into makeSupabaseMock since most other tests only need inserts. */
+function makeSupabaseMockWithDelete(deleteError: string | null = null) {
+  const inserted: Record<string, Record<string, unknown>[]> = {};
+  const deleted: { table: string; id: unknown }[] = [];
+  const supabase = {
+    from: vi.fn((table: string) => ({
+      insert: vi.fn((rows: Record<string, unknown> | Record<string, unknown>[]) => {
+        const list = Array.isArray(rows) ? rows : [rows];
+        inserted[table] = [...(inserted[table] ?? []), ...list];
+        return Promise.resolve({ error: null });
+      }),
+      delete: vi.fn(() => ({
+        eq: vi.fn((_column: string, id: unknown) => {
+          deleted.push({ table, id });
+          return Promise.resolve({ error: deleteError ? { message: deleteError } : null });
+        }),
+      })),
+    })),
+  };
+  return { supabase, inserted, deleted };
+}
+
+describe("moveExerciseToDay", () => {
+  const exercise: BlockExerciseRow = {
+    id: "ex-1",
+    block_id: "source-block",
+    position: 1,
+    exercise_id: null,
+    custom_name: "Bench Press",
+    notes: null,
+    exercise_category: "strength",
+    sets: [],
+  };
+
+  it("copies the exercise to the target day and deletes the source block when it had no other exercises", async () => {
+    const { supabase, inserted, deleted } = makeSupabaseMockWithDelete();
+
+    const { block, error } = await moveExerciseToDay(supabase as never, {
+      targetDayId: "target-day",
+      targetPosition: 1,
+      blockRole: "main",
+      exercise,
+      sourceBlockId: "source-block",
+      sourceBlockHasOtherExercises: false,
+    });
+
+    expect(error).toBeNull();
+    expect(block!.day_id).toBe("target-day");
+    expect(block!.exercises[0]!.custom_name).toBe("Bench Press");
+    expect(inserted.exercise_blocks![0]).toMatchObject({ day_id: "target-day", position: 1, block_role: "main" });
+    expect(deleted).toEqual([{ table: "exercise_blocks", id: "source-block" }]);
+  });
+
+  it("removes just the one exercise (not the whole block) when the source block has other exercises left", async () => {
+    const { supabase, deleted } = makeSupabaseMockWithDelete();
+
+    await moveExerciseToDay(supabase as never, {
+      targetDayId: "target-day",
+      targetPosition: 1,
+      blockRole: "main",
+      exercise,
+      sourceBlockId: "source-block",
+      sourceBlockHasOtherExercises: true,
+    });
+
+    expect(deleted).toEqual([{ table: "block_exercises", id: "ex-1" }]);
+  });
+
+  it("still returns the copied block but with a partial-failure message when the removal fails", async () => {
+    const { supabase } = makeSupabaseMockWithDelete("network error");
+
+    const { block, error } = await moveExerciseToDay(supabase as never, {
+      targetDayId: "target-day",
+      targetPosition: 1,
+      blockRole: "main",
+      exercise,
+      sourceBlockId: "source-block",
+      sourceBlockHasOtherExercises: false,
+    });
+
+    expect(block).not.toBeNull();
+    expect(error).toBe("Moved, but couldn't remove it from the original day — you may need to delete it there yourself.");
+  });
+});
+
+describe("addDay", () => {
+  it("inserts a blank, unlabeled day with no blocks at the given position", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const { day, error } = await addDay(supabase as never, { weekId: "week-1", position: 3 });
+
+    expect(error).toBeNull();
+    expect(day!.week_id).toBe("week-1");
+    expect(day!.position).toBe(3);
+    expect(day!.label).toBeNull();
+    expect(day!.is_rest_day).toBe(false);
+    expect(day!.blocks).toEqual([]);
+    expect(inserted.training_days).toEqual([
+      { id: day!.id, week_id: "week-1", position: 3, label: null, is_rest_day: false },
+    ]);
+  });
+});
+
+describe("deleteDay", () => {
+  it("deletes the training_days row by id", async () => {
+    const { supabase, deleted } = makeSupabaseMockWithDelete();
+
+    const { error } = await deleteDay(supabase as never, "day-1");
+
+    expect(error).toBeNull();
+    expect(deleted).toEqual([{ table: "training_days", id: "day-1" }]);
+  });
+
+  it("surfaces the error message when the delete fails", async () => {
+    const { supabase } = makeSupabaseMockWithDelete("network error");
+
+    const { error } = await deleteDay(supabase as never, "day-1");
+
+    expect(error).toBe("network error");
   });
 });

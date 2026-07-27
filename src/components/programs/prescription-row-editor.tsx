@@ -6,7 +6,9 @@ import type { PrescriptionField } from "@/lib/programs/prescription-types";
 import { getPrescriptionTypeDef } from "@/lib/programs/prescription-types";
 import { RECORD_TYPES } from "@/lib/profile/personal-records";
 import type { ExerciseCategory, SetRow } from "@/lib/programs/types";
-import { InlineNumberField, InlineDurationField, InlineDistanceField } from "@/components/programs/inline-fields";
+import { InlineNumberField, InlineDurationField } from "@/components/programs/inline-fields";
+import { RestPresetField, DistancePresetField } from "@/components/programs/preset-fields";
+import { AdvancedFieldsEditor } from "@/components/programs/advanced-fields-editor";
 import { cn } from "@/lib/utils";
 
 const STRENGTH_PR_TYPES = RECORD_TYPES.filter((r) => r.category === "strength");
@@ -18,6 +20,10 @@ interface PrescriptionRowEditorProps {
   set: SetRow;
   onChange: (patch: Partial<SetRow>) => void;
   onDelete: () => void;
+  /** Only true in Advanced Mode — reveals the Custom Fields editor bound to
+   * this row's advanced_config (migration 0030). Simple Mode never renders
+   * it, matching the spec's "hide all advanced programming options." */
+  advanced?: boolean;
 }
 
 /**
@@ -29,36 +35,45 @@ interface PrescriptionRowEditorProps {
  * anything cardio. Adding a new prescription type later is a config
  * change in prescription-types.ts, not a new editor component.
  */
-export function PrescriptionRowEditor({ category, set, onChange, onDelete }: PrescriptionRowEditorProps) {
+export function PrescriptionRowEditor({ category, set, onChange, onDelete, advanced = false }: PrescriptionRowEditorProps) {
   const def = getPrescriptionTypeDef(category, set.prescription_type);
   const fields = new Set<PrescriptionField>(def?.prescriptionFields ?? []);
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      {fields.has("sets") && <SetsField set={set} onChange={onChange} />}
-      {fields.has("reps") && <RepsField set={set} onChange={onChange} />}
-      {fields.has("rep_range") && <RepRangeField set={set} onChange={onChange} />}
-      {fields.has("weight") && <InlineNumberField label="Weight" unit="kg" value={set.weight_value} onCommit={(v) => onChange({ weight_value: v })} width="w-16" />}
-      {fields.has("percent_1rm") && <Percent1RMFields set={set} onChange={onChange} />}
-      {fields.has("rpe") && <InlineNumberField label="RPE" value={set.rpe_value} onCommit={(v) => onChange({ rpe_value: v })} width="w-14" />}
-      {fields.has("rir") && <InlineNumberField label="RIR" value={set.rir_value} onCommit={(v) => onChange({ rir_value: v })} width="w-14" />}
-      {fields.has("distance") && <DistanceField set={set} onChange={onChange} />}
-      {fields.has("duration") && <InlineDurationField label="Time" value={set.duration_seconds} onCommit={(v) => onChange({ duration_seconds: v })} />}
-      {fields.has("pace") && <InlineDurationField label="Pace /km" value={set.pace_seconds_per_km} onCommit={(v) => onChange({ pace_seconds_per_km: v })} />}
-      {fields.has("heart_rate_zone") && <HeartRateZoneField set={set} onChange={onChange} />}
-      {fields.has("calories") && <InlineNumberField label="Calories" value={set.calories} onCommit={(v) => onChange({ calories: v })} width="w-16" />}
-      {fields.has("rest") && <InlineNumberField label="Rest" unit="sec" value={set.rest_seconds} onCommit={(v) => onChange({ rest_seconds: v })} width="w-16" />}
-      {fields.has("notes") && <NotesField set={set} onChange={onChange} placeholder="Coach notes (optional)" />}
-      {fields.has("notes_primary") && <NotesField set={set} onChange={onChange} placeholder="What should the athlete do?" primary />}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        {fields.has("sets") && <SetsField set={set} onChange={onChange} />}
+        {fields.has("reps") && <RepsField set={set} onChange={onChange} />}
+        {fields.has("rep_range") && <RepRangeField set={set} onChange={onChange} />}
+        {fields.has("weight") && <InlineNumberField label="Weight" unit="kg" value={set.weight_value} onCommit={(v) => onChange({ weight_value: v })} width="w-16" />}
+        {fields.has("percent_1rm") && <Percent1RMFields set={set} onChange={onChange} />}
+        {fields.has("rpe") && <InlineNumberField label="RPE" value={set.rpe_value} onCommit={(v) => onChange({ rpe_value: v })} width="w-14" />}
+        {fields.has("rir") && <InlineNumberField label="RIR" value={set.rir_value} onCommit={(v) => onChange({ rir_value: v })} width="w-14" />}
+        {fields.has("duration") && <InlineDurationField label="Time" value={set.duration_seconds} onCommit={(v) => onChange({ duration_seconds: v })} />}
+        {fields.has("pace") && <InlineDurationField label="Pace /km" value={set.pace_seconds_per_km} onCommit={(v) => onChange({ pace_seconds_per_km: v })} />}
+        {fields.has("heart_rate_zone") && <HeartRateZoneField set={set} onChange={onChange} />}
+        {fields.has("calories") && <InlineNumberField label="Calories" value={set.calories} onCommit={(v) => onChange({ calories: v })} width="w-16" />}
+        {fields.has("notes") && <NotesField set={set} onChange={onChange} placeholder="Coach notes (optional)" />}
+        {fields.has("notes_primary") && <NotesField set={set} onChange={onChange} placeholder="What should the athlete do?" primary />}
 
-      <button
-        type="button"
-        onClick={onDelete}
-        aria-label="Delete prescription row"
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      >
-        <Trash2 className="size-4" />
-      </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="Delete prescription row"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </div>
+
+      {/* Rest and Distance get their own preset-chip rows below the main
+          line rather than sitting inline with everything else — both spec
+          "smarter inputs" fields, and a 5-preset chip row is too wide to
+          share a line with sets/reps/weight without wrapping mid-word. */}
+      {fields.has("distance") && <DistancePresetField value={set.distance_meters} onCommit={(v) => onChange({ distance_meters: v })} />}
+      {fields.has("rest") && <RestPresetField value={set.rest_seconds} onCommit={(v) => onChange({ rest_seconds: v })} />}
+
+      {advanced && <AdvancedFieldsEditor value={set.advanced_config} onChange={(v) => onChange({ advanced_config: v })} />}
     </div>
   );
 }
@@ -122,10 +137,6 @@ function RepRangeField({ set, onChange }: { set: SetRow; onChange: (patch: Parti
       <span className="shrink-0 text-xs text-muted-foreground">reps</span>
     </div>
   );
-}
-
-function DistanceField({ set, onChange }: { set: SetRow; onChange: (patch: Partial<SetRow>) => void }) {
-  return <InlineDistanceField value={set.distance_meters} onCommit={(v) => onChange({ distance_meters: v })} />;
 }
 
 function Percent1RMFields({ set, onChange }: { set: SetRow; onChange: (patch: Partial<SetRow>) => void }) {

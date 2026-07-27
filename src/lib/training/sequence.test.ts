@@ -21,12 +21,13 @@ function makeSet(overrides: Partial<SetPrescription> & Pick<SetPrescription, "id
     distance_meters: null,
     duration_seconds: null,
     pace_seconds_per_km: null,
+    advanced_config: null,
     ...overrides,
   };
 }
 
 function makeBlock(overrides: Partial<BlockRow> & Pick<BlockRow, "id" | "day_id" | "position" | "exercises">): BlockRow {
-  return { block_type: "straight", rounds: 1, ...overrides };
+  return { block_type: "straight", block_role: "main", rounds: 1, ...overrides };
 }
 
 describe("buildExerciseList", () => {
@@ -97,6 +98,39 @@ describe("buildExerciseList", () => {
 
     const list = buildExerciseList(blocks);
     expect(list.map((e) => e.id)).toEqual(["ex-a", "ex-b"]);
+  });
+
+  it("orders warm-up before the main workout before conditioning, even when their positions collide", () => {
+    // Position is scoped per (day_id, block_role) — a warmup block and a
+    // conditioning block can both legitimately be position 1, since they
+    // don't share a position sequence with 'main'. Role order has to win
+    // the tie, not raw position.
+    const blocks: BlockRow[] = [
+      makeBlock({
+        id: "block-conditioning",
+        day_id: "day-1",
+        position: 1,
+        block_role: "conditioning",
+        exercises: [{ id: "ex-finisher", block_id: "block-conditioning", position: 1, exercise_id: "f", custom_name: null, notes: null, exercise_category: "cardio", sets: [] }],
+      }),
+      makeBlock({
+        id: "block-main",
+        day_id: "day-1",
+        position: 1,
+        block_role: "main",
+        exercises: [{ id: "ex-main", block_id: "block-main", position: 1, exercise_id: "m", custom_name: null, notes: null, exercise_category: "strength", sets: [] }],
+      }),
+      makeBlock({
+        id: "block-warmup",
+        day_id: "day-1",
+        position: 1,
+        block_role: "warmup",
+        exercises: [{ id: "ex-warmup", block_id: "block-warmup", position: 1, exercise_id: "w", custom_name: null, notes: null, exercise_category: "cardio", sets: [] }],
+      }),
+    ];
+
+    const list = buildExerciseList(blocks);
+    expect(list.map((e) => e.id)).toEqual(["ex-warmup", "ex-main", "ex-finisher"]);
   });
 });
 

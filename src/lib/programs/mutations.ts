@@ -1,10 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   BlockExerciseRow,
+  BlockRole,
   BlockRow,
   BlockType,
   DayRow,
+  DayTemplateRow,
   ExerciseCategory,
+  ExerciseTemplateRow,
   PrescriptionType,
   ProgramDiscipline,
   ProgramTemplateRow,
@@ -67,6 +70,7 @@ function newSetRow(
     distance_meters: null,
     duration_seconds: null,
     pace_seconds_per_km: null,
+    advanced_config: null,
   };
   return { ...base, ...overrides };
 }
@@ -97,6 +101,7 @@ function setRowInsertPayload(set: SetRow) {
     distance_meters: set.distance_meters,
     duration_seconds: set.duration_seconds,
     pace_seconds_per_km: set.pace_seconds_per_km,
+    advanced_config: set.advanced_config,
   };
 }
 
@@ -545,6 +550,7 @@ export async function addWeek(
         day_id: dayId,
         position: sourceBlock.position,
         block_type: sourceBlock.block_type,
+        block_role: sourceBlock.block_role,
         rounds: sourceBlock.rounds,
       });
 
@@ -660,26 +666,118 @@ export async function updateDay(
 }
 
 /**
+ * "Add day" — a brand-new, empty day appended to the end of the week, same
+ * "add another one" pattern as Add Week (addWeek, below) and Duplicate Day
+ * (duplicateDay, right below this). Unlike duplicateDay this clones
+ * nothing — no source day, no blocks — so it's just the bare
+ * training_days insert every other "new day" mutation already does as its
+ * first step.
+ */
+export async function addDay(
+  supabase: SupabaseClient,
+  params: { weekId: string; position: number }
+): Promise<{ day: DayRow | null; error: string | null }> {
+  const dayId = newId();
+  const { error } = await supabase.from("training_days").insert({
+    id: dayId,
+    week_id: params.weekId,
+    position: params.position,
+    label: null,
+    is_rest_day: false,
+  });
+  if (error) return { day: null, error: error.message };
+  return { day: { id: dayId, week_id: params.weekId, position: params.position, label: null, is_rest_day: false, blocks: [] }, error: null };
+}
+
+/**
+ * Deletes one day out of a week — the counterpart to deleteWeek, just one
+ * level down the tree. Cascades to that day's blocks/exercises/sets at the
+ * DB level (same FK cascade every other delete in this tree relies on),
+ * same as deleteWeek cascading to its days.
+ */
+export async function deleteDay(supabase: SupabaseClient, dayId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("training_days").delete().eq("id", dayId);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * "Duplicate this day" — creates a brand-new day in the same week (appended
+ * at the end, like Add Week always appends a new week) and clones every
+ * block from `sourceDay` into it. Nothing in the schema caps how many days
+ * a week can have (`unique (week_id, position)` allows any count, same as
+ * program_weeks itself), so this is a straightforward extension of the
+ * same "add another one" pattern Add Week already uses at the week level.
+ * Reuses copyDayContents for the actual block cloning — an empty
+ * `targetDayBlocks` (nothing exists in the new day yet) means every
+ * section's position counter starts fresh at 1, exactly as it should for a
+ * brand-new day.
+ */
+export async function duplicateDay(
+  supabase: SupabaseClient,
+  params: { sourceDay: DayRow; weekId: string; position: number }
+): Promise<{ day: DayRow | null; error: string | null }> {
+  const dayId = newId();
+  const label = params.sourceDay.label ? `${params.sourceDay.label} copy` : null;
+
+  const { error: dayError } = await supabase.from("training_days").insert({
+    id: dayId,
+    week_id: params.weekId,
+    position: params.position,
+    label,
+    is_rest_day: false,
+  });
+  if (dayError) return { day: null, error: dayError.message };
+
+  const { blocks, error: blocksError } = await copyDayContents(supabase, {
+    sourceDay: params.sourceDay,
+    targetDayId: dayId,
+    targetDayBlocks: [],
+  });
+  if (blocksError) return { day: null, error: blocksError };
+
+  return { day: { id: dayId, week_id: params.weekId, position: params.position, label, is_rest_day: false, blocks }, error: null };
+}
+
+/**
  * Duplicates every block in `sourceDay` and appends the copies to the end
  * of the target day (non-destructive — existing content on the target day
  * is left alone).
+ *
+ * Position is scoped per (day_id, block_role) (migration 0032), so a
+ * single shared "next position" counter across the whole target day would
+ * both misorder sections and risk colliding with an existing block in a
+ * different role that happens to occupy the same number. Each role gets
+ * its own counter, seeded from that role's actual next position in
+ * `targetDayBlocks` — the target day's *current* blocks, passed in rather
+ * than re-fetched, since the caller (ProgramBuilder) already has them in
+ * local state.
  */
 export async function copyDayContents(
   supabase: SupabaseClient,
-  params: { sourceDay: DayRow; targetDayId: string; targetStartPosition: number }
+  params: { sourceDay: DayRow; targetDayId: string; targetDayBlocks: BlockRow[] }
 ): Promise<{ blocks: BlockRow[]; error: string | null }> {
   const blocksToInsert: Record<string, unknown>[] = [];
   const exercisesToInsert: Record<string, unknown>[] = [];
   const setsToInsert: Record<string, unknown>[] = [];
 
-  const newBlocks: BlockRow[] = params.sourceDay.blocks.map((sourceBlock, i) => {
+  const nextPositionByRole = new Map<BlockRole, number>();
+  function nextPositionFor(role: BlockRole): number {
+    const current =
+      nextPositionByRole.get(role) ??
+      Math.max(0, ...params.targetDayBlocks.filter((b) => b.block_role === role).map((b) => b.position)) + 1;
+    nextPositionByRole.set(role, current + 1);
+    return current;
+  }
+
+  const newBlocks: BlockRow[] = params.sourceDay.blocks.map((sourceBlock) => {
     const blockId = newId();
-    const position = params.targetStartPosition + i;
+    const position = nextPositionFor(sourceBlock.block_role);
     blocksToInsert.push({
       id: blockId,
       day_id: params.targetDayId,
       position,
       block_type: sourceBlock.block_type,
+      block_role: sourceBlock.block_role,
       rounds: sourceBlock.rounds,
     });
 
@@ -724,6 +822,171 @@ export async function copyDayContents(
   return { blocks: newBlocks, error: null };
 }
 
+/**
+ * Inserts a saved day template (migration 0033) into an existing day,
+ * appending to whatever's already there — non-destructive, same as
+ * copyDayContents. A day template's `template_data.blocks` is a full
+ * `BlockRow[]` snapshot (see DayTemplateRow's doc comment), the exact
+ * shape copyDayContents already clones with fresh ids and per-role
+ * position scoping; the only difference from "copy another day's
+ * contents" is where the source blocks come from, so this just wraps the
+ * template's blocks in a placeholder DayRow and delegates.
+ */
+export async function insertDayTemplate(
+  supabase: SupabaseClient,
+  params: { targetDayId: string; targetDayBlocks: BlockRow[]; template: DayTemplateRow }
+): Promise<{ blocks: BlockRow[]; error: string | null }> {
+  return copyDayContents(supabase, {
+    sourceDay: { id: "", week_id: "", position: 0, label: null, is_rest_day: false, blocks: params.template.template_data.blocks },
+    targetDayId: params.targetDayId,
+    targetDayBlocks: params.targetDayBlocks,
+  });
+}
+
+/**
+ * "Duplicate this exercise" — the single quick action the spec calls out
+ * as especially important, since coaches frequently reuse the same
+ * exercise (a working set followed by a backoff set of the same movement,
+ * the same accessory on multiple days, etc.). Always lands as a new
+ * standalone (straight) block immediately after the source exercise's own
+ * block, carrying a full copy of its prescription rows — regardless of
+ * whether the source was itself part of a superset, duplicating just the
+ * one exercise the coach clicked is the least surprising result (cloning
+ * the whole superset it happened to be grouped in is a different action,
+ * not implemented here). Same clone-with-fresh-ids shape as
+ * copyDayContents, just scoped to one exercise instead of a whole day.
+ */
+export async function duplicateExercise(
+  supabase: SupabaseClient,
+  /** `blockRole` defaults to 'main' — every existing call site predates
+   * Warm-up/Conditioning sections and still means "duplicate into the main
+   * workout." Callers that know the source block's role (see
+   * ProgramBuilder's handleDuplicateExercise) should pass it through so a
+   * warm-up exercise's duplicate lands back in Warm-up, not Main. */
+  params: { dayId: string; position: number; exercise: BlockExerciseRow; blockRole?: BlockRole }
+): Promise<{ block: BlockRow | null; error: string | null }> {
+  const blockId = newId();
+  const exerciseId = newId();
+  const blockRole: BlockRole = params.blockRole ?? "main";
+
+  const { error: blockError } = await supabase.from("exercise_blocks").insert({
+    id: blockId,
+    day_id: params.dayId,
+    position: params.position,
+    block_type: "straight",
+    block_role: blockRole,
+    rounds: 1,
+  });
+  if (blockError) return { block: null, error: blockError.message };
+
+  const { error: exerciseError } = await supabase.from("block_exercises").insert({
+    id: exerciseId,
+    block_id: blockId,
+    position: 1,
+    exercise_id: params.exercise.exercise_id,
+    custom_name: params.exercise.custom_name,
+    notes: params.exercise.notes,
+    exercise_category: params.exercise.exercise_category,
+  });
+  if (exerciseError) return { block: null, error: exerciseError.message };
+
+  const newSets: SetRow[] = params.exercise.sets.map((sourceSet, i) => ({
+    ...sourceSet,
+    id: newId(),
+    block_exercise_id: exerciseId,
+    position: i + 1,
+  }));
+  if (newSets.length > 0) {
+    const { error: setsError } = await supabase.from("set_prescriptions").insert(newSets.map(setRowInsertPayload));
+    if (setsError) return { block: null, error: setsError.message };
+  }
+
+  const block: BlockRow = {
+    id: blockId,
+    day_id: params.dayId,
+    position: params.position,
+    block_type: "straight",
+    block_role: blockRole,
+    rounds: 1,
+    exercises: [
+      {
+        ...params.exercise,
+        id: exerciseId,
+        block_id: blockId,
+        position: 1,
+        sets: newSets,
+      },
+    ],
+  };
+  return { block, error: null };
+}
+
+/**
+ * Inserts a saved exercise template (migration 0033) as a new block — a
+ * template's `template_data` is stored as a full `BlockExerciseRow`
+ * snapshot (see ExerciseTemplateRow's doc comment), which is exactly the
+ * shape duplicateExercise already knows how to clone with fresh ids. No
+ * separate insert logic needed: "insert this template" and "duplicate this
+ * live exercise" are the same operation, just sourced differently.
+ */
+export async function addExerciseBlockFromTemplate(
+  supabase: SupabaseClient,
+  params: { dayId: string; position: number; role: BlockRole; template: ExerciseTemplateRow }
+): Promise<{ block: BlockRow | null; error: string | null }> {
+  return duplicateExercise(supabase, {
+    dayId: params.dayId,
+    position: params.position,
+    exercise: params.template.template_data,
+    blockRole: params.role,
+  });
+}
+
+/**
+ * "Move to another day" — bulk-editing spec item distinct from Duplicate
+ * Exercise (which deliberately leaves the original in place). Composed
+ * from two already-tested operations rather than new insert/delete logic:
+ * duplicateExercise clones the exercise into the target day, then the
+ * source is cleaned up the same way deleting it there normally would —
+ * removeExerciseFromBlock if it was one member of a superset (its
+ * block-mates stay put), or deleteBlock if it was the block's only
+ * exercise. Not a real database transaction (nothing in this codebase
+ * uses one — see the file-level pattern of sequential Supabase calls
+ * throughout), so a failure on the cleanup step after a successful copy
+ * leaves the exercise in both places rather than neither; the returned
+ * error says so explicitly rather than claiming a clean failure.
+ */
+export async function moveExerciseToDay(
+  supabase: SupabaseClient,
+  params: {
+    targetDayId: string;
+    targetPosition: number;
+    blockRole: BlockRole;
+    exercise: BlockExerciseRow;
+    sourceBlockId: string;
+    /** True when the source block has other exercises left after removing
+     * this one (a superset losing one member) — false deletes the whole
+     * (now-empty) block instead. */
+    sourceBlockHasOtherExercises: boolean;
+  }
+): Promise<{ block: BlockRow | null; error: string | null }> {
+  const { block, error } = await duplicateExercise(supabase, {
+    dayId: params.targetDayId,
+    position: params.targetPosition,
+    exercise: params.exercise,
+    blockRole: params.blockRole,
+  });
+  if (error || !block) return { block: null, error };
+
+  const { error: removeError } = params.sourceBlockHasOtherExercises
+    ? await removeExerciseFromBlock(supabase, params.exercise.id)
+    : await deleteBlock(supabase, params.sourceBlockId);
+
+  if (removeError) {
+    return { block, error: "Moved, but couldn't remove it from the original day — you may need to delete it there yourself." };
+  }
+  return { block, error: null };
+}
+
 // ============================================================
 // Exercise blocks + exercises
 // ============================================================
@@ -737,11 +1000,12 @@ export async function addExerciseBlock(
    * program's new blocks don't all need switching by hand before they're
    * usable. Either way this is only ever a starting point:
    * switchExerciseCategory changes it same as before. */
-  params: { dayId: string; position: number; category?: ExerciseCategory }
+  params: { dayId: string; position: number; category?: ExerciseCategory; role?: BlockRole }
 ): Promise<{ block: BlockRow | null; error: string | null }> {
   const blockId = newId();
   const exerciseId = newId();
   const category: ExerciseCategory = params.category ?? "strength";
+  const role: BlockRole = params.role ?? "main";
   const prescriptionType = defaultPrescriptionType(category);
 
   const { error: blockError } = await supabase.from("exercise_blocks").insert({
@@ -749,6 +1013,7 @@ export async function addExerciseBlock(
     day_id: params.dayId,
     position: params.position,
     block_type: "straight",
+    block_role: role,
     rounds: 1,
   });
   if (blockError) return { block: null, error: blockError.message };
@@ -774,6 +1039,7 @@ export async function addExerciseBlock(
       day_id: params.dayId,
       position: params.position,
       block_type: "straight",
+      block_role: role,
       rounds: 1,
       exercises: [
         {
@@ -898,6 +1164,49 @@ export async function swapBlockPositions(
   return { error: e2?.message ?? null };
 }
 
+/**
+ * Generalizes swapBlockPositions to a full reorder — drag-and-drop can move
+ * a block several positions in one gesture, not just swap it with its
+ * immediate neighbor, so a chain of pairwise swaps isn't the right
+ * primitive here. `blocks` is the day's blocks in their new order; each
+ * gets a fresh random negative temp position first (same reasoning as
+ * swapBlockPositions: (day_id, position) is unique, so writing straight to
+ * final positions would collide with whichever sibling currently holds
+ * that number), then every block is set to its real final position in one
+ * second pass.
+ */
+export async function reorderBlocks(supabase: SupabaseClient, blocks: { id: string; position: number }[]): Promise<{ error: string | null }> {
+  for (const block of blocks) {
+    const tempPosition = -(1 + Math.floor(Math.random() * 1_000_000));
+    const { error } = await supabase.from("exercise_blocks").update({ position: tempPosition }).eq("id", block.id);
+    if (error) return { error: error.message };
+  }
+  for (const block of blocks) {
+    const { error } = await supabase.from("exercise_blocks").update({ position: block.position }).eq("id", block.id);
+    if (error) return { error: error.message };
+  }
+  return { error: null };
+}
+
+/** Reorders the set rows within one exercise — same staged-negative-position
+ * pattern as reorderBlocks (and for the same reason: `unique(block_exercise_id, position)`
+ * would reject writing final positions directly if any of them collide with
+ * an existing row's current position). Used by the Cardio Builder's
+ * drag-and-drop interval reordering; nothing stops it being reused for a
+ * future strength multi-row reorder too. */
+export async function reorderSets(supabase: SupabaseClient, sets: { id: string; position: number }[]): Promise<{ error: string | null }> {
+  for (const set of sets) {
+    const tempPosition = -(1 + Math.floor(Math.random() * 1_000_000));
+    const { error } = await supabase.from("set_prescriptions").update({ position: tempPosition }).eq("id", set.id);
+    if (error) return { error: error.message };
+  }
+  for (const set of sets) {
+    const { error } = await supabase.from("set_prescriptions").update({ position: set.position }).eq("id", set.id);
+    if (error) return { error: error.message };
+  }
+  return { error: null };
+}
+
 export async function updateBlockExercise(
   supabase: SupabaseClient,
   blockExerciseId: string,
@@ -1007,6 +1316,7 @@ export async function updateSetRow(
     distance_meters: number | null;
     duration_seconds: number | null;
     pace_seconds_per_km: number | null;
+    advanced_config: Record<string, string> | null;
   }>
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("set_prescriptions").update(patch).eq("id", setId);

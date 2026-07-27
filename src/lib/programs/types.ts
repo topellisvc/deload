@@ -1,5 +1,6 @@
 import type {
   BlockExercise,
+  BlockRole,
   BlockType,
   CardioPrescriptionType,
   ExerciseBlock,
@@ -16,6 +17,7 @@ import type {
 } from "@/lib/supabase/types";
 
 export type {
+  BlockRole,
   BlockType,
   CardioPrescriptionType,
   ExerciseCategory,
@@ -83,5 +85,45 @@ export interface ProgramTemplateRow {
   name: string;
   discipline: ProgramDiscipline;
   template_data: { weeks: WeekRow[] };
+  created_at: string;
+}
+
+/**
+ * A saved, reusable exercise prescription (migration 0033) — "Bench Press,
+ * 5x5 @ 80%, Rest 2min, note," insertable with one click into any day's
+ * Warm-up/Main/Conditioning section. `template_data` is a full
+ * `BlockExerciseRow` snapshot, ids and all — exactly like
+ * ProgramTemplateRow.template_data stores a full `WeekRow[]` snapshot with
+ * its original (by-then-stale) ids. Materializing
+ * (addExerciseBlockFromTemplate, mutations.ts) never reads those ids as
+ * real foreign keys; it generates entirely fresh ones, the same
+ * clone-with-fresh-ids shape duplicateExercise already uses for a *live*
+ * exercise — this is that same operation, just sourced from a stored
+ * snapshot instead.
+ */
+export interface ExerciseTemplateRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  exercise_category: ExerciseCategory;
+  template_data: BlockExerciseRow;
+  created_at: string;
+}
+
+/**
+ * A saved, reusable training day (migration 0033) — "Upper Strength,"
+ * "Lower Hypertrophy," reusable across programs, not just within the one
+ * it was saved from. `template_data.blocks` is a full `BlockRow[]`
+ * snapshot, same stale-ids-as-structure-only convention as
+ * ExerciseTemplateRow above. Materializing (insertDayTemplate,
+ * mutations.ts) clones every block/exercise/set with fresh ids, the same
+ * shape copyDayContents already uses to clone a day's contents into
+ * another day.
+ */
+export interface DayTemplateRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  template_data: { blocks: BlockRow[] };
   created_at: string;
 }

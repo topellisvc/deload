@@ -28,35 +28,68 @@ vi.mock("@/components/programs/day-column", () => ({
     onCategoryChange,
     onAddExerciseToBlock,
     addingExerciseBlockId,
+    onDeleteDay,
   }: {
     day: DayRow;
     onCategoryChange: (blockId: string, blockExerciseId: string, category: string) => void;
     onAddExerciseToBlock: (blockId: string) => void;
     addingExerciseBlockId: string | null;
+    onDeleteDay?: () => void;
   }) => (
     <div>
       <span>{day.label}</span>
-      <button
-        type="button"
-        onClick={() => {
-          const block = day.blocks[0]!;
-          const exercise = block.exercises[0]!;
-          onCategoryChange(block.id, exercise.id, "running");
-        }}
-      >
-        Switch to running
-      </button>
-      <button type="button" disabled={addingExerciseBlockId === day.blocks[0]!.id} onClick={() => onAddExerciseToBlock(day.blocks[0]!.id)}>
-        {addingExerciseBlockId === day.blocks[0]!.id
-          ? "Adding…"
-          : day.blocks[0]!.exercises.length > 1
-            ? "Add another exercise"
-            : "Make this a superset"}
-      </button>
+      {/* A freshly-added blank day (see the "Add day" tests below) has no
+          blocks yet — guard rather than assume day.blocks[0] exists, same
+          as the real DayColumn does. */}
+      {day.blocks[0] && (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              const block = day.blocks[0]!;
+              const exercise = block.exercises[0]!;
+              onCategoryChange(block.id, exercise.id, "running");
+            }}
+          >
+            Switch to running
+          </button>
+          <button type="button" disabled={addingExerciseBlockId === day.blocks[0].id} onClick={() => onAddExerciseToBlock(day.blocks[0]!.id)}>
+            {addingExerciseBlockId === day.blocks[0].id
+              ? "Adding…"
+              : day.blocks[0].exercises.length > 1
+                ? "Add another exercise"
+                : "Make this a superset"}
+          </button>
+        </>
+      )}
+      {onDeleteDay && (
+        <button type="button" onClick={onDeleteDay}>
+          Delete {day.label || `Day ${day.position}`}
+        </button>
+      )}
     </div>
   ),
 }));
 vi.mock("@/components/programs/add-week-dialog", () => ({ AddWeekDialog: () => null }));
+// ProgramBuilder fetches the coach's exercise library on mount (see its
+// own effect) purely to hand down to DayColumn/ExerciseCard — none of
+// these tests exercise that, and the mocked supabase client below has no
+// real `.from`, so the real implementation would throw. A resolved empty
+// list keeps that effect a no-op here.
+vi.mock("@/lib/programs/exercise-library", () => ({
+  getExerciseLibrary: vi.fn().mockResolvedValue([]),
+  addToExerciseLibrary: vi.fn(),
+}));
+vi.mock("@/lib/programs/exercise-templates", () => ({
+  getExerciseTemplates: vi.fn().mockResolvedValue([]),
+  saveExerciseAsTemplate: vi.fn(),
+  deleteExerciseTemplate: vi.fn(),
+}));
+vi.mock("@/lib/programs/day-templates", () => ({
+  getDayTemplates: vi.fn().mockResolvedValue([]),
+  saveDayAsTemplate: vi.fn(),
+  deleteDayTemplate: vi.fn(),
+}));
 vi.mock("@/lib/programs/mutations", () => ({
   createProgram: vi.fn(),
   cloneProgram: vi.fn(),
@@ -67,6 +100,8 @@ vi.mock("@/lib/programs/mutations", () => ({
   deactivateProgram: vi.fn(),
   addWeek: vi.fn(),
   deleteWeek: vi.fn(),
+  addDay: vi.fn(),
+  deleteDay: vi.fn(),
   updateDay: vi.fn(),
   copyDayContents: vi.fn(),
   addExerciseBlock: vi.fn(),
@@ -108,6 +143,7 @@ function makeSet(overrides: Partial<SetRow> = {}): SetRow {
     distance_meters: null,
     duration_seconds: null,
     pace_seconds_per_km: null,
+    advanced_config: null,
     ...overrides,
   };
 }
@@ -132,6 +168,7 @@ function makeBlock(overrides: Partial<BlockRow> = {}): BlockRow {
     day_id: "day-1",
     position: 1,
     block_type: "straight",
+    block_role: "main",
     rounds: 1,
     exercises: [makeExercise()],
     ...overrides,
@@ -191,6 +228,7 @@ describe("ProgramBuilder shared confirm dialog", () => {
   beforeEach(() => {
     vi.mocked(m.deleteProgram).mockReset();
     vi.mocked(m.deleteWeek).mockReset();
+    vi.mocked(m.deleteDay).mockReset();
     vi.mocked(m.switchExerciseCategory).mockReset();
     routerMock.push.mockClear();
     routerMock.refresh.mockClear();
@@ -232,6 +270,45 @@ describe("ProgramBuilder shared confirm dialog", () => {
   it("never offers a delete-week button when there is only one week", () => {
     render(<ProgramBuilder initialProgram={makeProgram({ weeks: [makeWeek()] })} />);
     expect(screen.queryByRole("button", { name: /delete week 1/i })).not.toBeInTheDocument();
+  });
+
+  it("confirms and calls deleteDay for a non-last day", async () => {
+    vi.mocked(m.deleteDay).mockResolvedValue({ error: null });
+    const user = userEvent.setup();
+    render(
+      <ProgramBuilder
+        initialProgram={makeProgram({
+          weeks: [makeWeek({ days: [makeDay({ id: "day-1", position: 1, label: "Day 1" }), makeDay({ id: "day-2", position: 2, label: "Day 2" })] })],
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Delete Day 1" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Delete Day 1? This can't be undone.")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(m.deleteDay).toHaveBeenCalledWith(expect.anything(), "day-1");
+  });
+
+  it("never offers a delete-day button when there is only one day in the week", () => {
+    render(<ProgramBuilder initialProgram={makeProgram({ weeks: [makeWeek({ days: [makeDay()] })] })} />);
+    expect(screen.queryByRole("button", { name: /delete day 1/i })).not.toBeInTheDocument();
+  });
+
+  it("adds a blank day at the end of the week and it becomes deletable once there's more than one", async () => {
+    vi.mocked(m.addDay).mockResolvedValue({
+      day: { id: "day-2", week_id: "week-1", position: 2, label: null, is_rest_day: false, blocks: [] },
+      error: null,
+    });
+    const user = userEvent.setup();
+    render(<ProgramBuilder initialProgram={makeProgram({ weeks: [makeWeek({ days: [makeDay({ id: "day-1", position: 1 })] })] })} />);
+
+    expect(screen.queryByRole("button", { name: /delete day/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add day" }));
+
+    expect(m.addDay).toHaveBeenCalledWith(expect.anything(), { weekId: "week-1", position: 2 });
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /delete day/i })).toHaveLength(2));
   });
 
   it("confirms before switching exercise category when the exercise already has prescription data", async () => {
@@ -334,5 +411,40 @@ describe("ProgramBuilder add-exercise-to-block pending state", () => {
 
     resolveAdd({ exercise: makeExercise({ id: "ex-2" }), error: null });
     await waitFor(() => expect(screen.getByRole("button", { name: "Add another exercise" })).not.toBeDisabled());
+  });
+});
+
+/**
+ * Every background Supabase write from ProgramBuilder's handlers is
+ * wrapped in `track()` to drive this "Saving…/All changes saved"
+ * indicator — nothing else in the tree surfaces that a write is actually
+ * in flight or has landed (edits apply to local state immediately, see
+ * this component's own doc comment). Reuses addExerciseToBlock's
+ * controllable-promise pattern (see the describe block above) to observe
+ * both states around a real await boundary.
+ */
+describe("ProgramBuilder autosave status indicator", () => {
+  beforeEach(() => {
+    vi.mocked(m.addExerciseToBlock).mockReset();
+    vi.mocked(m.updateBlockType).mockResolvedValue({ error: null });
+  });
+
+  it("shows nothing before any edit, 'Saving…' while a write is in flight, then 'All changes saved' once it resolves", async () => {
+    let resolveAdd!: (v: { exercise: BlockExerciseRow; error: null }) => void;
+    vi.mocked(m.addExerciseToBlock).mockReturnValue(
+      new Promise((resolve) => {
+        resolveAdd = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    render(<ProgramBuilder initialProgram={makeProgram()} />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Make this a superset" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Saving…");
+
+    resolveAdd({ exercise: makeExercise({ id: "ex-2" }), error: null });
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("All changes saved"));
   });
 });

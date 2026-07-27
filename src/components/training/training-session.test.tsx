@@ -98,6 +98,7 @@ const FAKE_EXERCISE: BlockExerciseRow = {
       distance_meters: null,
       duration_seconds: null,
       pace_seconds_per_km: null,
+      advanced_config: null,
     },
   ],
 };

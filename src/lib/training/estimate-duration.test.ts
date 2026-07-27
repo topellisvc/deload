@@ -21,6 +21,7 @@ function makeSet(overrides: Partial<SetPrescription> & Pick<SetPrescription, "id
     distance_meters: null,
     duration_seconds: null,
     pace_seconds_per_km: null,
+    advanced_config: null,
     ...overrides,
   };
 }
@@ -32,6 +33,7 @@ function makeBlocks(sets: SetPrescription[], category: "strength" | "running" | 
       day_id: "day-1",
       position: 1,
       block_type: "straight",
+      block_role: "main",
       rounds: 1,
       exercises: [
         { id: "ex-1", block_id: "block-1", position: 1, exercise_id: "a", custom_name: null, notes: null, exercise_category: category, sets },
