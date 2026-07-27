@@ -357,3 +357,38 @@ describe("ProgramBuilder add-exercise-to-block pending state", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Add another exercise" })).not.toBeDisabled());
   });
 });
+
+/**
+ * Every background Supabase write from ProgramBuilder's handlers is
+ * wrapped in `track()` to drive this "Saving…/All changes saved"
+ * indicator — nothing else in the tree surfaces that a write is actually
+ * in flight or has landed (edits apply to local state immediately, see
+ * this component's own doc comment). Reuses addExerciseToBlock's
+ * controllable-promise pattern (see the describe block above) to observe
+ * both states around a real await boundary.
+ */
+describe("ProgramBuilder autosave status indicator", () => {
+  beforeEach(() => {
+    vi.mocked(m.addExerciseToBlock).mockReset();
+    vi.mocked(m.updateBlockType).mockResolvedValue({ error: null });
+  });
+
+  it("shows nothing before any edit, 'Saving…' while a write is in flight, then 'All changes saved' once it resolves", async () => {
+    let resolveAdd!: (v: { exercise: BlockExerciseRow; error: null }) => void;
+    vi.mocked(m.addExerciseToBlock).mockReturnValue(
+      new Promise((resolve) => {
+        resolveAdd = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    render(<ProgramBuilder initialProgram={makeProgram()} />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Make this a superset" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Saving…");
+
+    resolveAdd({ exercise: makeExercise({ id: "ex-2" }), error: null });
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("All changes saved"));
+  });
+});

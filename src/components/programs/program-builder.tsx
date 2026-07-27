@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type {
   BlockExerciseRow,
@@ -169,6 +169,27 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     setSaveError(message);
   }
 
+  // ---- autosave status ----
+  // Every edit here applies to local state immediately and fires its
+  // Supabase write in the background (see this component's own doc
+  // comment) — nothing already surfaces that the write is actually
+  // happening or has landed. `track` wraps each of those background
+  // promises to drive a subtle "Saving…/All changes saved" indicator.
+  // `pendingSavesRef` is a plain counter (not state) since only "is it
+  // zero or not" needs to be reactive — every individual increment
+  // shouldn't force a re-render.
+  const pendingSavesRef = useRef(0);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  function track<T>(promise: Promise<T>): Promise<T> {
+    pendingSavesRef.current += 1;
+    setSaveStatus("saving");
+    return promise.finally(() => {
+      pendingSavesRef.current -= 1;
+      if (pendingSavesRef.current === 0) setSaveStatus("saved");
+    });
+  }
+
   // ---- immutable tree-update helpers ----
   function updateWeek(weekId: string, updater: (w: WeekRow) => WeekRow) {
     setProgram((p) => ({ ...p, weeks: p.weeks.map((w) => (w.id === weekId ? updater(w) : w)) }));
@@ -188,13 +209,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       return;
     }
     setProgram((p) => ({ ...p, name: trimmed }));
-    const { error } = await m.updateProgram(supabase, program.id, { name: trimmed });
+    const { error } = await track(m.updateProgram(supabase, program.id, { name: trimmed }));
     if (error) fail(error);
   }
 
   async function handleDisciplineChange(discipline: ProgramDiscipline) {
     setProgram((p) => ({ ...p, discipline }));
-    const { error } = await m.updateProgram(supabase, program.id, { discipline });
+    const { error } = await track(m.updateProgram(supabase, program.id, { discipline }));
     if (error) fail(error);
   }
 
@@ -222,13 +243,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const lastWeek = program.weeks[program.weeks.length - 1];
     if (!lastWeek) return "This program has no weeks yet.";
     const dayTemplate = lastWeek.days.map((d) => ({ label: d.label, is_rest_day: d.is_rest_day }));
-    const { week: newWeek, error } = await m.addWeek(supabase, {
-      programId: program.id,
-      position: nextPosition(program.weeks),
-      dayTemplate,
-      sourceWeek: params.sourceWeek,
-      progressionPercent: params.progressionPercent,
-    });
+    const { week: newWeek, error } = await track(
+      m.addWeek(supabase, {
+        programId: program.id,
+        position: nextPosition(program.weeks),
+        dayTemplate,
+        sourceWeek: params.sourceWeek,
+        progressionPercent: params.progressionPercent,
+      })
+    );
     if (error || !newWeek) return error ?? "Something went wrong adding the week.";
     setProgram((p) => ({ ...p, weeks: [...p.weeks, newWeek] }));
     setSelectedWeekId(newWeek.id);
@@ -248,7 +271,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         setProgram((p) => ({ ...p, weeks: remaining }));
         if (selectedWeekId === weekId) setSelectedWeekId(remaining[0]?.id ?? "");
         setPendingConfirm(null);
-        const { error } = await m.deleteWeek(supabase, weekId);
+        const { error } = await track(m.deleteWeek(supabase, weekId));
         if (error) fail(error);
       },
     });
@@ -257,7 +280,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // ---- days ----
   function handleUpdateDay(dayId: string, patch: { label?: string | null; is_rest_day?: boolean }) {
     updateDay(week.id, dayId, (d) => ({ ...d, ...patch }));
-    m.updateDay(supabase, dayId, patch).then(({ error }) => {
+    track(m.updateDay(supabase, dayId, patch)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -265,11 +288,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleCopyDayTo(sourceDay: DayRow, targetDayId: string) {
     const targetDay = week.days.find((d) => d.id === targetDayId);
     if (!targetDay) return;
-    const { blocks, error } = await m.copyDayContents(supabase, {
-      sourceDay,
-      targetDayId,
-      targetDayBlocks: targetDay.blocks,
-    });
+    const { blocks, error } = await track(
+      m.copyDayContents(supabase, {
+        sourceDay,
+        targetDayId,
+        targetDayBlocks: targetDay.blocks,
+      })
+    );
     if (error) {
       fail(error);
       return;
@@ -285,11 +310,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleInsertDayTemplate(dayId: string, template: DayTemplateRow) {
     const targetDay = week.days.find((d) => d.id === dayId);
     if (!targetDay) return;
-    const { blocks, error } = await m.insertDayTemplate(supabase, {
-      targetDayId: dayId,
-      targetDayBlocks: targetDay.blocks,
-      template,
-    });
+    const { blocks, error } = await track(
+      m.insertDayTemplate(supabase, {
+        targetDayId: dayId,
+        targetDayBlocks: targetDay.blocks,
+        template,
+      })
+    );
     if (error) {
       fail(error);
       return;
@@ -300,11 +327,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleDuplicateDay(dayId: string) {
     const sourceDay = week.days.find((d) => d.id === dayId);
     if (!sourceDay) return;
-    const { day: newDay, error } = await m.duplicateDay(supabase, {
-      sourceDay,
-      weekId: week.id,
-      position: nextPosition(week.days),
-    });
+    const { day: newDay, error } = await track(
+      m.duplicateDay(supabase, {
+        sourceDay,
+        weekId: week.id,
+        position: nextPosition(week.days),
+      })
+    );
     if (error || !newDay) {
       fail(error ?? "Couldn't duplicate that day.");
       return;
@@ -329,14 +358,16 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
     const sourceBlockHasOtherExercises = sourceBlock.exercises.length > 1;
     setMovingExerciseId(blockExerciseId);
-    const { block, error } = await m.moveExerciseToDay(supabase, {
-      targetDayId,
-      targetPosition: nextPosition(targetDay.blocks.filter((b) => b.block_role === sourceBlock.block_role)),
-      blockRole: sourceBlock.block_role,
-      exercise,
-      sourceBlockId: blockId,
-      sourceBlockHasOtherExercises,
-    });
+    const { block, error } = await track(
+      m.moveExerciseToDay(supabase, {
+        targetDayId,
+        targetPosition: nextPosition(targetDay.blocks.filter((b) => b.block_role === sourceBlock.block_role)),
+        blockRole: sourceBlock.block_role,
+        exercise,
+        sourceBlockId: blockId,
+        sourceBlockHasOtherExercises,
+      })
+    );
     setMovingExerciseId(null);
     if (!block) {
       fail(error ?? "Couldn't move that exercise.");
@@ -370,12 +401,14 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleAddBlock(dayId: string, role: BlockRole = "main") {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
-    const { block, error } = await m.addExerciseBlock(supabase, {
-      dayId,
-      position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
-      category: defaultCategoryForDiscipline(program.discipline),
-      role,
-    });
+    const { block, error } = await track(
+      m.addExerciseBlock(supabase, {
+        dayId,
+        position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
+        category: defaultCategoryForDiscipline(program.discipline),
+        role,
+      })
+    );
     if (error || !block) {
       fail(error ?? "Couldn't add exercise.");
       return;
@@ -386,12 +419,14 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleInsertExerciseTemplate(dayId: string, role: BlockRole, template: ExerciseTemplateRow) {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
-    const { block, error } = await m.addExerciseBlockFromTemplate(supabase, {
-      dayId,
-      position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
-      role,
-      template,
-    });
+    const { block, error } = await track(
+      m.addExerciseBlockFromTemplate(supabase, {
+        dayId,
+        position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
+        role,
+        template,
+      })
+    );
     if (error || !block) {
       fail(error ?? "Couldn't insert that template.");
       return;
@@ -401,7 +436,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
   function handleDeleteBlock(dayId: string, blockId: string) {
     updateDay(week.id, dayId, (d) => ({ ...d, blocks: d.blocks.filter((b) => b.id !== blockId) }));
-    m.deleteBlock(supabase, blockId).then(({ error }) => {
+    track(m.deleteBlock(supabase, blockId)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -419,11 +454,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     // strength block shouldn't suddenly default its 2nd exercise to
     // "cardio" just because the program as a whole mixes both.
     const category = block.exercises[0]?.exercise_category ?? defaultCategoryForDiscipline(program.discipline);
-    const { exercise, error } = await m.addExerciseToBlock(supabase, {
-      blockId,
-      position: nextPosition(block.exercises),
-      category,
-    });
+    const { exercise, error } = await track(
+      m.addExerciseToBlock(supabase, {
+        blockId,
+        position: nextPosition(block.exercises),
+        category,
+      })
+    );
     setAddingExerciseBlockId(null);
     if (error || !exercise) {
       fail(error ?? "Couldn't add exercise.");
@@ -436,7 +473,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       block_type: becomesGrouped ? "superset" : b.block_type,
     }));
     if (becomesGrouped) {
-      m.updateBlockType(supabase, blockId, "superset").then(({ error: e }) => {
+      track(m.updateBlockType(supabase, blockId, "superset")).then(({ error: e }) => {
         if (e) fail(e);
       });
     }
@@ -455,11 +492,11 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       exercises: b.exercises.filter((ex) => ex.id !== blockExerciseId),
       block_type: becomesUngrouped ? "straight" : b.block_type,
     }));
-    m.removeExerciseFromBlock(supabase, blockExerciseId).then(({ error }) => {
+    track(m.removeExerciseFromBlock(supabase, blockExerciseId)).then(({ error }) => {
       if (error) fail(error);
     });
     if (becomesUngrouped) {
-      m.updateBlockType(supabase, blockId, "straight").then(({ error }) => {
+      track(m.updateBlockType(supabase, blockId, "straight")).then(({ error }) => {
         if (error) fail(error);
       });
     }
@@ -467,7 +504,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
   function handleRoundsChange(dayId: string, blockId: string, rounds: number) {
     updateBlock(week.id, dayId, blockId, (b) => ({ ...b, rounds }));
-    m.updateBlockRounds(supabase, blockId, rounds).then(({ error }) => {
+    track(m.updateBlockRounds(supabase, blockId, rounds)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -483,7 +520,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       ...b,
       exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, ...patch } : ex)),
     }));
-    m.updateBlockExercise(supabase, blockExerciseId, patch).then(({ error }) => {
+    track(m.updateBlockExercise(supabase, blockExerciseId, patch)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -493,7 +530,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       ...b,
       exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, notes } : ex)),
     }));
-    m.updateBlockExercise(supabase, blockExerciseId, { notes }).then(({ error }) => {
+    track(m.updateBlockExercise(supabase, blockExerciseId, { notes })).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -519,12 +556,14 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const sourceBlock = day?.blocks.find((b) => b.id === blockId);
     const exercise = sourceBlock?.exercises.find((ex) => ex.id === blockExerciseId);
     if (!day || !sourceBlock || !exercise) return;
-    const { block, error } = await m.duplicateExercise(supabase, {
-      dayId,
-      position: nextPosition(day.blocks.filter((b) => b.block_role === sourceBlock.block_role)),
-      exercise,
-      blockRole: sourceBlock.block_role,
-    });
+    const { block, error } = await track(
+      m.duplicateExercise(supabase, {
+        dayId,
+        position: nextPosition(day.blocks.filter((b) => b.block_role === sourceBlock.block_role)),
+        exercise,
+        blockRole: sourceBlock.block_role,
+      })
+    );
     if (error || !block) {
       fail(error ?? "Couldn't duplicate that exercise.");
       return;
@@ -547,7 +586,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const positionById = new Map(orderedBlocks.map((b) => [b.id, b.position]));
     const reordered = [...day.blocks].map((b) => ({ ...b, position: positionById.get(b.id) ?? b.position })).sort((a, b) => a.position - b.position);
     updateDay(week.id, dayId, (d) => ({ ...d, blocks: reordered }));
-    m.reorderBlocks(supabase, orderedBlocks).then(({ error }) => {
+    track(m.reorderBlocks(supabase, orderedBlocks)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -562,7 +601,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
           : ex
       ),
     }));
-    m.reorderSets(supabase, orderedSets).then(({ error }) => {
+    track(m.reorderSets(supabase, orderedSets)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -574,13 +613,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     if (!exercise) return;
     const lastSet = exercise.sets[exercise.sets.length - 1];
     const prescriptionType = lastSet?.prescription_type ?? defaultPrescriptionType(exercise.exercise_category);
-    const { set, error } = await m.addSetRow(supabase, {
-      blockExerciseId: exercise.id,
-      position: nextPosition(exercise.sets),
-      category: exercise.exercise_category,
-      prescriptionType,
-      copyFrom: lastSet,
-    });
+    const { set, error } = await track(
+      m.addSetRow(supabase, {
+        blockExerciseId: exercise.id,
+        position: nextPosition(exercise.sets),
+        category: exercise.exercise_category,
+        prescriptionType,
+        copyFrom: lastSet,
+      })
+    );
     if (error || !set) {
       fail(error ?? "Couldn't add set.");
       return;
@@ -592,7 +633,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   }
 
   async function performCategoryChange(dayId: string, blockId: string, blockExerciseId: string, category: ExerciseCategory) {
-    const { set, error } = await m.switchExerciseCategory(supabase, { blockExerciseId, category });
+    const { set, error } = await track(m.switchExerciseCategory(supabase, { blockExerciseId, category }));
     if (error || !set) {
       fail(error ?? "Couldn't switch exercise category.");
       return;
@@ -646,7 +687,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         ex.id === blockExerciseId ? { ...ex, sets: ex.sets.map((s) => ({ ...s, prescription_type: prescriptionType })) } : ex
       ),
     }));
-    const { error } = await m.updatePrescriptionType(supabase, { blockExerciseId, prescriptionType });
+    const { error } = await track(m.updatePrescriptionType(supabase, { blockExerciseId, prescriptionType }));
     if (error) fail(error);
   }
 
@@ -657,7 +698,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         ex.id === blockExerciseId ? { ...ex, sets: ex.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)) } : ex
       ),
     }));
-    m.updateSetRow(supabase, setId, patch).then(({ error }) => {
+    track(m.updateSetRow(supabase, setId, patch)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -669,7 +710,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         ex.id === blockExerciseId ? { ...ex, sets: ex.sets.filter((s) => s.id !== setId) } : ex
       ),
     }));
-    m.deleteSetRow(supabase, setId).then(({ error }) => {
+    track(m.deleteSetRow(supabase, setId)).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -709,7 +750,27 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
           />
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
-          <SegmentedControl aria-label="Editing mode" options={BUILDER_MODE_OPTIONS} value={mode} onChange={setMode} className="w-fit" />
+          <div className="flex items-center gap-3 self-start sm:self-end">
+            {saveStatus !== "idle" && (
+              <span
+                role="status"
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+              >
+                {saveStatus === "saving" ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <Check className="size-3.5 text-primary" />
+                    All changes saved
+                  </>
+                )}
+              </span>
+            )}
+            <SegmentedControl aria-label="Editing mode" options={BUILDER_MODE_OPTIONS} value={mode} onChange={setMode} className="w-fit" />
+          </div>
           <div className="flex items-center gap-2 self-start sm:self-end">
           <Link
             href={`/programs/${program.id}`}
