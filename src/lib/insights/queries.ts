@@ -2,10 +2,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateReadingTimeMinutes } from "@/lib/insights/reading-time";
 import type {
   InsightsArticleDetail,
+  InsightsArticleStatus,
   InsightsArticleSummary,
   InsightsContributor,
+  InsightsContributorApplication,
   InsightsContributorProfile,
+  InsightsContributorStatus,
+  InsightsEditableArticle,
+  InsightsMyArticleSummary,
   InsightsReference,
+  InsightsReviewQueueArticle,
   InsightsTopic,
 } from "@/lib/insights/types";
 
@@ -94,6 +100,31 @@ function mapContributor(row: ContributorRow): InsightsContributor {
     bio: row.bio,
     photoUrl: row.photo_url,
     expertise: row.expertise,
+  };
+}
+
+/** Exported (unlike the plain ContributorRow above) so mutations.ts can
+ * shape the row it gets back from an insert/update into the same
+ * InsightsContributorApplication type this file returns — one mapping
+ * function, used from both places, instead of a second copy living next
+ * to the mutations. */
+export interface ContributorApplicationRow extends ContributorRow {
+  status: InsightsContributorStatus;
+  applied_at: string;
+  reviewed_at: string | null;
+  review_note: string | null;
+}
+
+export const CONTRIBUTOR_APPLICATION_COLUMNS =
+  "id, profile_id, name, title, organisation, qualifications, bio, photo_url, expertise, status, applied_at, reviewed_at, review_note";
+
+export function mapContributorApplication(row: ContributorApplicationRow): InsightsContributorApplication {
+  return {
+    ...mapContributor(row),
+    status: row.status,
+    appliedAt: row.applied_at,
+    reviewedAt: row.reviewed_at,
+    reviewNote: row.review_note,
   };
 }
 
@@ -345,4 +376,171 @@ export async function searchArticles(supabase: SupabaseClient, query: string): P
   if (error) throw error;
 
   return ((data ?? []) as unknown as ArticleSummaryRow[]).map(mapArticleSummary).filter((a): a is InsightsArticleSummary => a !== null);
+}
+
+// ============================================================
+// Phase 2: contributor applications + the editor's own view.
+// Unlike everything above (which only ever shows a stranger what's
+// `published`/`approved` contributor data), these show a caller their
+// own not-yet-public work, or — for the two admin-only queue queries —
+// everyone's. RLS (migration 0025) is what actually enforces that
+// boundary; these functions don't add their own auth checks on top.
+// ============================================================
+
+/** "My application" — the signed-in user's own contributor row,
+ * regardless of status, or null if they've never applied. Both the
+ * /insights/contribute page (to show application status) and the check
+ * for whether someone may open /insights/write use this. */
+export async function getMyContributorProfile(supabase: SupabaseClient, profileId: string): Promise<InsightsContributorApplication | null> {
+  const { data, error } = await supabase
+    .from("insights_contributors")
+    .select(CONTRIBUTOR_APPLICATION_COLUMNS)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapContributorApplication(data as unknown as ContributorApplicationRow) : null;
+}
+
+/** Admin's contributor-application review queue — oldest first, so
+ * whoever's been waiting longest gets reviewed first. */
+export async function getPendingContributorApplications(supabase: SupabaseClient): Promise<InsightsContributorApplication[]> {
+  const { data, error } = await supabase
+    .from("insights_contributors")
+    .select(CONTRIBUTOR_APPLICATION_COLUMNS)
+    .eq("status", "pending")
+    .order("applied_at", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as unknown as ContributorApplicationRow[]).map(mapContributorApplication);
+}
+
+/** A contributor's own "My Articles" dashboard — every article they've
+ * ever written, any status, most-recently-touched first. */
+export async function getMyArticles(supabase: SupabaseClient, contributorId: string): Promise<InsightsMyArticleSummary[]> {
+  const { data, error } = await supabase
+    .from("insights_articles")
+    .select("id, slug, title, status, updated_at, editor_note")
+    .eq("contributor_id", contributorId)
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    slug: row.slug as string,
+    title: row.title as string,
+    status: row.status as InsightsArticleStatus,
+    updatedAt: row.updated_at as string,
+    editorNote: row.editor_note as string | null,
+  }));
+}
+
+const ARTICLE_EDITABLE_COLUMNS = `
+  id, slug, title, excerpt, featured_image_url, body, status, seo_title, seo_description,
+  editor_note, published_at, updated_at, created_at, contributor_id,
+  topics:insights_article_topics ( topic_id )
+`;
+
+interface EditableArticleRow {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  featured_image_url: string | null;
+  body: string;
+  status: InsightsArticleStatus;
+  seo_title: string | null;
+  seo_description: string | null;
+  editor_note: string | null;
+  published_at: string | null;
+  updated_at: string;
+  created_at: string;
+  contributor_id: string;
+  topics: { topic_id: string }[] | null;
+}
+
+/** Exported for the same reason mapContributorApplication is — the
+ * article-editing mutations (createArticleDraft, updateArticleDraft) in
+ * mutations.ts return whatever row Supabase hands back from their own
+ * insert/update, and shape it through this one function rather than a
+ * second copy of this mapping living over there. */
+export function mapEditableArticle(row: EditableArticleRow, references: InsightsReference[]): InsightsEditableArticle {
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    excerpt: row.excerpt,
+    featuredImageUrl: row.featured_image_url,
+    body: row.body,
+    status: row.status,
+    seoTitle: row.seo_title,
+    seoDescription: row.seo_description,
+    editorNote: row.editor_note,
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at,
+    createdAt: row.created_at,
+    contributorId: row.contributor_id,
+    topicIds: (row.topics ?? []).map((t) => t.topic_id),
+    references,
+  };
+}
+
+/** Loads one article for the editor, regardless of status — RLS (0023's
+ * own read policies: owner via contributor_id, or admin) is what decides
+ * whether this returns a row for the caller at all; there's no separate
+ * status filter here the way the public-facing queries above have one. */
+export async function getArticleForEditing(supabase: SupabaseClient, articleId: string): Promise<InsightsEditableArticle | null> {
+  const { data, error } = await supabase.from("insights_articles").select(ARTICLE_EDITABLE_COLUMNS).eq("id", articleId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as unknown as EditableArticleRow;
+  const { data: referenceRows, error: referencesError } = await supabase
+    .from("insights_references")
+    .select("id, journal_title, authors, year, url, position")
+    .eq("article_id", row.id)
+    .order("position");
+  if (referencesError) throw referencesError;
+
+  return mapEditableArticle(row, (referenceRows ?? []).map(mapReference));
+}
+
+/**
+ * Admin's article review queue — pass `"in_review"` for articles waiting
+ * on a decision, or `"approved"` for ones already signed off and just
+ * waiting to be published. Kept as one parameterized function rather
+ * than two near-identical ones, the same call this file already made for
+ * queryPublishedArticles' newest/popular sort.
+ */
+export async function getArticlesPendingReview(
+  supabase: SupabaseClient,
+  status: "in_review" | "approved"
+): Promise<InsightsReviewQueueArticle[]> {
+  const { data, error } = await supabase
+    .from("insights_articles")
+    .select("id, slug, title, excerpt, status, updated_at, contributor:insights_contributors!insights_articles_contributor_id_fkey ( id, name )")
+    .eq("status", status)
+    .order("updated_at", { ascending: true });
+  if (error) throw error;
+
+  type Row = {
+    id: string;
+    slug: string;
+    title: string;
+    excerpt: string;
+    status: InsightsArticleStatus;
+    updated_at: string;
+    contributor: { id: string; name: string } | { id: string; name: string }[] | null;
+  };
+
+  return ((data ?? []) as unknown as Row[]).map((row) => {
+    const contributor = one(row.contributor);
+    return {
+      id: row.id,
+      slug: row.slug,
+      title: row.title,
+      excerpt: row.excerpt,
+      status: row.status,
+      updatedAt: row.updated_at,
+      contributorId: contributor?.id ?? "",
+      contributorName: contributor?.name ?? "Unknown",
+    };
+  });
 }
