@@ -5,7 +5,9 @@ import type {
   BlockRow,
   BlockType,
   DayRow,
+  DayTemplateRow,
   ExerciseCategory,
+  ExerciseTemplateRow,
   PrescriptionType,
   ProgramDiscipline,
   ProgramTemplateRow,
@@ -748,6 +750,27 @@ export async function copyDayContents(
 }
 
 /**
+ * Inserts a saved day template (migration 0033) into an existing day,
+ * appending to whatever's already there — non-destructive, same as
+ * copyDayContents. A day template's `template_data.blocks` is a full
+ * `BlockRow[]` snapshot (see DayTemplateRow's doc comment), the exact
+ * shape copyDayContents already clones with fresh ids and per-role
+ * position scoping; the only difference from "copy another day's
+ * contents" is where the source blocks come from, so this just wraps the
+ * template's blocks in a placeholder DayRow and delegates.
+ */
+export async function insertDayTemplate(
+  supabase: SupabaseClient,
+  params: { targetDayId: string; targetDayBlocks: BlockRow[]; template: DayTemplateRow }
+): Promise<{ blocks: BlockRow[]; error: string | null }> {
+  return copyDayContents(supabase, {
+    sourceDay: { id: "", week_id: "", position: 0, label: null, is_rest_day: false, blocks: params.template.template_data.blocks },
+    targetDayId: params.targetDayId,
+    targetDayBlocks: params.targetDayBlocks,
+  });
+}
+
+/**
  * "Duplicate this exercise" — the single quick action the spec calls out
  * as especially important, since coaches frequently reuse the same
  * exercise (a working set followed by a backoff set of the same movement,
@@ -823,6 +846,26 @@ export async function duplicateExercise(
     ],
   };
   return { block, error: null };
+}
+
+/**
+ * Inserts a saved exercise template (migration 0033) as a new block — a
+ * template's `template_data` is stored as a full `BlockExerciseRow`
+ * snapshot (see ExerciseTemplateRow's doc comment), which is exactly the
+ * shape duplicateExercise already knows how to clone with fresh ids. No
+ * separate insert logic needed: "insert this template" and "duplicate this
+ * live exercise" are the same operation, just sourced differently.
+ */
+export async function addExerciseBlockFromTemplate(
+  supabase: SupabaseClient,
+  params: { dayId: string; position: number; role: BlockRole; template: ExerciseTemplateRow }
+): Promise<{ block: BlockRow | null; error: string | null }> {
+  return duplicateExercise(supabase, {
+    dayId: params.dayId,
+    position: params.position,
+    exercise: params.template.template_data,
+    blockRole: params.role,
+  });
 }
 
 // ============================================================

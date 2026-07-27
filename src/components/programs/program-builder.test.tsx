@@ -66,6 +66,16 @@ vi.mock("@/lib/programs/exercise-library", () => ({
   getExerciseLibrary: vi.fn().mockResolvedValue([]),
   addToExerciseLibrary: vi.fn(),
 }));
+vi.mock("@/lib/programs/exercise-templates", () => ({
+  getExerciseTemplates: vi.fn().mockResolvedValue([]),
+  saveExerciseAsTemplate: vi.fn(),
+  deleteExerciseTemplate: vi.fn(),
+}));
+vi.mock("@/lib/programs/day-templates", () => ({
+  getDayTemplates: vi.fn().mockResolvedValue([]),
+  saveDayAsTemplate: vi.fn(),
+  deleteDayTemplate: vi.fn(),
+}));
 vi.mock("@/lib/programs/mutations", () => ({
   createProgram: vi.fn(),
   cloneProgram: vi.fn(),

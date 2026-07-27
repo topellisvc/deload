@@ -59,6 +59,7 @@ const baseProps = {
   onSetChange: vi.fn(),
   onDeleteSet: vi.fn(),
   onReorderSets: vi.fn(),
+  onSaveAsTemplate: vi.fn(),
   onDuplicate: vi.fn(),
   onDelete: vi.fn(),
 };
@@ -179,5 +180,13 @@ describe("ExerciseCard expanded state", () => {
     render(<ExerciseCard exercise={makeExercise()} expanded onToggleExpand={vi.fn()} {...baseProps} onAddSet={onAddSet} />);
     await user.click(screen.getByRole("button", { name: /add row/i }));
     expect(onAddSet).toHaveBeenCalled();
+  });
+
+  it("Save as template calls onSaveAsTemplate", async () => {
+    const onSaveAsTemplate = vi.fn();
+    const user = userEvent.setup();
+    render(<ExerciseCard exercise={makeExercise()} expanded onToggleExpand={vi.fn()} {...baseProps} onSaveAsTemplate={onSaveAsTemplate} />);
+    await user.click(screen.getByRole("button", { name: /save as template/i }));
+    expect(onSaveAsTemplate).toHaveBeenCalled();
   });
 });

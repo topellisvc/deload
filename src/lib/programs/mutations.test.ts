@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   addExerciseBlock,
+  addExerciseBlockFromTemplate,
   addExerciseToBlock,
   cloneProgram,
   copyDayContents,
@@ -9,11 +10,12 @@ import {
   createProgramFromTemplate,
   deleteProgramTemplate,
   duplicateExercise,
+  insertDayTemplate,
   reorderBlocks,
   reorderSets,
   saveProgramAsTemplate,
 } from "./mutations";
-import type { BlockExerciseRow, BlockRow, DayRow } from "./types";
+import type { BlockExerciseRow, BlockRow, DayRow, DayTemplateRow, ExerciseTemplateRow } from "./types";
 import { getProgramTree } from "./queries";
 import { STARTER_PROGRAM_TEMPLATES } from "./starter-templates";
 import type { ProgramTemplateRow, ProgramTree } from "./types";
@@ -680,5 +682,105 @@ describe("duplicateExercise", () => {
 
     expect(inserted.set_prescriptions).toHaveLength(2);
     expect(inserted.set_prescriptions![1]).toMatchObject({ weight_value: 80, position: 2 });
+  });
+});
+
+describe("addExerciseBlockFromTemplate", () => {
+  const template: ExerciseTemplateRow = {
+    id: "template-1",
+    owner_id: "user-1",
+    name: "Bench 5x5",
+    exercise_category: "strength",
+    template_data: {
+      id: "stale-ex-id",
+      block_id: "stale-block-id",
+      position: 1,
+      exercise_id: null,
+      custom_name: "Bench Press",
+      notes: "Heavy day",
+      exercise_category: "strength",
+      sets: [
+        {
+          id: "stale-set-id",
+          block_exercise_id: "stale-ex-id",
+          position: 1,
+          prescription_type: "fixed_weight",
+          sets: 5,
+          reps: "5",
+          min_reps: null,
+          max_reps: null,
+          weight_value: 100,
+          percent_1rm_value: null,
+          pr_record_type: null,
+          rpe_value: null,
+          rir_value: null,
+          heart_rate_zone: null,
+          calories: null,
+          rest_seconds: 120,
+          notes: null,
+          distance_meters: null,
+          duration_seconds: null,
+          pace_seconds_per_km: null,
+          advanced_config: null,
+        },
+      ],
+    },
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  // A template's stored ids are structural only, same as
+  // ProgramTemplateRow's — this is really the same clone-with-fresh-ids
+  // operation duplicateExercise already does, just sourced from a stored
+  // snapshot instead of a live exercise.
+  it("inserts a new block+exercise+sets from the template, with fresh ids and the requested role", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const result = await addExerciseBlockFromTemplate(supabase as never, { dayId: "day-1", position: 1, role: "warmup", template });
+
+    expect(result.error).toBeNull();
+    expect(inserted.exercise_blocks![0]).toMatchObject({ day_id: "day-1", position: 1, block_role: "warmup" });
+    expect(inserted.block_exercises![0]).toMatchObject({ custom_name: "Bench Press", notes: "Heavy day" });
+    expect(inserted.set_prescriptions![0]).toMatchObject({ sets: 5, reps: "5", weight_value: 100 });
+
+    expect(result.block!.id).not.toBe("stale-block-id");
+    expect(result.block!.exercises[0]!.id).not.toBe("stale-ex-id");
+    expect(result.block!.exercises[0]!.sets[0]!.id).not.toBe("stale-set-id");
+  });
+});
+
+describe("insertDayTemplate", () => {
+  const template: DayTemplateRow = {
+    id: "day-template-1",
+    owner_id: "user-1",
+    name: "Upper Strength",
+    template_data: {
+      blocks: [
+        {
+          id: "stale-block-id",
+          day_id: "stale-day-id",
+          position: 1,
+          block_type: "straight",
+          block_role: "main",
+          rounds: 1,
+          exercises: [
+            { id: "stale-ex-id", block_id: "stale-block-id", position: 1, exercise_id: null, custom_name: "Bench Press", notes: null, exercise_category: "strength", sets: [] },
+          ],
+        },
+      ],
+    },
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("inserts the template's blocks into the target day with fresh ids, seeded from the target's existing blocks", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    const { blocks, error } = await insertDayTemplate(supabase as never, { targetDayId: "target-day", targetDayBlocks: [], template });
+
+    expect(error).toBeNull();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.id).not.toBe("stale-block-id");
+    expect(blocks[0]!.day_id).toBe("target-day");
+    expect(blocks[0]!.position).toBe(1);
+    expect(blocks[0]!.exercises[0]!.custom_name).toBe("Bench Press");
   });
 });

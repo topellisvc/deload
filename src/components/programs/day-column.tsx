@@ -3,8 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent, type SensorDescriptor, type SensorOptions } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { Copy, Flame, Plus, Sunrise } from "lucide-react";
-import type { BlockRole, BlockRow, DayRow, ExerciseCategory, PrescriptionType, SetRow } from "@/lib/programs/types";
+import { BookMarked, Copy, Flame, Plus, Sunrise } from "lucide-react";
+import type { BlockRole, BlockRow, DayRow, DayTemplateRow, ExerciseCategory, ExerciseTemplateRow, PrescriptionType, SetRow } from "@/lib/programs/types";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import type { BuilderMode } from "@/lib/programs/use-builder-mode";
 import { ExerciseBlockCard } from "@/components/programs/exercise-block-card";
@@ -23,6 +23,19 @@ interface DayColumnProps {
   onDeleteBlock: (blockId: string) => void;
   onReorderBlocks: (role: BlockRole, orderedBlocks: { id: string; position: number }[]) => void;
   onAddExerciseToBlock: (blockId: string) => void;
+  /** Saved exercise templates available to insert with one click, and the
+   * saved day templates available to insert this whole day's worth of
+   * content — see save-exercise-template-dialog.tsx / ExerciseCard's "Save
+   * as template" action and save-day-template-dialog.tsx for how these get
+   * created. Both empty for a coach who's never saved one, in which case
+   * the corresponding controls don't render at all (progressive
+   * disclosure — nothing to pick from yet). */
+  exerciseTemplates: ExerciseTemplateRow[];
+  dayTemplates: DayTemplateRow[];
+  onSaveAsTemplate: (blockId: string, blockExerciseId: string) => void;
+  onInsertExerciseTemplate: (role: BlockRole, template: ExerciseTemplateRow) => void;
+  onSaveDayAsTemplate: () => void;
+  onInsertDayTemplate: (template: DayTemplateRow) => void;
   /** Block id currently awaiting its "add exercise" network round-trip, if
    * any — see ProgramBuilder's addingExerciseBlockId comment for why this
    * needs visible pending state rather than just firing and forgetting. */
@@ -84,6 +97,12 @@ export function DayColumn({
   onSetChange,
   onDeleteSet,
   onReorderSets,
+  exerciseTemplates,
+  dayTemplates,
+  onSaveAsTemplate,
+  onInsertExerciseTemplate,
+  onSaveDayAsTemplate,
+  onInsertDayTemplate,
 }: DayColumnProps) {
   const [label, setLabel] = useState(day.label ?? "");
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
@@ -138,6 +157,9 @@ export function DayColumn({
     onSetChange,
     onDeleteSet,
     onReorderSets,
+    exerciseTemplates,
+    onSaveAsTemplate,
+    onInsertExerciseTemplate,
   };
 
   return (
@@ -156,6 +178,46 @@ export function DayColumn({
               day.is_rest_day && "text-muted-foreground"
             )}
           />
+          {dayTemplates.length > 0 && (
+            <div className="relative shrink-0">
+              <select
+                aria-label="Insert a saved day template into this day"
+                value=""
+                onChange={(e) => {
+                  const template = dayTemplates.find((t) => t.id === e.target.value);
+                  if (template) onInsertDayTemplate(template);
+                  e.target.value = "";
+                }}
+                className="peer h-8 w-8 cursor-pointer appearance-none rounded-md border border-border bg-surface text-transparent"
+              >
+                <option value="" disabled>
+                  Insert template…
+                </option>
+                {dayTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <BookMarked
+                aria-hidden="true"
+                className="pointer-events-none absolute left-1/2 top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+            </div>
+          )}
+
+          {day.blocks.length > 0 && (
+            <button
+              type="button"
+              onClick={onSaveDayAsTemplate}
+              aria-label="Save this day as a template"
+              title="Save day as template"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <BookMarked className="size-4" />
+            </button>
+          )}
+
           {otherDays.length > 0 && (
             <div className="relative shrink-0">
               <select
@@ -277,6 +339,9 @@ interface BlockSectionProps {
   onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (blockId: string, blockExerciseId: string, setId: string) => void;
   onReorderSets: (blockId: string, blockExerciseId: string, orderedSets: { id: string; position: number }[]) => void;
+  exerciseTemplates: ExerciseTemplateRow[];
+  onSaveAsTemplate: (blockId: string, blockExerciseId: string) => void;
+  onInsertExerciseTemplate: (role: BlockRole, template: ExerciseTemplateRow) => void;
 }
 
 function BlockSection({
@@ -308,6 +373,9 @@ function BlockSection({
   onSetChange,
   onDeleteSet,
   onReorderSets,
+  exerciseTemplates,
+  onSaveAsTemplate,
+  onInsertExerciseTemplate,
 }: BlockSectionProps) {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -321,14 +389,17 @@ function BlockSection({
 
   if (blocks.length === 0 && emptyAddLabel) {
     return (
-      <button
-        type="button"
-        onClick={() => onAddBlock(role)}
-        className="flex items-center gap-1.5 self-start rounded-md px-1 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      >
-        <Plus className="size-3.5" />
-        {emptyAddLabel}
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onAddBlock(role)}
+          className="flex items-center gap-1.5 self-start rounded-md px-1 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <Plus className="size-3.5" />
+          {emptyAddLabel}
+        </button>
+        <TemplateInsertSelect role={role} templates={exerciseTemplates} onInsert={onInsertExerciseTemplate} />
+      </div>
     );
   }
 
@@ -369,23 +440,70 @@ function BlockSection({
                 onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
                 onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}
                 onReorderSets={(blockExerciseId, orderedSets) => onReorderSets(block.id, blockExerciseId, orderedSets)}
+                onSaveAsTemplate={(blockExerciseId) => onSaveAsTemplate(block.id, blockExerciseId)}
               />
             ))}
           </div>
         </SortableContext>
       </DndContext>
 
-      <button
-        type="button"
-        onClick={() => onAddBlock(role)}
-        className={cn(
-          "flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-          sectionLabel ? "border border-dashed border-border text-xs" : "border border-dashed border-border-strong"
-        )}
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onAddBlock(role)}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            sectionLabel ? "border border-dashed border-border text-xs" : "border border-dashed border-border-strong"
+          )}
+        >
+          <Plus className="size-4" />
+          {addLabel}
+        </button>
+        <TemplateInsertSelect role={role} templates={exerciseTemplates} onInsert={onInsertExerciseTemplate} />
+      </div>
+    </div>
+  );
+}
+
+/** A saved exercise template, inserted with one click — the native
+ * `<select>`-behind-an-icon trick already used above for "Copy to another
+ * day," reused here rather than building a second dropdown pattern.
+ * Renders nothing when there's nothing to pick from yet. */
+function TemplateInsertSelect({
+  role,
+  templates,
+  onInsert,
+}: {
+  role: BlockRole;
+  templates: ExerciseTemplateRow[];
+  onInsert: (role: BlockRole, template: ExerciseTemplateRow) => void;
+}) {
+  if (templates.length === 0) return null;
+  return (
+    <div className="relative shrink-0">
+      <select
+        aria-label="Insert a saved exercise template"
+        value=""
+        onChange={(e) => {
+          const template = templates.find((t) => t.id === e.target.value);
+          if (template) onInsert(role, template);
+          e.target.value = "";
+        }}
+        className="peer h-8 w-8 cursor-pointer appearance-none rounded-md border border-dashed border-border bg-surface text-transparent"
       >
-        <Plus className="size-4" />
-        {addLabel}
-      </button>
+        <option value="" disabled>
+          Insert template…
+        </option>
+        {templates.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+      <BookMarked
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 text-muted-foreground"
+      />
     </div>
   );
 }

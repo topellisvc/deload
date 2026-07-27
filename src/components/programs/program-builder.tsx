@@ -5,16 +5,33 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { BlockRole, BlockRow, DayRow, ExerciseCategory, PrescriptionType, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
+import type {
+  BlockExerciseRow,
+  BlockRole,
+  BlockRow,
+  DayRow,
+  DayTemplateRow,
+  ExerciseCategory,
+  ExerciseTemplateRow,
+  PrescriptionType,
+  ProgramDiscipline,
+  ProgramTree,
+  SetRow,
+  WeekRow,
+} from "@/lib/programs/types";
 import { defaultCategoryForDiscipline, defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import * as m from "@/lib/programs/mutations";
 import { getExerciseLibrary, addToExerciseLibrary } from "@/lib/programs/exercise-library";
+import { getExerciseTemplates } from "@/lib/programs/exercise-templates";
+import { getDayTemplates } from "@/lib/programs/day-templates";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import { useBuilderMode, type BuilderMode } from "@/lib/programs/use-builder-mode";
 import { DayColumn } from "@/components/programs/day-column";
 import { AthletePreviewDay } from "@/components/programs/athlete-preview";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
+import { SaveExerciseTemplateDialog } from "@/components/programs/save-exercise-template-dialog";
+import { SaveDayTemplateDialog } from "@/components/programs/save-day-template-dialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScrollFadeX } from "@/components/ui/scroll-fade-x";
@@ -101,6 +118,20 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // only ever renders for the program's owner — the edit page redirects
   // anyone else back to the read-only view before ProgramBuilder mounts.
   const [library, setLibrary] = useState<ExerciseSearchResult[]>([]);
+  // Saved exercise/day templates (migration 0033) — fetched once alongside
+  // the exercise library, same reasoning: one small per-owner list, not
+  // worth a live query per render. `onSaved` on each save dialog appends
+  // straight into this state so a freshly-saved template appears in every
+  // "insert template" control immediately, no refetch.
+  const [exerciseTemplates, setExerciseTemplates] = useState<ExerciseTemplateRow[]>([]);
+  const [dayTemplates, setDayTemplates] = useState<DayTemplateRow[]>([]);
+  // Which exercise/day the "Save as template" dialog is currently open
+  // for — null means closed. Holding the actual row (not just an id) is
+  // simplest here since the dialog needs the live BlockExerciseRow/DayRow
+  // to snapshot, and the caller already has it in hand at the moment the
+  // action is triggered.
+  const [saveExerciseTemplateFor, setSaveExerciseTemplateFor] = useState<BlockExerciseRow | null>(null);
+  const [saveDayTemplateFor, setSaveDayTemplateFor] = useState<DayRow | null>(null);
 
   useEffect(() => setNameDraft(program.name), [program.name]);
 
@@ -108,6 +139,12 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     let cancelled = false;
     getExerciseLibrary(supabase, program.owner_id).then((entries) => {
       if (!cancelled) setLibrary(entries.map((e) => ({ id: null, name: e.name, category: e.category })));
+    });
+    getExerciseTemplates(supabase, program.owner_id).then((templates) => {
+      if (!cancelled) setExerciseTemplates(templates);
+    });
+    getDayTemplates(supabase, program.owner_id).then((templates) => {
+      if (!cancelled) setDayTemplates(templates);
     });
     return () => {
       cancelled = true;
@@ -234,6 +271,26 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     updateDay(week.id, targetDayId, (d) => ({ ...d, blocks: [...d.blocks, ...blocks] }));
   }
 
+  function handleOpenSaveDayTemplate(dayId: string) {
+    const day = week.days.find((d) => d.id === dayId);
+    if (day) setSaveDayTemplateFor(day);
+  }
+
+  async function handleInsertDayTemplate(dayId: string, template: DayTemplateRow) {
+    const targetDay = week.days.find((d) => d.id === dayId);
+    if (!targetDay) return;
+    const { blocks, error } = await m.insertDayTemplate(supabase, {
+      targetDayId: dayId,
+      targetDayBlocks: targetDay.blocks,
+      template,
+    });
+    if (error) {
+      fail(error);
+      return;
+    }
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, ...blocks] }));
+  }
+
   // ---- blocks ----
   async function handleAddBlock(dayId: string, role: BlockRole = "main") {
     const day = week.days.find((d) => d.id === dayId);
@@ -246,6 +303,22 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     });
     if (error || !block) {
       fail(error ?? "Couldn't add exercise.");
+      return;
+    }
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, block] }));
+  }
+
+  async function handleInsertExerciseTemplate(dayId: string, role: BlockRole, template: ExerciseTemplateRow) {
+    const day = week.days.find((d) => d.id === dayId);
+    if (!day) return;
+    const { block, error } = await m.addExerciseBlockFromTemplate(supabase, {
+      dayId,
+      position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
+      role,
+      template,
+    });
+    if (error || !block) {
+      fail(error ?? "Couldn't insert that template.");
       return;
     }
     updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, block] }));
@@ -382,6 +455,11 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       return;
     }
     updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, block] }));
+  }
+
+  function handleOpenSaveExerciseTemplate(dayId: string, blockId: string, blockExerciseId: string) {
+    const exercise = week.days.find((d) => d.id === dayId)?.blocks.find((b) => b.id === blockId)?.exercises.find((ex) => ex.id === blockExerciseId);
+    if (exercise) setSaveExerciseTemplateFor(exercise);
   }
 
   // `role` isn't needed here — block ids are globally unique regardless of
@@ -672,6 +750,12 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 }
                 onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
                 onReorderSets={(blockId, blockExerciseId, orderedSets) => handleReorderSets(day.id, blockId, blockExerciseId, orderedSets)}
+                exerciseTemplates={exerciseTemplates}
+                dayTemplates={dayTemplates}
+                onSaveAsTemplate={(blockId, blockExerciseId) => handleOpenSaveExerciseTemplate(day.id, blockId, blockExerciseId)}
+                onInsertExerciseTemplate={(role, template) => handleInsertExerciseTemplate(day.id, role, template)}
+                onSaveDayAsTemplate={() => handleOpenSaveDayTemplate(day.id)}
+                onInsertDayTemplate={(template) => handleInsertDayTemplate(day.id, template)}
               />
             ))}
       </ScrollFadeX>
@@ -691,6 +775,26 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         description={pendingConfirm?.description ?? ""}
         confirmLabel={pendingConfirm?.confirmLabel}
       />
+
+      {saveExerciseTemplateFor && (
+        <SaveExerciseTemplateDialog
+          open
+          onClose={() => setSaveExerciseTemplateFor(null)}
+          exercise={saveExerciseTemplateFor}
+          currentUserId={program.owner_id}
+          onSaved={(template) => setExerciseTemplates((prev) => [template, ...prev])}
+        />
+      )}
+
+      {saveDayTemplateFor && (
+        <SaveDayTemplateDialog
+          open
+          onClose={() => setSaveDayTemplateFor(null)}
+          day={saveDayTemplateFor}
+          currentUserId={program.owner_id}
+          onSaved={(template) => setDayTemplates((prev) => [template, ...prev])}
+        />
+      )}
     </div>
   );
 }

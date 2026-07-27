@@ -35,6 +35,7 @@ interface ExerciseBlockCardProps {
   onSetChange: (blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (blockExerciseId: string, setId: string) => void;
   onReorderSets: (blockExerciseId: string, orderedSets: { id: string; position: number }[]) => void;
+  onSaveAsTemplate: (blockExerciseId: string) => void;
 }
 
 /**
@@ -73,6 +74,7 @@ export function ExerciseBlockCard({
   onSetChange,
   onDeleteSet,
   onReorderSets,
+  onSaveAsTemplate,
 }: ExerciseBlockCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id });
   const style = { transform: CSS.Transform.toString(transform), transition };
@@ -157,6 +159,7 @@ export function ExerciseBlockCard({
             onSetChange={(setId, patch) => onSetChange(exercise.id, setId, patch)}
             onDeleteSet={(setId) => onDeleteSet(exercise.id, setId)}
             onReorderSets={(orderedSets) => onReorderSets(exercise.id, orderedSets)}
+            onSaveAsTemplate={() => onSaveAsTemplate(exercise.id)}
             onRemoveFromBlock={isGrouped ? () => onRemoveExerciseFromBlock(exercise.id) : undefined}
             onDuplicate={() => onDuplicateExercise(exercise.id)}
             onDelete={isGrouped ? () => onRemoveExerciseFromBlock(exercise.id) : onDeleteBlock}

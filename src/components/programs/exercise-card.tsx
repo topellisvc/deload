@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, StickyNote, Trash2, X } from "lucide-react";
+import { BookMarked, Copy, StickyNote, Trash2, X } from "lucide-react";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { summarizePrescriptionPrimary, summarizeRest } from "@/lib/programs/prescription-summary";
 import { EXERCISE_CATEGORY_ACTIVE_CLASSES, EXERCISE_CATEGORY_LABELS, defaultPrescriptionType } from "@/lib/programs/prescription-types";
@@ -43,6 +43,7 @@ interface ExerciseCardProps {
   onSetChange: (setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (setId: string) => void;
   onReorderSets: (orderedSets: { id: string; position: number }[]) => void;
+  onSaveAsTemplate: () => void;
   /** Only called when isGrouped — pulls this one exercise back out of a
    * superset without touching its block-mates. */
   onRemoveFromBlock?: () => void;
@@ -78,6 +79,7 @@ export function ExerciseCard({
   onSetChange,
   onDeleteSet,
   onReorderSets,
+  onSaveAsTemplate,
   onRemoveFromBlock,
   onDuplicate,
   onDelete,
@@ -205,6 +207,15 @@ export function ExerciseCard({
           )}
 
           <CoachNoteField value={exercise.notes} onCommit={onNoteChange} />
+
+          <button
+            type="button"
+            onClick={onSaveAsTemplate}
+            className="flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <BookMarked className="size-3.5" />
+            Save as template
+          </button>
         </div>
       )}
     </div>
