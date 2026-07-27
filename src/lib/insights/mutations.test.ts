@@ -5,6 +5,7 @@ import {
   reviewArticle,
   unpublishArticle,
   updateArticleDraft,
+  uploadArticleImage,
   upsertContributorApplication,
 } from "./mutations";
 
@@ -157,6 +158,50 @@ describe("updateArticleDraft", () => {
 
     expect(supabase.__deletedFilters.insights_article_topics).toBeUndefined();
     expect(supabase.__deletedFilters.insights_references).toBeUndefined();
+  });
+});
+
+describe("uploadArticleImage", () => {
+  /** Storage's own client shape is nothing like the postgrest builder the
+   * other tests mock (from/select/eq/...) — it's its own namespaced API,
+   * so this gets a small dedicated fake rather than stretching
+   * makeSupabaseMock to cover both. */
+  function makeStorageMock(uploadError: { message: string } | null = null) {
+    const uploadCalls: { path: string; file: unknown; options: unknown }[] = [];
+    const supabase = {
+      storage: {
+        from: (bucket: string) => ({
+          upload: (path: string, file: unknown, options: unknown) => {
+            uploadCalls.push({ path, file, options });
+            return Promise.resolve({ data: uploadError ? null : { path }, error: uploadError });
+          },
+          getPublicUrl: (path: string) => ({ data: { publicUrl: `https://storage.example.com/${bucket}/${path}` } }),
+        }),
+      },
+    };
+    return { supabase, uploadCalls };
+  }
+
+  it("uploads to a slug-derived path and returns the bucket's public URL", async () => {
+    const { supabase, uploadCalls } = makeStorageMock();
+    const file = new File(["fake-bytes"], "my vacation photo.PNG", { type: "image/png" });
+
+    const { url, error } = await uploadArticleImage(supabase as never, "progressive-overload", file);
+
+    expect(error).toBeNull();
+    expect(url).toMatch(/^https:\/\/storage\.example\.com\/insights-images\/progressive-overload-[a-z0-9]{8}\.png$/);
+    expect(uploadCalls).toHaveLength(1);
+    expect(uploadCalls[0]!.path).not.toContain("vacation");
+  });
+
+  it("returns an error when the upload fails", async () => {
+    const { supabase } = makeStorageMock({ message: "boom" });
+    const file = new File(["fake-bytes"], "photo.png", { type: "image/png" });
+
+    const { url, error } = await uploadArticleImage(supabase as never, "progressive-overload", file);
+
+    expect(url).toBeNull();
+    expect(error).toBe("Couldn't upload this image. Try again.");
   });
 });
 

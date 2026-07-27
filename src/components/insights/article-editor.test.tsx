@@ -11,6 +11,13 @@ const { routerMock, showToastMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
+// Same rationale as article-card.test.tsx: next/image needs an App Router
+// context RTL doesn't provide, and this test only cares that the returned
+// upload URL ends up rendered somewhere, not Next's own optimization
+// internals.
+vi.mock("next/image", () => ({
+  default: ({ alt, src }: { alt: string; src: string }) => <img alt={alt} src={src} />,
+}));
 vi.mock("@/components/ui/toast", () => ({ useToast: () => ({ showToast: showToastMock }) }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({}) }));
 vi.mock("@/components/insights/article-body", () => ({
@@ -21,9 +28,10 @@ vi.mock("@/lib/insights/mutations", () => ({
   submitArticleForReview: vi.fn().mockResolvedValue({ error: null }),
   withdrawArticleToDraft: vi.fn().mockResolvedValue({ error: null }),
   deleteDraftArticle: vi.fn().mockResolvedValue({ error: null }),
+  uploadArticleImage: vi.fn().mockResolvedValue({ url: "https://storage.example.com/insights-images/foo.jpg", error: null }),
 }));
 
-import { submitArticleForReview, updateArticleDraft, withdrawArticleToDraft } from "@/lib/insights/mutations";
+import { submitArticleForReview, updateArticleDraft, uploadArticleImage, withdrawArticleToDraft } from "@/lib/insights/mutations";
 
 const TOPICS: InsightsTopic[] = [
   { id: "topic-strength", slug: "strength", name: "Strength", description: null, position: 1 },
@@ -56,6 +64,7 @@ beforeEach(() => {
   vi.mocked(updateArticleDraft).mockClear();
   vi.mocked(submitArticleForReview).mockClear();
   vi.mocked(withdrawArticleToDraft).mockClear();
+  vi.mocked(uploadArticleImage).mockClear();
   showToastMock.mockClear();
 });
 
@@ -132,5 +141,32 @@ describe("ArticleEditor status transitions", () => {
 
     expect(await screen.findByPlaceholderText("Article title")).not.toBeDisabled();
     expect(withdrawArticleToDraft).toHaveBeenCalledWith(expect.anything(), "article-1");
+  });
+});
+
+describe("ArticleEditor slug, image, and SEO fields", () => {
+  it("shows the slug as static text with no editable input", () => {
+    render(<ArticleEditor initial={makeArticle()} topics={TOPICS} />);
+
+    expect(screen.getByText("progressive-overload")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("progressive-overload")).not.toBeInTheDocument();
+  });
+
+  it("renders no SEO title/description fields", () => {
+    render(<ArticleEditor initial={makeArticle()} topics={TOPICS} />);
+
+    expect(screen.queryByText(/SEO title/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SEO description/i)).not.toBeInTheDocument();
+  });
+
+  it("uploads a chosen file and sets the featured image from the returned URL", async () => {
+    render(<ArticleEditor initial={makeArticle()} topics={TOPICS} />);
+
+    const file = new File(["fake-bytes"], "photo.png", { type: "image/png" });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByRole("button", { name: "Replace image" })).toBeInTheDocument();
+    expect(uploadArticleImage).toHaveBeenCalledWith(expect.anything(), "progressive-overload", file);
   });
 });

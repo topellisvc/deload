@@ -2,14 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import Image from "next/image";
+import { ImagePlus, Plus, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
-import { deleteDraftArticle, submitArticleForReview, updateArticleDraft, withdrawArticleToDraft } from "@/lib/insights/mutations";
+import {
+  deleteDraftArticle,
+  submitArticleForReview,
+  updateArticleDraft,
+  uploadArticleImage,
+  withdrawArticleToDraft,
+} from "@/lib/insights/mutations";
 import { ArticleBody } from "@/components/insights/article-body";
 import { ArticleStatusBadge } from "@/components/insights/article-status-badge";
 import { cn } from "@/lib/utils";
@@ -54,19 +61,23 @@ export function ArticleEditor({ initial, topics }: { initial: InsightsEditableAr
 
   const [article, setArticle] = useState(initial);
   const [title, setTitle] = useState(initial.title);
-  const [slug, setSlug] = useState(initial.slug);
+  // The slug is fixed at creation (createArticleDraft) from the title and
+  // never user-editable afterward — changing it later would break any
+  // links already shared to this article's URL, and nobody should be
+  // hand-picking it in the first place. It's shown read-only below purely
+  // so a contributor can see what their article's URL actually is.
   const [excerpt, setExcerpt] = useState(initial.excerpt);
   const [featuredImageUrl, setFeaturedImageUrl] = useState(initial.featuredImageUrl ?? "");
   const [body, setBody] = useState(initial.body);
-  const [seoTitle, setSeoTitle] = useState(initial.seoTitle ?? "");
-  const [seoDescription, setSeoDescription] = useState(initial.seoDescription ?? "");
   const [topicIds, setTopicIds] = useState<string[]>(initial.topicIds);
   const [references, setReferences] = useState<ReferenceDraft[]>(referencesFromArticle(initial));
 
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const skipNextAutosave = useRef(true);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const editable = article.status === "draft" || article.status === "changes_requested";
 
@@ -75,12 +86,9 @@ export function ArticleEditor({ initial, topics }: { initial: InsightsEditableAr
     const supabase = createClient();
     const { error } = await updateArticleDraft(supabase, article.id, {
       title,
-      slug,
       excerpt,
       featuredImageUrl: featuredImageUrl.trim() || null,
       body,
-      seoTitle: seoTitle.trim() || null,
-      seoDescription: seoDescription.trim() || null,
       topicIds,
       references: references.map((r) => ({
         journalTitle: r.journalTitle,
@@ -90,7 +98,7 @@ export function ArticleEditor({ initial, topics }: { initial: InsightsEditableAr
       })),
     });
     setSaveState(error ? "error" : "saved");
-  }, [article.id, title, slug, excerpt, featuredImageUrl, body, seoTitle, seoDescription, topicIds, references]);
+  }, [article.id, title, excerpt, featuredImageUrl, body, topicIds, references]);
 
   useEffect(() => {
     if (!editable) return;
@@ -109,7 +117,7 @@ export function ArticleEditor({ initial, topics }: { initial: InsightsEditableAr
     // this effect on every render instead of only on an actual field
     // change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editable, title, slug, excerpt, featuredImageUrl, body, seoTitle, seoDescription, topicIds, references]);
+  }, [editable, title, excerpt, featuredImageUrl, body, topicIds, references]);
 
   function toggleTopic(topicId: string) {
     setTopicIds((prev) => (prev.includes(topicId) ? prev.filter((id) => id !== topicId) : [...prev, topicId]));
@@ -169,6 +177,23 @@ export function ArticleEditor({ initial, topics }: { initial: InsightsEditableAr
     router.push("/insights/write");
   }
 
+  async function handleImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Reset so choosing the same file again (e.g. after removing it) still
+    // fires a change event.
+    e.target.value = "";
+    if (!file) return;
+    setUploadingImage(true);
+    const supabase = createClient();
+    const { url, error } = await uploadArticleImage(supabase, article.slug, file);
+    setUploadingImage(false);
+    if (error || !url) {
+      showToast(error ?? "Couldn't upload this image. Try again.", "error");
+      return;
+    }
+    setFeaturedImageUrl(url);
+  }
+
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -224,9 +249,9 @@ export function ArticleEditor({ initial, topics }: { initial: InsightsEditableAr
           placeholder="Article title"
           className="h-14 text-2xl font-bold"
         />
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center gap-1 text-sm text-muted-foreground">
           <span>/insights/</span>
-          <Input value={slug} disabled={!editable} onChange={(e) => setSlug(e.target.value)} className="h-8 max-w-xs text-sm" />
+          <span className="font-medium text-foreground">{article.slug}</span>
         </div>
       </div>
 
@@ -244,14 +269,46 @@ export function ArticleEditor({ initial, topics }: { initial: InsightsEditableAr
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="article-image">Featured image URL</Label>
-          <Input
-            id="article-image"
-            disabled={!editable}
-            value={featuredImageUrl}
-            onChange={(e) => setFeaturedImageUrl(e.target.value)}
-            placeholder="https://…"
-          />
+          <Label>Featured image</Label>
+          {featuredImageUrl ? (
+            <div className="relative h-32 w-full max-w-xs overflow-hidden rounded-lg border border-border">
+              <Image src={featuredImageUrl} alt="" fill className="object-cover" unoptimized />
+              {editable && (
+                <button
+                  type="button"
+                  onClick={() => setFeaturedImageUrl("")}
+                  className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm hover:bg-background"
+                  aria-label="Remove image"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No image uploaded yet.</p>
+          )}
+          {editable && (
+            <>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageFileChange}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-fit"
+                disabled={uploadingImage}
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <ImagePlus className="size-3.5" />
+                {uploadingImage ? "Uploading…" : featuredImageUrl ? "Replace image" : "Upload image"}
+              </Button>
+            </>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           <Label>Topics</Label>
@@ -341,29 +398,6 @@ export function ArticleEditor({ initial, topics }: { initial: InsightsEditableAr
             )}
           </div>
         ))}
-      </div>
-
-      <div className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="article-seo-title">SEO title (optional)</Label>
-          <Input
-            id="article-seo-title"
-            disabled={!editable}
-            value={seoTitle}
-            onChange={(e) => setSeoTitle(e.target.value)}
-            placeholder="Defaults to the article title"
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="article-seo-description">SEO description (optional)</Label>
-          <Input
-            id="article-seo-description"
-            disabled={!editable}
-            value={seoDescription}
-            onChange={(e) => setSeoDescription(e.target.value)}
-            placeholder="Defaults to the excerpt"
-          />
-        </div>
       </div>
     </div>
   );

@@ -120,6 +120,36 @@ export async function createArticleDraft(
   return { article: mapEditableArticle({ ...data, topics: [] }, []), error: null };
 }
 
+/**
+ * Uploads a contributor's chosen file as an article's featured image to
+ * the insights-images Storage bucket (migration 0026) and returns its
+ * public URL. The object's path is derived entirely from the article's
+ * own (already-immutable) slug plus a short random suffix — never the
+ * uploaded file's original name — so nobody picks the image's URL, only
+ * which file to upload; two uploads for the same article never collide,
+ * and nothing about a contributor's local filename leaks into a public
+ * URL. RLS (0026) is the real gate on who can write to this bucket at
+ * all, same as every other write in this file.
+ */
+export async function uploadArticleImage(
+  supabase: SupabaseClient,
+  articleSlug: string,
+  file: File
+): Promise<{ url: string | null; error: string | null }> {
+  const extension = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `${articleSlug}-${crypto.randomUUID().slice(0, 8)}.${extension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("insights-images")
+    .upload(path, file, { upsert: false, contentType: file.type || undefined });
+  if (uploadError) return { url: null, error: "Couldn't upload this image. Try again." };
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from("insights-images").getPublicUrl(path);
+  return { url: publicUrl, error: null };
+}
+
 function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -130,7 +160,6 @@ function slugify(text: string): string {
 
 export interface ArticleDraftInput {
   title?: string;
-  slug?: string;
   excerpt?: string;
   featuredImageUrl?: string | null;
   body?: string;
@@ -155,7 +184,6 @@ export async function updateArticleDraft(
 ): Promise<{ error: string | null }> {
   const scalarFields: Record<string, unknown> = {};
   if (input.title !== undefined) scalarFields.title = input.title;
-  if (input.slug !== undefined) scalarFields.slug = input.slug;
   if (input.excerpt !== undefined) scalarFields.excerpt = input.excerpt;
   if (input.featuredImageUrl !== undefined) scalarFields.featured_image_url = input.featuredImageUrl;
   if (input.body !== undefined) scalarFields.body = input.body;

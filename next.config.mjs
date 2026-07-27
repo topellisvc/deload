@@ -1,14 +1,31 @@
 import { withSentryConfig } from "@sentry/nextjs";
 
+// Insights article images now come from two places: hotlinked Unsplash
+// photos (the seeded articles) and, since contributors can upload their
+// own featured images (supabase/migrations/0026), the project's own
+// Supabase Storage public URLs. Deriving the hostname from
+// NEXT_PUBLIC_SUPABASE_URL (already required for the app to run at all)
+// rather than hardcoding or wildcarding *.supabase.co keeps this scoped
+// to exactly this project's storage, and it'll keep working unchanged if
+// this ever moves to a self-hosted Supabase instance on a different host.
+const supabaseHostname = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname : null;
+  } catch {
+    return null;
+  }
+})();
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // images.unsplash.com is only referenced by the /landing-test experiment
-  // (a real, free-to-use Unsplash training photo in its hero) — next/image
-  // refuses to optimize any remote host that isn't explicitly allowlisted
-  // here, even one this trusted.
+  // next/image refuses to optimize any remote host that isn't explicitly
+  // allowlisted here, even a trusted one.
   images: {
-    remotePatterns: [{ protocol: "https", hostname: "images.unsplash.com" }],
+    remotePatterns: [
+      { protocol: "https", hostname: "images.unsplash.com" },
+      ...(supabaseHostname ? [{ protocol: "https", hostname: supabaseHostname }] : []),
+    ],
   },
 };
 
