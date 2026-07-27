@@ -30,7 +30,15 @@ export function SiteHeader() {
   const toolsActive = isActivePath(pathname, "/tools");
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
+    <header
+      className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    >
+      {/* Only bites once wrapped by Capacitor with viewport-fit=cover
+          (see layout.tsx's viewport export) — env(safe-area-inset-top)
+          is 0px in an ordinary mobile browser tab, so this is a no-op
+          there. Keeps the sticky header clear of the iPhone notch/Dynamic
+          Island in the native app instead of drawing under it. */}
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <Link
           href="/"

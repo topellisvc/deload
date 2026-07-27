@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { SiteHeader } from "@/components/site-header";
@@ -43,6 +43,17 @@ export const metadata: Metadata = {
     shortcut: "/icon",
     apple: "/apple-icon",
   },
+  // Home-screen install metadata — used both for "Add to Home Screen" in a
+  // browser and as the base the Capacitor native shell wraps (see
+  // capacitor.config.ts). manifest.webmanifest is a static file under
+  // public/ rather than a generated route since it doesn't need anything
+  // dynamic (no per-request data), unlike icon.tsx/apple-icon.tsx.
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Deload",
+  },
   openGraph: {
     type: "website",
     url: "/",
@@ -63,6 +74,19 @@ export const metadata: Metadata = {
       "msvalidate.01": "917B32DBCFE091EDF2EB3FFBE0B591E1",
     },
   },
+};
+
+// Separate from `metadata` — Next.js moved viewport/themeColor out of the
+// Metadata type in 14 so they can vary independently (e.g. per-route dark
+// mode). viewportFit: "cover" lets the page draw under the iPhone
+// notch/home-indicator safe areas instead of leaving black bars there,
+// which matters once this runs inside the Capacitor native shell (a
+// browser tab doesn't have that edge-to-edge concern the same way).
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#121215",
 };
 
 // Runs before hydration to avoid a light/dark flash. Dark is the default;
