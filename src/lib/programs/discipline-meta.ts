@@ -1,4 +1,4 @@
-import { Dumbbell, PersonStanding, Waves } from "lucide-react";
+import { Dumbbell, HeartPulse, PersonStanding, Waves } from "lucide-react";
 import type { ProgramDiscipline } from "@/lib/programs/types";
 
 /**
@@ -11,7 +11,15 @@ import type { ProgramDiscipline } from "@/lib/programs/types";
  * calculator's training-goal table) rather than introducing new ones:
  * resistance -> zone-strength (red), running -> zone-endurance (blue),
  * hybrid -> zone-hypertrophy (green) — a genuinely mixed discipline gets
- * the third, distinct hue rather than reading as "half resistance."
+ * the third, distinct hue rather than reading as "half resistance." Cardio
+ * needed a genuinely new 4th color (zone-cardio, violet) since all three
+ * original zone-* tokens were already spoken for.
+ *
+ * Several other components (program-viewer.tsx, starter-program-picker.tsx,
+ * my-templates-section.tsx) used to keep their own separate {value, label}
+ * copies of exactly this despite this file's whole reason for existing —
+ * all three have since been folded onto this map instead, so adding a
+ * discipline here is now a one-file change everywhere it's shown.
  *
  * badgeClass/activeClassName are literal Tailwind class strings (not
  * built via template-string interpolation) so Tailwind's static scanner
@@ -33,6 +41,12 @@ export const DISCIPLINE_META: Record<
     Icon: PersonStanding,
     badgeClass: "bg-zone-endurance/15 text-zone-endurance",
     activeClassName: "bg-zone-endurance/15 text-zone-endurance shadow-sm",
+  },
+  cardio: {
+    label: "Cardio",
+    Icon: HeartPulse,
+    badgeClass: "bg-zone-cardio/15 text-zone-cardio",
+    activeClassName: "bg-zone-cardio/15 text-zone-cardio shadow-sm",
   },
   hybrid: {
     label: "Hybrid",

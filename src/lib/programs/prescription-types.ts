@@ -250,18 +250,22 @@ export const EXERCISE_CATEGORY_LABELS: Record<ExerciseCategory, string> = {
  * Color-codes each exercise category so a program builder with a mix of
  * strength/running/cardio blocks is scannable at a glance instead of every
  * block looking identical (all previously rendered with the same neutral
- * segmented-control styling regardless of category). Reuses the same
- * zone-* tokens as DISCIPLINE_META (src/lib/programs/discipline-meta.ts)
- * for consistency: strength -> zone-strength, running -> zone-endurance;
- * cardio gets zone-hypertrophy purely because it's the third, distinct
- * color left in that set (it isn't meant to imply "hypertrophy work").
+ * segmented-control styling regardless of category). Shares the same
+ * zone-* tokens — and, for cardio, the exact same token — as
+ * DISCIPLINE_META (src/lib/programs/discipline-meta.ts): strength ->
+ * zone-strength, running -> zone-endurance, cardio -> zone-cardio, so a
+ * cardio exercise block inside any program and a whole program tagged
+ * "Cardio" read as the same color throughout the app rather than two
+ * unrelated ones. (Cardio briefly borrowed zone-hypertrophy here before
+ * zone-cardio existed, purely because it was the third distinct color left
+ * — now that a real cardio token exists there's no reason to keep that.)
  * Literal Tailwind class strings, not template interpolation — required
  * so Tailwind's static scanner actually generates them.
  */
 export const EXERCISE_CATEGORY_ACTIVE_CLASSES: Record<ExerciseCategory, string> = {
   strength: "bg-zone-strength/15 text-zone-strength shadow-sm",
   running: "bg-zone-endurance/15 text-zone-endurance shadow-sm",
-  cardio: "bg-zone-hypertrophy/15 text-zone-hypertrophy shadow-sm",
+  cardio: "bg-zone-cardio/15 text-zone-cardio shadow-sm",
 };
 
 export type { StrengthPrescriptionType, RunningPrescriptionType, CardioPrescriptionType };

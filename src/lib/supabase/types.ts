@@ -124,7 +124,7 @@ export interface SavedResult {
   created_at: string;
 }
 
-export type ProgramDiscipline = "resistance" | "running" | "hybrid";
+export type ProgramDiscipline = "resistance" | "running" | "hybrid" | "cardio";
 
 export interface Program {
   id: string;

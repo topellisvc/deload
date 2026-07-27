@@ -8,16 +8,12 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { createProgramFromSavedTemplate, deleteProgramTemplate } from "@/lib/programs/mutations";
+import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import type { ProgramTemplateRow } from "@/lib/programs/types";
 import type { CoachClient } from "@/lib/supabase/types";
+import { cn } from "@/lib/utils";
 
 const MYSELF = "myself";
-
-const DISCIPLINE_LABEL: Record<string, string> = {
-  resistance: "Weights",
-  running: "Running",
-  hybrid: "Hybrid",
-};
 
 interface MyTemplatesSectionProps {
   templates: ProgramTemplateRow[];
@@ -99,9 +95,9 @@ export function MyTemplatesSection({ templates, userId, activeClients, onDeleted
           <Card key={template.id}>
             <CardContent className="flex flex-col gap-3 p-5">
               <div className="flex items-start justify-between gap-2">
-                <span className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                <span className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", DISCIPLINE_META[template.discipline].badgeClass)}>
                   <BookMarked className="size-3.5" />
-                  {DISCIPLINE_LABEL[template.discipline] ?? template.discipline}
+                  {DISCIPLINE_META[template.discipline].label}
                 </span>
                 <button
                   type="button"

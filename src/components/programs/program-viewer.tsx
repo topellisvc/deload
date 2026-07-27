@@ -16,7 +16,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
-import type { BlockRow, ProgramDiscipline, ProgramTree } from "@/lib/programs/types";
+import type { BlockRow, ProgramTree } from "@/lib/programs/types";
 import type { CoachClient, LoggedSet, PersonalRecord, SessionLog } from "@/lib/supabase/types";
 import { DayLogControl } from "@/components/programs/day-log-control";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
@@ -28,14 +28,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScrollFadeX } from "@/components/ui/scroll-fade-x";
 import { createClient } from "@/lib/supabase/client";
 import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
+import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import { formatLogDate as formatLogDateShared, todayDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-
-const DISCIPLINE_LABEL: Record<ProgramDiscipline, string> = {
-  resistance: "Weights",
-  running: "Running",
-  hybrid: "Hybrid",
-};
 
 // This page's inline copy always used a lowercase "today" (mid-sentence
 // usage, e.g. "last today"), unlike DayLogControl's capitalized "Today" —
@@ -97,6 +92,7 @@ export function ProgramViewer({
   const [selectedWeekId, setSelectedWeekId] = useState(program.weeks[0]?.id ?? "");
   const week = program.weeks.find((w) => w.id === selectedWeekId) ?? program.weeks[0];
   const today = todayDateString();
+  const { label: disciplineLabel, Icon: DisciplineIcon, badgeClass: disciplineBadgeClass } = DISCIPLINE_META[program.discipline];
 
   const isOwner = program.owner_id === currentUserId;
   const isAthlete = program.athlete_id === currentUserId;
@@ -190,8 +186,9 @@ export function ProgramViewer({
         <div className="flex flex-1 flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{program.name}</h1>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="w-fit rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              {DISCIPLINE_LABEL[program.discipline]}
+            <span className={cn("flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium", disciplineBadgeClass)}>
+              <DisciplineIcon className="size-3.5" />
+              {disciplineLabel}
             </span>
             {isActive && (
               <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">

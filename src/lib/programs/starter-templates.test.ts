@@ -8,9 +8,9 @@ import { STARTER_PROGRAM_TEMPLATES, getStarterTemplate } from "./starter-templat
 const VALID_STRENGTH_RECORD_TYPES = ["squat", "bench_press", "deadlift", "overhead_press"];
 
 describe("starter program templates", () => {
-  it("exposes exactly the 3 templates the starter-program feature was built around", () => {
+  it("exposes exactly the 4 templates the starter-program feature was built around", () => {
     expect(STARTER_PROGRAM_TEMPLATES.map((t) => t.slug).sort()).toEqual(
-      ["5k-base-builder", "full-body-strength", "push-pull-legs"].sort()
+      ["5k-base-builder", "cardio-conditioning-base", "full-body-strength", "push-pull-legs"].sort()
     );
   });
 

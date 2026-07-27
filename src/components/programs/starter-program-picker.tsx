@@ -2,24 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Dumbbell, Repeat, Footprints, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { createProgramFromTemplate } from "@/lib/programs/mutations";
 import { STARTER_PROGRAM_TEMPLATES } from "@/lib/programs/starter-templates";
-import type { ProgramDiscipline } from "@/lib/programs/types";
-
-const DISCIPLINE_ICON: Record<ProgramDiscipline, typeof Dumbbell> = {
-  resistance: Dumbbell,
-  hybrid: Repeat,
-  running: Footprints,
-};
-
-const DISCIPLINE_LABEL: Record<ProgramDiscipline, string> = {
-  resistance: "Weights",
-  hybrid: "Hybrid",
-  running: "Running",
-};
+import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
+import { cn } from "@/lib/utils";
 
 interface StarterProgramPickerProps {
   /**
@@ -69,19 +58,17 @@ export function StarterProgramPicker({ mode, userId }: StarterProgramPickerProps
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {STARTER_PROGRAM_TEMPLATES.map((template) => {
-          const Icon = DISCIPLINE_ICON[template.discipline];
+          const { Icon, badgeClass } = DISCIPLINE_META[template.discipline];
           const isPending = pendingSlug === template.slug;
           return (
             <div key={template.slug} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5">
               <div className="flex items-center gap-2">
-                <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <div className={cn("flex size-9 items-center justify-center rounded-lg", badgeClass)}>
                   <Icon className="size-5" />
                 </div>
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {DISCIPLINE_LABEL[template.discipline]}
-                </span>
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{DISCIPLINE_META[template.discipline].label}</span>
               </div>
               <div className="flex flex-col gap-1">
                 <h3 className="text-base font-semibold text-foreground">{template.name}</h3>

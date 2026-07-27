@@ -72,7 +72,7 @@ export interface ProgramSummary extends Program {
 
 /**
  * A personal, reusable program template (migration 0020) — distinct from
- * the 3 hardcoded starter templates (starter-templates.ts, which aren't
+ * the hardcoded starter templates (starter-templates.ts, which aren't
  * database rows at all). `template_data.weeks` is a `WeekRow[]` snapshot
  * of whatever program it was saved from, materialized the same way
  * cloneProgram clones a sibling program: one addWeek call per stored week.

@@ -28,6 +28,7 @@
   --color-zone-strength: var(--zone-strength);
   --color-zone-hypertrophy: var(--zone-hypertrophy);
   --color-zone-endurance: var(--zone-endurance);
+  --color-zone-cardio: var(--zone-cardio);
 
   --color-success: var(--success);
   --color-warning: var(--warning);
@@ -93,6 +94,7 @@
   --zone-strength: oklch(0.62 0.19 25);
   --zone-hypertrophy: oklch(0.68 0.16 145);
   --zone-endurance: oklch(0.7 0.14 230);
+  --zone-cardio: oklch(0.6 0.19 300);
 
   --success: oklch(0.65 0.15 150);
   --warning: oklch(0.75 0.15 75);
@@ -118,6 +120,7 @@
   --zone-strength: oklch(0.68 0.18 25);
   --zone-hypertrophy: oklch(0.74 0.15 145);
   --zone-endurance: oklch(0.75 0.13 230);
+  --zone-cardio: oklch(0.72 0.17 300);
 
   --success: oklch(0.7 0.15 150);
   --warning: oklch(0.8 0.15 85);

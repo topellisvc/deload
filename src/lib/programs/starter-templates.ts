@@ -255,7 +255,60 @@ const fiveKBaseBuilder: StarterProgramTemplate = {
   ]),
 };
 
-export const STARTER_PROGRAM_TEMPLATES: StarterProgramTemplate[] = [fullBodyStrength, pushPullLegs, fiveKBaseBuilder];
+const cardioConditioningBase: StarterProgramTemplate = {
+  slug: "cardio-conditioning-base",
+  name: "Cardio Conditioning Base",
+  description:
+    "3 cardio days a week across different machines — steady state, tempo, and an easy long effort — to build an aerobic base without touching a barbell.",
+  discipline: "cardio",
+  daysPerWeek: 3,
+  totalWeeks: 4,
+  // Only distance actually scales week-to-week (see addWeek's comment on
+  // `scalable` above) — duration/heart-rate-zone blocks stay flat across
+  // all 4 weeks, which is why the description above doesn't promise
+  // specific weekly growth the way 5K Base Builder's does (every one of
+  // its blocks is distance-based, so its whole week scales uniformly;
+  // this template's Tempo Row is the only block that does).
+  progressionSteps: [8, 16, 24],
+  week1: week1Of([
+    day("Steady State", false, [
+      b(
+        ex(
+          "Stationary Bike",
+          "cardio",
+          row("heart_rate_zone", { sets: 1, duration_seconds: 1200, heart_rate_zone: 2, rest_seconds: null }),
+          "Comfortable, sustainable pace — you should be able to hold a conversation the whole time."
+        )
+      ),
+    ]),
+    day("Rest", true, []),
+    day("Tempo", false, [
+      b(
+        ex(
+          "Rowing Machine",
+          "cardio",
+          row("distance", { sets: 1, distance_meters: 2500, rest_seconds: null }),
+          "Faster than steady state — a pace you could hold for about 20 minutes, not an all-out effort."
+        )
+      ),
+    ]),
+    day("Rest", true, []),
+    day("Long Steady", false, [
+      b(
+        ex(
+          "Elliptical",
+          "cardio",
+          row("time", { sets: 1, duration_seconds: 1800, rest_seconds: null }),
+          "Easy, steady effort — this is about time spent moving, not intensity."
+        )
+      ),
+    ]),
+    day("Rest", true, []),
+    day("Rest", true, []),
+  ]),
+};
+
+export const STARTER_PROGRAM_TEMPLATES: StarterProgramTemplate[] = [fullBodyStrength, pushPullLegs, fiveKBaseBuilder, cardioConditioningBase];
 
 export function getStarterTemplate(slug: string): StarterProgramTemplate | undefined {
   return STARTER_PROGRAM_TEMPLATES.find((t) => t.slug === slug);

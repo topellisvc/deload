@@ -175,7 +175,7 @@ export default function HomePage() {
             icon={ClipboardList}
             colorClass="bg-zone-strength/15 text-zone-strength"
             title="Programs"
-            description="Build multi-week programs with sets, reps, supersets, and running sessions, then log your training as you actually do it."
+            description="Build multi-week programs with sets, reps, supersets, running, and cardio sessions, then log your training as you actually do it."
             href="/programs"
             cta="Build a program"
           />
@@ -207,9 +207,9 @@ export default function HomePage() {
               Strength or endurance — programmed properly, either way
             </h2>
             <p className="text-muted-foreground">
-              Deload isn&rsquo;t just a lifting app. Build resistance, running, or hybrid
-              programs with the same rigor — progressive overload, sensible rep ranges, and
-              pacing grounded in published research instead of guesswork.
+              Deload isn&rsquo;t just a lifting app. Build resistance, running, cardio, or
+              hybrid programs with the same rigor — progressive overload, sensible rep ranges,
+              and pacing grounded in published research instead of guesswork.
             </p>
             <p className="text-muted-foreground">
               Start from scratch, or pick one of our ready-made 4-week starter programs and

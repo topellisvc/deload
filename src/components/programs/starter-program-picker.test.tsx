@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { StarterProgramPicker } from "./starter-program-picker";
 import { STARTER_PROGRAM_TEMPLATES } from "@/lib/programs/starter-templates";
 
-/** Index within STARTER_PROGRAM_TEMPLATES — all 3 cards render an
+/** Index within STARTER_PROGRAM_TEMPLATES — every card renders an
  * identically-labeled "Start this program" button, so tests pick the right
  * one by template order rather than fragile DOM traversal up from a
  * heading. */
