@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { cloneProgram, createProgram, createProgramFromSavedTemplate, createProgramFromTemplate, deleteProgramTemplate, saveProgramAsTemplate } from "./mutations";
+import {
+  addExerciseBlock,
+  addExerciseToBlock,
+  cloneProgram,
+  createProgram,
+  createProgramFromSavedTemplate,
+  createProgramFromTemplate,
+  deleteProgramTemplate,
+  saveProgramAsTemplate,
+} from "./mutations";
 import { getProgramTree } from "./queries";
 import { STARTER_PROGRAM_TEMPLATES } from "./starter-templates";
 import type { ProgramTemplateRow, ProgramTree } from "./types";
@@ -38,6 +47,34 @@ function countSets(template: (typeof STARTER_PROGRAM_TEMPLATES)[number]): number
     0
   );
 }
+
+describe("addExerciseBlock / addExerciseToBlock category default", () => {
+  it("addExerciseBlock uses the passed category instead of always defaulting to strength", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseBlock(supabase as never, { dayId: "day-1", position: 1, category: "running" });
+
+    expect(inserted.block_exercises![0]).toMatchObject({ exercise_category: "running" });
+    expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "distance" });
+  });
+
+  it("addExerciseBlock falls back to strength when no category is passed (original behavior)", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseBlock(supabase as never, { dayId: "day-1", position: 1 });
+
+    expect(inserted.block_exercises![0]).toMatchObject({ exercise_category: "strength" });
+  });
+
+  it("addExerciseToBlock uses the passed category", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseToBlock(supabase as never, { blockId: "block-1", position: 2, category: "cardio" });
+
+    expect(inserted.block_exercises![0]).toMatchObject({ exercise_category: "cardio" });
+    expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "time" });
+  });
+});
 
 describe("createProgramFromTemplate", () => {
   const template = STARTER_PROGRAM_TEMPLATES.find((t) => t.slug === "full-body-strength")!;

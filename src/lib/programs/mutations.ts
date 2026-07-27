@@ -712,11 +712,18 @@ export async function copyDayContents(
 
 export async function addExerciseBlock(
   supabase: SupabaseClient,
-  params: { dayId: string; position: number }
+  /** `category` defaults to 'strength' when omitted (the original,
+   * always-strength behavior) — callers that know the program's
+   * discipline should pass `defaultCategoryForDiscipline(program.discipline)`
+   * (lib/programs/prescription-types.ts) instead, so a Running or Cardio
+   * program's new blocks don't all need switching by hand before they're
+   * usable. Either way this is only ever a starting point:
+   * switchExerciseCategory changes it same as before. */
+  params: { dayId: string; position: number; category?: ExerciseCategory }
 ): Promise<{ block: BlockRow | null; error: string | null }> {
   const blockId = newId();
   const exerciseId = newId();
-  const category: ExerciseCategory = "strength";
+  const category: ExerciseCategory = params.category ?? "strength";
   const prescriptionType = defaultPrescriptionType(category);
 
   const { error: blockError } = await supabase.from("exercise_blocks").insert({
@@ -782,10 +789,12 @@ export async function deleteBlock(supabase: SupabaseClient, blockId: string): Pr
  */
 export async function addExerciseToBlock(
   supabase: SupabaseClient,
-  params: { blockId: string; position: number }
+  /** `category` defaults to 'strength' when omitted — see
+   * addExerciseBlock's doc comment above for the same rationale. */
+  params: { blockId: string; position: number; category?: ExerciseCategory }
 ): Promise<{ exercise: BlockExerciseRow | null; error: string | null }> {
   const exerciseId = newId();
-  const category: ExerciseCategory = "strength";
+  const category: ExerciseCategory = params.category ?? "strength";
   const prescriptionType = defaultPrescriptionType(category);
 
   const { error: exerciseError } = await supabase.from("block_exercises").insert({

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { BlockRow, DayRow, ExerciseCategory, PrescriptionType, ProgramDiscipline, ProgramTree, SetRow, WeekRow } from "@/lib/programs/types";
-import { defaultPrescriptionType } from "@/lib/programs/prescription-types";
+import { defaultCategoryForDiscipline, defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import * as m from "@/lib/programs/mutations";
 import { DayColumn } from "@/components/programs/day-column";
@@ -211,7 +211,11 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   async function handleAddBlock(dayId: string) {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
-    const { block, error } = await m.addExerciseBlock(supabase, { dayId, position: nextPosition(day.blocks) });
+    const { block, error } = await m.addExerciseBlock(supabase, {
+      dayId,
+      position: nextPosition(day.blocks),
+      category: defaultCategoryForDiscipline(program.discipline),
+    });
     if (error || !block) {
       fail(error ?? "Couldn't add exercise.");
       return;
@@ -256,9 +260,16 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     const block = day?.blocks.find((b) => b.id === blockId);
     if (!block) return;
     setAddingExerciseBlockId(blockId);
+    // A superset pairing should default to matching whatever's already in
+    // the block (e.g. pairing two strength accessories stays strength)
+    // rather than the program's overall discipline — a hybrid program's
+    // strength block shouldn't suddenly default its 2nd exercise to
+    // "cardio" just because the program as a whole mixes both.
+    const category = block.exercises[0]?.exercise_category ?? defaultCategoryForDiscipline(program.discipline);
     const { exercise, error } = await m.addExerciseToBlock(supabase, {
       blockId,
       position: nextPosition(block.exercises),
+      category,
     });
     setAddingExerciseBlockId(null);
     if (error || !exercise) {

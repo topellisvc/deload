@@ -3,6 +3,7 @@ import {
   PRESCRIPTION_TYPES_BY_CATEGORY,
   getPrescriptionTypeDef,
   defaultPrescriptionType,
+  defaultCategoryForDiscipline,
   suggestedWeightFromPercent1RM,
 } from "./prescription-types";
 
@@ -27,6 +28,18 @@ describe("cardio 'intervals' prescription type", () => {
 
   it("does not resolve for the strength category", () => {
     expect(getPrescriptionTypeDef("strength", "intervals" as never)).toBeUndefined();
+  });
+});
+
+describe("defaultCategoryForDiscipline", () => {
+  it("maps each discipline onto the right starting exercise category", () => {
+    expect(defaultCategoryForDiscipline("resistance")).toBe("strength");
+    expect(defaultCategoryForDiscipline("running")).toBe("running");
+    expect(defaultCategoryForDiscipline("cardio")).toBe("cardio");
+    // Hybrid has no dedicated category of its own — every hybrid starter
+    // template is predominantly strength work with cardio mixed in, not
+    // the other way around, so it defaults to strength.
+    expect(defaultCategoryForDiscipline("hybrid")).toBe("strength");
   });
 });
 

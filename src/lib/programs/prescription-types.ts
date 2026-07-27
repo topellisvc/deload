@@ -1,4 +1,4 @@
-import type { CardioPrescriptionType, ExerciseCategory, PrescriptionType, RunningPrescriptionType, StrengthPrescriptionType } from "@/lib/programs/types";
+import type { CardioPrescriptionType, ExerciseCategory, PrescriptionType, ProgramDiscipline, RunningPrescriptionType, StrengthPrescriptionType } from "@/lib/programs/types";
 
 /**
  * The single declarative source of truth for "given this exercise category
@@ -245,6 +245,34 @@ export function getPrescriptionTypeDef(category: ExerciseCategory, type: Prescri
  * the least surprising thing to default to before the coach picks something more specific. */
 export function defaultPrescriptionType(category: ExerciseCategory): PrescriptionType {
   return PRESCRIPTION_TYPES_BY_CATEGORY[category][0]!.value;
+}
+
+/**
+ * Which exercise category a freshly-added block should start as, based on
+ * the program's own discipline — addExerciseBlock/addExerciseToBlock
+ * (lib/programs/mutations.ts) used to hardcode every new block to
+ * 'strength' regardless of discipline, so building out a Running or
+ * Cardio program meant switching every single new block's category by
+ * hand before it was even usable. ProgramDiscipline has one more value
+ * than ExerciseCategory (there's no dedicated 'hybrid' or 'resistance'
+ * category) — 'resistance' maps onto 'strength' since that's the same
+ * concept under a different name, and 'hybrid' also defaults to
+ * 'strength' since every hybrid starter template (see
+ * starter-templates.ts's Push Pull Legs) is predominantly strength work
+ * with cardio mixed in, not the other way around. Either default is only
+ * ever a starting point — switchExerciseCategory changes it same as
+ * before.
+ */
+export function defaultCategoryForDiscipline(discipline: ProgramDiscipline): ExerciseCategory {
+  switch (discipline) {
+    case "running":
+      return "running";
+    case "cardio":
+      return "cardio";
+    case "resistance":
+    case "hybrid":
+      return "strength";
+  }
 }
 
 export const EXERCISE_CATEGORY_LABELS: Record<ExerciseCategory, string> = {
