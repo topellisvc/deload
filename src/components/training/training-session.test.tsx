@@ -15,11 +15,12 @@ vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({}) }));
 // The full state machine (exercise navigation, rest timers, resume
 // derivation) is out of scope here — that's
 // integration-level territory already covered by live testing (tasks
-// #8-#11). These tests only exercise the two things ProgramBuilder-style
-// unit coverage can actually add value on: the skip-workout confirm branch
-// (only prompts once something's actually been logged) and the
-// beforeunload guard (blocks the tab from closing mid-save). Every screen
-// component is stubbed down to just the props these two behaviors touch.
+// #8-#11). These tests only exercise the things ProgramBuilder-style unit
+// coverage can actually add value on: the Overview screen's direct skip
+// (nothing's logged yet, so no dialog), the mid-workout End Workout
+// dialog's save/discard/cancel branches, and the beforeunload guard
+// (blocks the tab from closing mid-save). Every screen component is
+// stubbed down to just the props these behaviors touch.
 vi.mock("@/components/training/workout-overview-screen", () => ({
   WorkoutOverviewScreen: ({
     onBegin,
@@ -43,10 +44,10 @@ vi.mock("@/components/training/workout-overview-screen", () => ({
   ),
 }));
 vi.mock("@/components/training/exercise-screen", () => ({
-  ExerciseScreen: ({ onSkipWorkout, busy }: { onSkipWorkout: () => void; busy: boolean }) => (
+  ExerciseScreen: ({ onEndWorkout, busy }: { onEndWorkout: () => void; busy: boolean }) => (
     <div>
-      <button type="button" onClick={onSkipWorkout} disabled={busy}>
-        Skip workout
+      <button type="button" onClick={onEndWorkout} disabled={busy}>
+        End workout
       </button>
     </div>
   ),
@@ -144,7 +145,7 @@ function makeDraftSet(overrides: Partial<DraftSet> = {}): DraftSet {
   };
 }
 
-describe("TrainingSession skip-workout confirm", () => {
+describe("TrainingSession Overview skip", () => {
   beforeEach(() => {
     vi.mocked(saveDraftSession).mockReset();
     vi.mocked(deleteDraftSession).mockReset().mockResolvedValue(undefined);
@@ -153,7 +154,7 @@ describe("TrainingSession skip-workout confirm", () => {
     routerMock.refresh.mockClear();
   });
 
-  it("skips immediately with no confirm dialog when nothing has been logged yet (Overview)", async () => {
+  it("skips immediately with no dialog when nothing has been logged yet", async () => {
     const user = userEvent.setup();
     render(<TrainingSession {...BASE_PROPS} initialDraft={null} />);
 
@@ -167,56 +168,84 @@ describe("TrainingSession skip-workout confirm", () => {
     expect(deleteDraftSession).toHaveBeenCalledWith(expect.anything(), "day-1", "athlete-1");
     await waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/dashboard"));
   });
+});
 
-  it("requires confirmation before skipping once a set has already been logged, and doesn't skip until confirmed", async () => {
+describe("TrainingSession End Workout dialog", () => {
+  const initialDraft: TrainingModeSession = {
+    id: "session-1",
+    trainingDayId: "day-1",
+    athleteId: "athlete-1",
+    startedAt: "2026-07-25T09:00:00.000Z",
+    updatedAt: "2026-07-25T09:00:00.000Z",
+    draftSets: [makeDraftSet()],
+    exerciseNotes: {},
+    workoutNote: null,
+  };
+
+  beforeEach(() => {
+    vi.mocked(saveDraftSession).mockReset();
+    vi.mocked(deleteDraftSession).mockReset().mockResolvedValue(undefined);
+    vi.mocked(createSessionLog).mockReset().mockResolvedValue({ log: null, error: null });
+    routerMock.push.mockClear();
+    routerMock.refresh.mockClear();
+  });
+
+  it("offers Save & Finish or Discard, and doesn't act until one is chosen", async () => {
     const user = userEvent.setup();
-    const initialDraft: TrainingModeSession = {
-      id: "session-1",
-      trainingDayId: "day-1",
-      athleteId: "athlete-1",
-      startedAt: "2026-07-25T09:00:00.000Z",
-      updatedAt: "2026-07-25T09:00:00.000Z",
-      draftSets: [makeDraftSet()],
-      exerciseNotes: {},
-      workoutNote: null,
-    };
     render(<TrainingSession {...BASE_PROPS} initialDraft={initialDraft} />);
 
-    await user.click(screen.getByRole("button", { name: "Skip workout" }));
+    await user.click(screen.getByRole("button", { name: "End workout" }));
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("Skip this workout?")).toBeInTheDocument();
-    expect(within(dialog).getByText(/won't be saved/)).toBeInTheDocument();
+    expect(within(dialog).getByText("End this workout early?")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Save & Finish/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Discard Workout/ })).toBeInTheDocument();
     expect(createSessionLog).not.toHaveBeenCalled();
+  });
 
-    await user.click(within(dialog).getByRole("button", { name: "Skip" }));
+  it("Save & Finish leaves the exercise screen without discarding anything", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={initialDraft} />);
+
+    await user.click(screen.getByRole("button", { name: "End workout" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Save & Finish/ }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Moved off the exercise screen (mocked to render just this button) —
+    // the real destination (WorkoutSummaryScreen) is mocked to null, so
+    // "the End Workout button is gone" is what confirms the transition.
+    expect(screen.queryByRole("button", { name: "End workout" })).not.toBeInTheDocument();
+    expect(createSessionLog).not.toHaveBeenCalled();
+    expect(deleteDraftSession).not.toHaveBeenCalled();
+  });
+
+  it("Discard Workout deletes the draft and logs a skip", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={initialDraft} />);
+
+    await user.click(screen.getByRole("button", { name: "End workout" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Discard Workout/ }));
 
     expect(createSessionLog).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ trainingDayId: "day-1", athleteId: "athlete-1", skipped: true })
     );
+    expect(deleteDraftSession).toHaveBeenCalledWith(expect.anything(), "day-1", "athlete-1");
     await waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/dashboard"));
   });
 
-  it("does not skip when the confirm dialog is dismissed instead of confirmed", async () => {
+  it("does nothing when the dialog is cancelled", async () => {
     const user = userEvent.setup();
-    const initialDraft: TrainingModeSession = {
-      id: "session-1",
-      trainingDayId: "day-1",
-      athleteId: "athlete-1",
-      startedAt: "2026-07-25T09:00:00.000Z",
-      updatedAt: "2026-07-25T09:00:00.000Z",
-      draftSets: [makeDraftSet()],
-      exerciseNotes: {},
-      workoutNote: null,
-    };
     render(<TrainingSession {...BASE_PROPS} initialDraft={initialDraft} />);
 
-    await user.click(screen.getByRole("button", { name: "Skip workout" }));
+    await user.click(screen.getByRole("button", { name: "End workout" }));
     const dialog = screen.getByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "End workout" })).toBeInTheDocument();
     expect(createSessionLog).not.toHaveBeenCalled();
     expect(routerMock.push).not.toHaveBeenCalled();
   });

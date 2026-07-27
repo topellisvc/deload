@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, SkipForward } from "lucide-react";
+import { CheckCircle2, StopCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { buildSetTargets } from "@/lib/training/sequence";
@@ -14,7 +14,7 @@ interface ExerciseListScreenProps {
   resumeExerciseId: string | null;
   loggedSetCounts: Map<string, number>;
   onSelect: (exerciseId: string) => void;
-  onSkipWorkout: () => void;
+  onEndWorkout: () => void;
 }
 
 /**
@@ -34,7 +34,7 @@ export function ExerciseListScreen({
   resumeExerciseId,
   loggedSetCounts,
   onSelect,
-  onSkipWorkout,
+  onEndWorkout,
 }: ExerciseListScreenProps) {
   const doneCount = exercises.filter((exercise) => {
     const targetCount = buildSetTargets(exercise.sets).length;
@@ -89,9 +89,9 @@ export function ExerciseListScreen({
         <span className="text-xs text-muted-foreground">
           {doneCount} of {exercises.length} done
         </span>
-        <Button variant="ghost" size="sm" onClick={onSkipWorkout} className="text-muted-foreground">
-          <SkipForward className="size-3.5" />
-          Skip Workout
+        <Button variant="ghost" size="sm" onClick={onEndWorkout} className="text-muted-foreground">
+          <StopCircle className="size-3.5" />
+          End Workout
         </Button>
       </div>
     </div>

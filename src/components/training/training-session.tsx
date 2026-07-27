@@ -21,7 +21,7 @@ import { RestScreen } from "@/components/training/rest-screen";
 import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-screen";
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
 import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EndWorkoutDialog } from "@/components/training/end-workout-dialog";
 
 type Phase = "overview" | "exercises" | "exercise" | "rest" | "exercise-complete" | "summary" | "program-complete";
 
@@ -52,14 +52,16 @@ function nextPosition(blockExerciseId: string, sets: DraftSet[]): number {
 }
 
 /**
- * The whole Training Mode state machine — overview -> (exercise <-> rest)*
- * -> summary -> finish. Every meaningful change (a completed set, an
- * exercise/workout note, an exercise finishing) is persisted to
- * training_mode_sessions immediately (lib/training/mutations.ts's
- * saveDraftSession) so a refresh or a dropped connection never loses more
- * than the single most recent edit — that's what makes resuming mid-workout
- * possible at all (see the initial-state derivation below, which is the
- * exact same logic a fresh mount uses whether or not `initialDraft` exists).
+ * The whole Training Mode state machine — overview -> exercises (list) ->
+ * (exercise <-> rest)* -> summary -> finish, with an End Workout escape
+ * hatch reachable from any of the exercises/exercise/rest phases. Every
+ * meaningful change (a completed set, an exercise/workout note, an
+ * exercise finishing) is persisted to training_mode_sessions immediately
+ * (lib/training/mutations.ts's saveDraftSession) so a refresh or a dropped
+ * connection never loses more than the single most recent edit — that's
+ * what makes resuming mid-workout possible at all (see the initial-state
+ * derivation below, which is the exact same logic a fresh mount uses
+ * whether or not `initialDraft` exists).
  *
  * Exercise order isn't enforced: `currentExerciseId` can move to any
  * exercise in `exerciseList` at any time, either by finishing the current
@@ -70,6 +72,13 @@ function nextPosition(blockExerciseId: string, sets: DraftSet[]): number {
  * tracked independently by its own logged-set count, never by position, so
  * visiting exercises out of order and coming back to one later loses
  * nothing.
+ *
+ * Stopping isn't all-or-nothing either: End Workout (see EndWorkoutDialog)
+ * lets the athlete finish early with whatever's logged so far (routes
+ * through the same summary/finish flow a fully completed workout uses) or
+ * discard the attempt entirely (the same skip mutation the Overview
+ * screen's "Skip Workout" always used) — added after feedback that the
+ * only way to stop early used to be an unconditional discard.
  */
 export function TrainingSession({
   trainingDayId,
@@ -115,7 +124,7 @@ export function TrainingSession({
   const [finishing, setFinishing] = useState(false);
   const [skippingWorkout, setSkippingWorkout] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmSkipOpen, setConfirmSkipOpen] = useState(false);
+  const [endWorkoutOpen, setEndWorkoutOpen] = useState(false);
 
   const transitionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -225,6 +234,24 @@ export function TrainingSession({
     setPhase("exercises");
   }
 
+  function handleEndWorkout() {
+    setEndWorkoutOpen(true);
+  }
+
+  // "Save & Finish" from the End Workout dialog — routes through the exact
+  // same summary/finish flow a fully completed workout uses, just possibly
+  // with fewer exercises' worth of sets in it. Cancels any pending
+  // auto-advance transition first, same reasoning as handleJumpToExercise.
+  function handleSaveAndFinish() {
+    setEndWorkoutOpen(false);
+    if (transitionTimeout.current) {
+      clearTimeout(transitionTimeout.current);
+      transitionTimeout.current = null;
+    }
+    setCompletedAt(new Date().toISOString());
+    setPhase("summary");
+  }
+
   async function handleCompleteSet(payload: { weight: number | null; reps: number | null; notes: string | null }) {
     if (!currentExercise) return;
     const targets = buildSetTargets(currentExercise.sets);
@@ -332,6 +359,11 @@ export function TrainingSession({
     void persist({ workoutNote: text || null });
   }
 
+  // Discards this attempt entirely — used by the Overview screen's "Skip
+  // Workout" (nothing's logged yet at that point, so there's nothing to
+  // choose between) and by the End Workout dialog's "Discard" option
+  // (where something usually has been logged, and the athlete has already
+  // been shown the alternative of saving it instead).
   async function performSkipWorkout() {
     setSkippingWorkout(true);
     setError(null);
@@ -344,7 +376,7 @@ export function TrainingSession({
     });
     if (skipError) {
       setSkippingWorkout(false);
-      setConfirmSkipOpen(false);
+      setEndWorkoutOpen(false);
       setError(skipError);
       return;
     }
@@ -352,19 +384,12 @@ export function TrainingSession({
     // rather than leaving something to resume into later.
     await deleteDraftSession(supabase, trainingDayId, athleteId);
     setSkippingWorkout(false);
-    setConfirmSkipOpen(false);
+    setEndWorkoutOpen(false);
     router.refresh();
     router.push("/dashboard");
   }
 
   function handleSkipWorkout() {
-    // Skipping from the Overview loses nothing (nothing's logged yet), but
-    // skipping mid-workout discards any sets already completed — worth a
-    // confirmation there, since it's not undoable.
-    if (draftSets.length > 0) {
-      setConfirmSkipOpen(true);
-      return;
-    }
     void performSkipWorkout();
   }
 
@@ -449,7 +474,7 @@ export function TrainingSession({
           resumeExerciseId={findResumeExerciseId(exerciseList, loggedSetCounts)}
           loggedSetCounts={loggedSetCounts}
           onSelect={handleJumpToExercise}
-          onSkipWorkout={handleSkipWorkout}
+          onEndWorkout={handleEndWorkout}
         />
       )}
 
@@ -468,7 +493,7 @@ export function TrainingSession({
           onCompleteSet={handleCompleteSet}
           onCardioFinish={handleCardioFinish}
           onOpenExerciseList={openExerciseList}
-          onSkipWorkout={handleSkipWorkout}
+          onEndWorkout={handleEndWorkout}
           busy={saving}
         />
       )}
@@ -480,6 +505,7 @@ export function TrainingSession({
           nextTarget={restNextTarget}
           category={currentExercise.exercise_category}
           onOpenExerciseList={openExerciseList}
+          onEndWorkout={handleEndWorkout}
           onSkip={handleRestDone}
           onContinue={handleRestDone}
         />
@@ -503,13 +529,12 @@ export function TrainingSession({
 
       {phase === "program-complete" && <ProgramCompleteScreen programName={programName} onDone={goToDashboard} />}
 
-      <ConfirmDialog
-        open={confirmSkipOpen}
-        onClose={() => setConfirmSkipOpen(false)}
-        onConfirm={performSkipWorkout}
-        title="Skip this workout?"
-        description="The sets you've already logged won't be saved."
-        confirmLabel="Skip"
+      <EndWorkoutDialog
+        open={endWorkoutOpen}
+        onClose={() => setEndWorkoutOpen(false)}
+        onSaveAndFinish={handleSaveAndFinish}
+        onDiscard={performSkipWorkout}
+        discarding={skippingWorkout}
       />
     </div>
   );

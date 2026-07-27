@@ -37,7 +37,7 @@ interface ExerciseScreenProps {
     notes: string | null;
   }) => void;
   onOpenExerciseList: () => void;
-  onSkipWorkout: () => void;
+  onEndWorkout: () => void;
   busy: boolean;
 }
 
@@ -62,7 +62,7 @@ export function ExerciseScreen({
   onCompleteSet,
   onCardioFinish,
   onOpenExerciseList,
-  onSkipWorkout,
+  onEndWorkout,
   busy,
 }: ExerciseScreenProps) {
   const category = exercise.exercise_category;
@@ -79,10 +79,10 @@ export function ExerciseScreen({
         </Button>
         <button
           type="button"
-          onClick={onSkipWorkout}
+          onClick={onEndWorkout}
           className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
-          Skip Workout
+          End Workout
         </button>
       </div>
 
