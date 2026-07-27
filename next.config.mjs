@@ -16,6 +16,48 @@ const supabaseHostname = (() => {
   }
 })();
 
+// Third-party network surface is deliberately small and already known: the
+// Supabase project itself (REST + Realtime websockets, for the live
+// message-thread/notification-bell subscriptions), Unsplash-hosted seed
+// article images, and Sentry's ingest endpoint for client-side error
+// reporting (src/instrumentation-client.ts). Vercel Analytics/Speed
+// Insights are same-origin (Vercel proxies them under /_vercel/*), so they
+// don't need a separate connect-src/script-src entry.
+//
+// script-src and style-src both need 'unsafe-inline': this app has no
+// nonce plumbing (that needs a middleware.ts generating a per-request
+// nonce and threading it through <script>/<style> tags), and both
+// Next.js's own RSC/hydration payloads and this app's own
+// dangerouslySetInnerHTML usage (layout.tsx's dark-mode-flash guard,
+// the JSON-LD blocks in insights pages) rely on inline tags. Tightening
+// this further is a real follow-up, not a small tweak.
+const csp = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  `img-src 'self' data: blob: https://images.unsplash.com${supabaseHostname ? ` https://${supabaseHostname}` : ""}`,
+  "font-src 'self' data:",
+  `connect-src 'self'${supabaseHostname ? ` https://${supabaseHostname} wss://${supabaseHostname}` : ""} https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io`,
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+].join("; ");
+
+const securityHeaders = [
+  { key: "Content-Security-Policy", value: csp },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
+  // Vercel terminates TLS in front of every deployment (prod and preview
+  // alike), so this is safe to send unconditionally. `preload` just
+  // signals intent via the header — it doesn't enroll the domain in
+  // Chrome's HSTS preload list by itself; that's a separate, manual
+  // submission at hstspreload.org if this ever gets used.
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -26,6 +68,9 @@ const nextConfig = {
       { protocol: "https", hostname: "images.unsplash.com" },
       ...(supabaseHostname ? [{ protocol: "https", hostname: supabaseHostname }] : []),
     ],
+  },
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders }];
   },
 };
 
