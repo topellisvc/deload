@@ -32,6 +32,17 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+  // Next.js already auto-detects icon.tsx/apple-icon.tsx (src/app/) and
+  // injects matching <link> tags without this — declared explicitly
+  // anyway so the exact rel values Google's favicon docs look for
+  // (rel="icon", the legacy "shortcut icon" alias, rel="apple-touch-icon")
+  // are unambiguous rather than left to framework defaults. Doesn't change
+  // what's served, just how plainly it's declared.
+  icons: {
+    icon: "/icon",
+    shortcut: "/icon",
+    apple: "/apple-icon",
+  },
   openGraph: {
     type: "website",
     url: "/",
