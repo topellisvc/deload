@@ -273,6 +273,12 @@ export interface SetPrescription {
   duration_seconds: number | null;
   /** Running 'pace' type only — target pace. */
   pace_seconds_per_km: number | null;
+  /** Program Builder Advanced Mode's extensibility point — label/value
+   * pairs for whatever a coach attaches beyond the standard prescription
+   * fields (tempo, cluster rest, band/chain load, or a plain custom note).
+   * Null for every row Advanced Mode has never touched; Simple Mode never
+   * reads or writes this. See lib/programs/advanced-fields.ts. */
+  advanced_config: Record<string, string> | null;
 }
 
 /**

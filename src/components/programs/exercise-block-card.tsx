@@ -1,25 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, Repeat, X } from "lucide-react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical, Repeat, Trash2 } from "lucide-react";
 import type { BlockRow, ExerciseCategory, PrescriptionType, SetRow } from "@/lib/programs/types";
-import {
-  EXERCISE_CATEGORY_ACTIVE_CLASSES,
-  EXERCISE_CATEGORY_LABELS,
-  PRESCRIPTION_TYPES_BY_CATEGORY,
-  defaultPrescriptionType,
-} from "@/lib/programs/prescription-types";
-import { ExercisePicker } from "@/components/programs/exercise-picker";
-import { PrescriptionRowEditor } from "@/components/programs/prescription-row-editor";
-import { SegmentedControl } from "@/components/ui/segmented-control";
+import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
+import type { BuilderMode } from "@/lib/programs/use-builder-mode";
+import { ExerciseCard } from "@/components/programs/exercise-card";
 import { cn } from "@/lib/utils";
 
 interface ExerciseBlockCardProps {
   block: BlockRow;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
+  expandedExerciseId: string | null;
+  onToggleExpand: (exerciseId: string) => void;
+  mode: Exclude<BuilderMode, "preview">;
+  library: ExerciseSearchResult[];
+  onCreateCustomExercise: (name: string, category: ExerciseCategory) => void;
   onDeleteBlock: () => void;
   onAddExerciseToBlock: () => void;
   /** True while this block's "add exercise" write is in flight. The click
@@ -28,8 +25,10 @@ interface ExerciseBlockCardProps {
    * click during that round-trip. */
   isAddingExercise: boolean;
   onRemoveExerciseFromBlock: (blockExerciseId: string) => void;
+  onDuplicateExercise: (blockExerciseId: string) => void;
   onRoundsChange: (rounds: number) => void;
   onExerciseChange: (blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
+  onNoteChange: (blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockExerciseId: string, category: ExerciseCategory) => void;
   onPrescriptionTypeChange: (blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockExerciseId: string) => void;
@@ -37,53 +36,45 @@ interface ExerciseBlockCardProps {
   onDeleteSet: (blockExerciseId: string, setId: string) => void;
 }
 
-const CATEGORY_OPTIONS = (Object.keys(EXERCISE_CATEGORY_LABELS) as ExerciseCategory[]).map((value) => ({
-  value,
-  label: EXERCISE_CATEGORY_LABELS[value],
-  activeClassName: EXERCISE_CATEGORY_ACTIVE_CLASSES[value],
-}));
-
 /**
  * A block holds one exercise (straight set) or several performed back to
  * back for a set number of rounds (superset/circuit — the UI doesn't
- * distinguish the two, both just mean "2+ exercises, N rounds"). Drop
- * sets don't need separate block-level handling: they're already just
- * multiple prescription rows on one exercise with decreasing load, which
- * PrescriptionRowEditor's "Add row" already supports.
+ * distinguish the two, both just mean "2+ exercises, N rounds"). This is
+ * the sortable unit drag-and-drop reordering actually moves (see
+ * day-column.tsx's DndContext) — for the common straight-block case that's
+ * indistinguishable from "drag the exercise," which is all the spec asks
+ * for; a superset's exercises still move as one group, matching how they
+ * were already reordered as a unit (via move up/down) before this redesign.
  *
- * Each exercise now has Category (Strength/Running/Cardio) and
- * Prescription Type pickers — the program builder's "Step 1 / Step 2 /
- * Step 3" flow from the product spec, done inline rather than as a modal
- * wizard, matching this app's existing philosophy of live, no-dialog
- * editing everywhere else in the builder (day copying, supersets, week
- * add-on). The prescription type applies to every row on the exercise at
- * once (see onPrescriptionTypeChange) — one exercise, one type, matching
- * "every Strength exercise must have a required field: Prescription
- * Type" rather than letting individual rows drift to different types.
- *
- * Adding a second exercise via "+ Add exercise to this block" is what
- * turns a straight block into a superset; removing back down to one
- * turns it back — that flip happens in the parent (ProgramBuilder), this
- * component just renders whatever `block.exercises` currently holds.
+ * Renders one ExerciseCard per exercise (exercise-card.tsx) — this
+ * component now owns only block-level chrome (drag handle, rounds, and a
+ * "delete the whole superset" action that's redundant to show once there's
+ * only one exercise, since that exercise's own Delete already covers it).
  */
 export function ExerciseBlockCard({
   block,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
+  expandedExerciseId,
+  onToggleExpand,
+  mode,
+  library,
+  onCreateCustomExercise,
   onDeleteBlock,
   onAddExerciseToBlock,
   isAddingExercise,
   onRemoveExerciseFromBlock,
+  onDuplicateExercise,
   onRoundsChange,
   onExerciseChange,
+  onNoteChange,
   onCategoryChange,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
   onDeleteSet,
 }: ExerciseBlockCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
   const isGrouped = block.exercises.length > 1;
   const [rounds, setRounds] = useState(String(block.rounds));
 
@@ -98,10 +89,24 @@ export function ExerciseBlockCard({
   if (block.exercises.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3">
-      <div className="flex items-center justify-between gap-2">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn("flex flex-col gap-2 rounded-xl border border-border bg-surface p-2.5", isDragging && "z-10 opacity-60 shadow-lg")}
+    >
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Drag to reorder"
+          className="flex h-7 w-7 shrink-0 touch-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </button>
+
         {isGrouped ? (
-          <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+          <div className="flex flex-1 items-center gap-1.5 text-xs font-medium text-primary">
             <Repeat className="size-3.5" />
             Superset ·
             <input
@@ -110,119 +115,50 @@ export function ExerciseBlockCard({
               onChange={(e) => setRounds(e.target.value)}
               onBlur={commitRounds}
               inputMode="numeric"
-              className="h-6 w-9 rounded border border-border bg-surface px-1 text-center text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="h-6 w-9 rounded border border-border bg-background px-1 text-center text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             />
             rounds
           </div>
         ) : (
-          <span />
+          <span className="flex-1" />
         )}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={onMoveUp}
-            disabled={!canMoveUp}
-            aria-label="Move block up"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <ChevronUp className="size-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onMoveDown}
-            disabled={!canMoveDown}
-            aria-label="Move block down"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <ChevronDown className="size-4" />
-          </button>
+
+        {isGrouped && (
           <button
             type="button"
             onClick={onDeleteBlock}
-            aria-label={isGrouped ? "Delete whole block" : "Delete exercise"}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            aria-label="Delete whole superset"
+            title="Delete whole superset"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            <X className="size-4" />
+            <Trash2 className="size-3.5" />
           </button>
-        </div>
+        )}
       </div>
 
-      <div className="flex flex-col gap-3">
-        {block.exercises.map((exercise) => {
-          const category = exercise.exercise_category;
-          const prescriptionType = exercise.sets[0]?.prescription_type ?? defaultPrescriptionType(category);
-          const typeOptions = PRESCRIPTION_TYPES_BY_CATEGORY[category];
-
-          return (
-            <div
-              key={exercise.id}
-              className={isGrouped ? "flex flex-col gap-1.5 border-l-2 border-primary/30 pl-2.5" : "flex flex-col gap-1.5"}
-            >
-              <div className="flex items-start gap-2">
-                <ExercisePicker
-                  category={category}
-                  exerciseId={exercise.exercise_id}
-                  customName={exercise.custom_name}
-                  onChange={(patch) => onExerciseChange(exercise.id, patch)}
-                  className="flex-1"
-                />
-                {isGrouped && (
-                  <button
-                    type="button"
-                    onClick={() => onRemoveExerciseFromBlock(exercise.id)}
-                    aria-label="Remove this exercise from the block"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  >
-                    <X className="size-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <SegmentedControl
-                  aria-label="Exercise category"
-                  options={CATEGORY_OPTIONS}
-                  value={category}
-                  onChange={(newCategory) => onCategoryChange(exercise.id, newCategory)}
-                  className="w-fit"
-                />
-                <select
-                  aria-label="Prescription type"
-                  value={prescriptionType}
-                  onChange={(e) => onPrescriptionTypeChange(exercise.id, e.target.value as PrescriptionType)}
-                  className="h-8 rounded-md border border-border bg-surface px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  {typeOptions.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                {exercise.sets.map((set) => (
-                  <PrescriptionRowEditor
-                    key={set.id}
-                    category={category}
-                    set={set}
-                    onChange={(patch) => onSetChange(exercise.id, set.id, patch)}
-                    onDelete={() => onDeleteSet(exercise.id, set.id)}
-                  />
-                ))}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => onAddSet(exercise.id)}
-                className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <Plus className="size-3.5" />
-                Add row
-              </button>
-            </div>
-          );
-        })}
+      <div className="flex flex-col gap-1.5">
+        {block.exercises.map((exercise) => (
+          <ExerciseCard
+            key={exercise.id}
+            exercise={exercise}
+            isGrouped={isGrouped}
+            expanded={expandedExerciseId === exercise.id}
+            onToggleExpand={() => onToggleExpand(exercise.id)}
+            mode={mode}
+            library={library}
+            onCreateCustomExercise={onCreateCustomExercise}
+            onExerciseChange={(patch) => onExerciseChange(exercise.id, patch)}
+            onNoteChange={(notes) => onNoteChange(exercise.id, notes)}
+            onCategoryChange={(category) => onCategoryChange(exercise.id, category)}
+            onPrescriptionTypeChange={(type) => onPrescriptionTypeChange(exercise.id, type)}
+            onAddSet={() => onAddSet(exercise.id)}
+            onSetChange={(setId, patch) => onSetChange(exercise.id, setId, patch)}
+            onDeleteSet={(setId) => onDeleteSet(exercise.id, setId)}
+            onRemoveFromBlock={isGrouped ? () => onRemoveExerciseFromBlock(exercise.id) : undefined}
+            onDuplicate={() => onDuplicateExercise(exercise.id)}
+            onDelete={isGrouped ? () => onRemoveExerciseFromBlock(exercise.id) : onDeleteBlock}
+          />
+        ))}
       </div>
 
       <button

@@ -7,8 +7,11 @@ import {
   createProgramFromSavedTemplate,
   createProgramFromTemplate,
   deleteProgramTemplate,
+  duplicateExercise,
+  reorderBlocks,
   saveProgramAsTemplate,
 } from "./mutations";
+import type { BlockExerciseRow } from "./types";
 import { getProgramTree } from "./queries";
 import { STARTER_PROGRAM_TEMPLATES } from "./starter-templates";
 import type { ProgramTemplateRow, ProgramTree } from "./types";
@@ -423,5 +426,137 @@ describe("createProgramFromSavedTemplate", () => {
 
     expect(result.program).toBeNull();
     expect(result.error).toBeTruthy();
+  });
+});
+
+describe("reorderBlocks", () => {
+  /** Captures every update() call, per table, in call order — enough to
+   * verify reorderBlocks' two-phase (stage-negative, then-final) approach
+   * without a real Postgres unique constraint to violate. */
+  function makeUpdateMock() {
+    const updates: { table: string; id: string; position: number }[] = [];
+    const supabase = {
+      from: vi.fn((table: string) => ({
+        update: vi.fn((patch: { position: number }) => ({
+          eq: vi.fn((_col: string, id: string) => {
+            updates.push({ table, id, position: patch.position });
+            return Promise.resolve({ error: null });
+          }),
+        })),
+      })),
+    };
+    return { supabase, updates };
+  }
+
+  it("stages every block through a negative position before any real final position is written", async () => {
+    const { supabase, updates } = makeUpdateMock();
+
+    await reorderBlocks(supabase as never, [
+      { id: "block-a", position: 2 },
+      { id: "block-b", position: 1 },
+      { id: "block-c", position: 3 },
+    ]);
+
+    expect(updates).toHaveLength(6);
+    const [first, second, third, fourth, fifth, sixth] = updates;
+    // Phase 1: every block gets a negative temp position, in input order.
+    expect(first!.id).toBe("block-a");
+    expect(first!.position).toBeLessThan(0);
+    expect(second!.id).toBe("block-b");
+    expect(second!.position).toBeLessThan(0);
+    expect(third!.id).toBe("block-c");
+    expect(third!.position).toBeLessThan(0);
+    // Phase 2: every block lands on its real, positive final position.
+    expect(fourth).toEqual({ table: "exercise_blocks", id: "block-a", position: 2 });
+    expect(fifth).toEqual({ table: "exercise_blocks", id: "block-b", position: 1 });
+    expect(sixth).toEqual({ table: "exercise_blocks", id: "block-c", position: 3 });
+  });
+
+  it("propagates an error from the first failing write instead of silently continuing", async () => {
+    const supabase = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => Promise.resolve({ error: { message: "boom" } })),
+        })),
+      })),
+    };
+
+    const result = await reorderBlocks(supabase as never, [{ id: "block-a", position: 1 }]);
+    expect(result.error).toBe("boom");
+  });
+});
+
+describe("duplicateExercise", () => {
+  function makeSourceExercise(overrides: Partial<BlockExerciseRow> = {}): BlockExerciseRow {
+    return {
+      id: "ex-1",
+      block_id: "block-1",
+      position: 1,
+      exercise_id: null,
+      custom_name: "Bench Press",
+      notes: "Control the eccentric",
+      exercise_category: "strength",
+      sets: [
+        {
+          id: "set-1",
+          block_exercise_id: "ex-1",
+          position: 1,
+          prescription_type: "fixed_weight",
+          sets: 4,
+          reps: "6",
+          min_reps: null,
+          max_reps: null,
+          weight_value: 100,
+          percent_1rm_value: null,
+          pr_record_type: null,
+          rpe_value: null,
+          rir_value: null,
+          heart_rate_zone: null,
+          calories: null,
+          rest_seconds: 120,
+          notes: null,
+          distance_meters: null,
+          duration_seconds: null,
+          pace_seconds_per_km: null,
+          advanced_config: null,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("creates a new standalone block with a copy of the exercise and its set rows, all with fresh ids", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const result = await duplicateExercise(supabase as never, { dayId: "day-1", position: 2, exercise: makeSourceExercise() });
+
+    expect(result.error).toBeNull();
+    expect(inserted.exercise_blocks).toEqual([{ id: expect.any(String), day_id: "day-1", position: 2, block_type: "straight", rounds: 1 }]);
+    expect(inserted.block_exercises![0]).toMatchObject({ custom_name: "Bench Press", notes: "Control the eccentric", exercise_category: "strength" });
+    expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "fixed_weight", sets: 4, reps: "6", weight_value: 100, rest_seconds: 120 });
+
+    // Every id in the returned block is new — not a copy of the source's ids.
+    expect(result.block!.id).not.toBe("block-1");
+    expect(result.block!.exercises[0]!.id).not.toBe("ex-1");
+    expect(result.block!.exercises[0]!.sets[0]!.id).not.toBe("set-1");
+    // But the block_exercise_id on the new set row points at the *new*
+    // exercise id, not the stale source one — otherwise it'd reference an
+    // exercise that no longer exists from this new set row's perspective.
+    expect(result.block!.exercises[0]!.sets[0]!.block_exercise_id).toBe(result.block!.exercises[0]!.id);
+  });
+
+  it("copies every set row when the exercise has more than one prescription row (e.g. a drop set)", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+    const source = makeSourceExercise({
+      sets: [
+        { ...makeSourceExercise().sets[0]!, id: "set-1", position: 1 },
+        { ...makeSourceExercise().sets[0]!, id: "set-2", position: 2, weight_value: 80 },
+      ],
+    });
+
+    await duplicateExercise(supabase as never, { dayId: "day-1", position: 2, exercise: source });
+
+    expect(inserted.set_prescriptions).toHaveLength(2);
+    expect(inserted.set_prescriptions![1]).toMatchObject({ weight_value: 80, position: 2 });
   });
 });

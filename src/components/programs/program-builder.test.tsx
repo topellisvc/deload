@@ -57,6 +57,15 @@ vi.mock("@/components/programs/day-column", () => ({
   ),
 }));
 vi.mock("@/components/programs/add-week-dialog", () => ({ AddWeekDialog: () => null }));
+// ProgramBuilder fetches the coach's exercise library on mount (see its
+// own effect) purely to hand down to DayColumn/ExerciseCard — none of
+// these tests exercise that, and the mocked supabase client below has no
+// real `.from`, so the real implementation would throw. A resolved empty
+// list keeps that effect a no-op here.
+vi.mock("@/lib/programs/exercise-library", () => ({
+  getExerciseLibrary: vi.fn().mockResolvedValue([]),
+  addToExerciseLibrary: vi.fn(),
+}));
 vi.mock("@/lib/programs/mutations", () => ({
   createProgram: vi.fn(),
   cloneProgram: vi.fn(),
@@ -108,6 +117,7 @@ function makeSet(overrides: Partial<SetRow> = {}): SetRow {
     distance_meters: null,
     duration_seconds: null,
     pace_seconds_per_km: null,
+    advanced_config: null,
     ...overrides,
   };
 }

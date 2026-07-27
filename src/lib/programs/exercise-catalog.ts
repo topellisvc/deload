@@ -51,6 +51,18 @@ export function exerciseNamesForCategory(category: ExerciseCategory): readonly s
 }
 
 const STRENGTH_ID_TO_NAME = new Map(EXERCISES.map((e) => [e.id, e.name]));
+const STRENGTH_NAME_TO_ID = new Map(EXERCISES.map((e) => [e.name.toLowerCase(), e.id]));
+
+/** Only the strength catalog (lib/workout-generator/exercises.ts) has real
+ * ids to resolve against — running/cardio names are suggestions only and
+ * always land in custom_name, same as any strength name typed that isn't in
+ * EXERCISES either. Centralised here (previously a private copy inside
+ * ExercisePicker) so the exercise search component reads from the same map
+ * this file's other lookups already use. */
+export function resolveExerciseId(category: ExerciseCategory, name: string): string | null {
+  if (category !== "strength") return null;
+  return STRENGTH_NAME_TO_ID.get(name.trim().toLowerCase()) ?? null;
+}
 
 /** Resolves a block_exercise's display name — exercise_id looks up the
  * strength catalog (lib/workout-generator/exercises.ts), custom_name is

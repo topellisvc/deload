@@ -67,6 +67,7 @@ function newSetRow(
     distance_meters: null,
     duration_seconds: null,
     pace_seconds_per_km: null,
+    advanced_config: null,
   };
   return { ...base, ...overrides };
 }
@@ -97,6 +98,7 @@ function setRowInsertPayload(set: SetRow) {
     distance_meters: set.distance_meters,
     duration_seconds: set.duration_seconds,
     pace_seconds_per_km: set.pace_seconds_per_km,
+    advanced_config: set.advanced_config,
   };
 }
 
@@ -724,6 +726,76 @@ export async function copyDayContents(
   return { blocks: newBlocks, error: null };
 }
 
+/**
+ * "Duplicate this exercise" — the single quick action the spec calls out
+ * as especially important, since coaches frequently reuse the same
+ * exercise (a working set followed by a backoff set of the same movement,
+ * the same accessory on multiple days, etc.). Always lands as a new
+ * standalone (straight) block immediately after the source exercise's own
+ * block, carrying a full copy of its prescription rows — regardless of
+ * whether the source was itself part of a superset, duplicating just the
+ * one exercise the coach clicked is the least surprising result (cloning
+ * the whole superset it happened to be grouped in is a different action,
+ * not implemented here). Same clone-with-fresh-ids shape as
+ * copyDayContents, just scoped to one exercise instead of a whole day.
+ */
+export async function duplicateExercise(
+  supabase: SupabaseClient,
+  params: { dayId: string; position: number; exercise: BlockExerciseRow }
+): Promise<{ block: BlockRow | null; error: string | null }> {
+  const blockId = newId();
+  const exerciseId = newId();
+
+  const { error: blockError } = await supabase.from("exercise_blocks").insert({
+    id: blockId,
+    day_id: params.dayId,
+    position: params.position,
+    block_type: "straight",
+    rounds: 1,
+  });
+  if (blockError) return { block: null, error: blockError.message };
+
+  const { error: exerciseError } = await supabase.from("block_exercises").insert({
+    id: exerciseId,
+    block_id: blockId,
+    position: 1,
+    exercise_id: params.exercise.exercise_id,
+    custom_name: params.exercise.custom_name,
+    notes: params.exercise.notes,
+    exercise_category: params.exercise.exercise_category,
+  });
+  if (exerciseError) return { block: null, error: exerciseError.message };
+
+  const newSets: SetRow[] = params.exercise.sets.map((sourceSet, i) => ({
+    ...sourceSet,
+    id: newId(),
+    block_exercise_id: exerciseId,
+    position: i + 1,
+  }));
+  if (newSets.length > 0) {
+    const { error: setsError } = await supabase.from("set_prescriptions").insert(newSets.map(setRowInsertPayload));
+    if (setsError) return { block: null, error: setsError.message };
+  }
+
+  const block: BlockRow = {
+    id: blockId,
+    day_id: params.dayId,
+    position: params.position,
+    block_type: "straight",
+    rounds: 1,
+    exercises: [
+      {
+        ...params.exercise,
+        id: exerciseId,
+        block_id: blockId,
+        position: 1,
+        sets: newSets,
+      },
+    ],
+  };
+  return { block, error: null };
+}
+
 // ============================================================
 // Exercise blocks + exercises
 // ============================================================
@@ -898,6 +970,30 @@ export async function swapBlockPositions(
   return { error: e2?.message ?? null };
 }
 
+/**
+ * Generalizes swapBlockPositions to a full reorder — drag-and-drop can move
+ * a block several positions in one gesture, not just swap it with its
+ * immediate neighbor, so a chain of pairwise swaps isn't the right
+ * primitive here. `blocks` is the day's blocks in their new order; each
+ * gets a fresh random negative temp position first (same reasoning as
+ * swapBlockPositions: (day_id, position) is unique, so writing straight to
+ * final positions would collide with whichever sibling currently holds
+ * that number), then every block is set to its real final position in one
+ * second pass.
+ */
+export async function reorderBlocks(supabase: SupabaseClient, blocks: { id: string; position: number }[]): Promise<{ error: string | null }> {
+  for (const block of blocks) {
+    const tempPosition = -(1 + Math.floor(Math.random() * 1_000_000));
+    const { error } = await supabase.from("exercise_blocks").update({ position: tempPosition }).eq("id", block.id);
+    if (error) return { error: error.message };
+  }
+  for (const block of blocks) {
+    const { error } = await supabase.from("exercise_blocks").update({ position: block.position }).eq("id", block.id);
+    if (error) return { error: error.message };
+  }
+  return { error: null };
+}
+
 export async function updateBlockExercise(
   supabase: SupabaseClient,
   blockExerciseId: string,
@@ -1007,6 +1103,7 @@ export async function updateSetRow(
     distance_meters: number | null;
     duration_seconds: number | null;
     pace_seconds_per_km: number | null;
+    advanced_config: Record<string, string> | null;
   }>
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("set_prescriptions").update(patch).eq("id", setId);

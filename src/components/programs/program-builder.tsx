@@ -9,13 +9,23 @@ import type { BlockRow, DayRow, ExerciseCategory, PrescriptionType, ProgramDisci
 import { defaultCategoryForDiscipline, defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import * as m from "@/lib/programs/mutations";
+import { getExerciseLibrary, addToExerciseLibrary } from "@/lib/programs/exercise-library";
+import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
+import { useBuilderMode, type BuilderMode } from "@/lib/programs/use-builder-mode";
 import { DayColumn } from "@/components/programs/day-column";
+import { AthletePreviewDay } from "@/components/programs/athlete-preview";
 import { AddWeekDialog } from "@/components/programs/add-week-dialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScrollFadeX } from "@/components/ui/scroll-fade-x";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
+
+const BUILDER_MODE_OPTIONS: { value: BuilderMode; label: string }[] = [
+  { value: "simple", label: "Simple" },
+  { value: "advanced", label: "Advanced" },
+  { value: "preview", label: "Preview" },
+];
 
 /** One shared confirm dialog for this whole builder rather than a
  * separate open/target state per confirmable action (delete program,
@@ -83,8 +93,26 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // read as "the first click didn't register" when actually the request
   // just hadn't resolved yet).
   const [addingExerciseBlockId, setAddingExerciseBlockId] = useState<string | null>(null);
+  const [mode, setMode] = useBuilderMode();
+  // The coach's own saved custom exercises (migration 0031) — fetched once
+  // on mount, not per-keystroke of every search box on the page (see
+  // exercise-search.ts's own doc comment). `program.owner_id` is safe to
+  // use as the library's owner here specifically because this component
+  // only ever renders for the program's owner — the edit page redirects
+  // anyone else back to the read-only view before ProgramBuilder mounts.
+  const [library, setLibrary] = useState<ExerciseSearchResult[]>([]);
 
   useEffect(() => setNameDraft(program.name), [program.name]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getExerciseLibrary(supabase, program.owner_id).then((entries) => {
+      if (!cancelled) setLibrary(entries.map((e) => ({ id: null, name: e.name, category: e.category })));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, program.owner_id]);
 
   // Every program is created with a first week and never allowed to drop
   // below one (handleDeleteWeek blocks removing the last week), so this is
@@ -230,29 +258,6 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     });
   }
 
-  function handleMoveBlock(dayId: string, blockId: string, direction: "up" | "down") {
-    const day = week.days.find((d) => d.id === dayId);
-    if (!day) return;
-    const index = day.blocks.findIndex((b) => b.id === blockId);
-    const swapIndex = direction === "up" ? index - 1 : index + 1;
-    if (index < 0 || swapIndex < 0 || swapIndex >= day.blocks.length) return;
-
-    const a = day.blocks[index];
-    const b = day.blocks[swapIndex];
-    if (!a || !b) return;
-    const reordered = [...day.blocks];
-    reordered[index] = { ...b, position: a.position };
-    reordered[swapIndex] = { ...a, position: b.position };
-    reordered.sort((x, y) => x.position - y.position);
-    updateDay(week.id, dayId, (d) => ({ ...d, blocks: reordered }));
-
-    m.swapBlockPositions(supabase, { id: a.id, position: a.position }, { id: b.id, position: b.position }).then(
-      ({ error }) => {
-        if (error) fail(error);
-      }
-    );
-  }
-
   // ---- superset/circuit grouping ----
   async function handleAddExerciseToBlock(dayId: string, blockId: string) {
     if (addingExerciseBlockId === blockId) return; // already in flight — see state comment above
@@ -331,6 +336,55 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, ...patch } : ex)),
     }));
     m.updateBlockExercise(supabase, blockExerciseId, patch).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
+  function handleNoteChange(dayId: string, blockId: string, blockExerciseId: string, notes: string | null) {
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, notes } : ex)),
+    }));
+    m.updateBlockExercise(supabase, blockExerciseId, { notes }).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
+  /** A name typed into the exercise search that didn't match anything
+   * existing (built-in or already-saved) gets remembered here so it's a
+   * real search result for every future exercise, in this program and
+   * every other one — not just this one row's custom_name. Applied
+   * optimistically to local `library` state (so it's searchable again
+   * immediately, in the same session) with the actual save firing in the
+   * background; a failure here is low-stakes enough (the exercise the
+   * coach just picked is already attached to this block_exercise via the
+   * normal onExerciseChange path regardless) not to surface its own error
+   * banner. */
+  function handleCreateCustomExercise(name: string, category: ExerciseCategory) {
+    const alreadyKnown = library.some((e) => e.category === category && e.name.toLowerCase() === name.toLowerCase());
+    if (!alreadyKnown) setLibrary((prev) => [...prev, { id: null, name, category }]);
+    void addToExerciseLibrary(supabase, { ownerId: program.owner_id, name, category });
+  }
+
+  async function handleDuplicateExercise(dayId: string, blockId: string, blockExerciseId: string) {
+    const day = week.days.find((d) => d.id === dayId);
+    const exercise = day?.blocks.find((b) => b.id === blockId)?.exercises.find((ex) => ex.id === blockExerciseId);
+    if (!day || !exercise) return;
+    const { block, error } = await m.duplicateExercise(supabase, { dayId, position: nextPosition(day.blocks), exercise });
+    if (error || !block) {
+      fail(error ?? "Couldn't duplicate that exercise.");
+      return;
+    }
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, block] }));
+  }
+
+  function handleReorderBlocks(dayId: string, orderedBlocks: { id: string; position: number }[]) {
+    const day = week.days.find((d) => d.id === dayId);
+    if (!day) return;
+    const positionById = new Map(orderedBlocks.map((b) => [b.id, b.position]));
+    const reordered = [...day.blocks].map((b) => ({ ...b, position: positionById.get(b.id) ?? b.position })).sort((a, b) => a.position - b.position);
+    updateDay(week.id, dayId, (d) => ({ ...d, blocks: reordered }));
+    m.reorderBlocks(supabase, orderedBlocks).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -476,7 +530,9 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             className="w-fit"
           />
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <SegmentedControl aria-label="Editing mode" options={BUILDER_MODE_OPTIONS} value={mode} onChange={setMode} className="w-fit" />
+          <div className="flex items-center gap-2 self-start sm:self-end">
           <Link
             href={`/programs/${program.id}`}
             className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -487,6 +543,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
             <Trash2 className="size-4" />
             Delete program
           </Button>
+          </div>
         </div>
       </div>
 
@@ -543,40 +600,54 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
           the row that actually caused the bug in practice, since it's the
           one people hover over while editing exercises. */}
       <ScrollFadeX className="flex flex-col gap-4 lg:flex-row lg:flex-nowrap lg:items-start lg:overflow-x-auto lg:overflow-y-visible lg:pb-2">
-        {week.days.map((day) => (
-          <DayColumn
-            key={day.id}
-            day={day}
-            otherDays={week.days
-              .filter((d) => d.id !== day.id)
-              .map((d) => ({ id: d.id, label: d.label, position: d.position }))}
-            onUpdateDay={(patch) => handleUpdateDay(day.id, patch)}
-            onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
-            onAddBlock={() => handleAddBlock(day.id)}
-            onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
-            onMoveBlock={(blockId, direction) => handleMoveBlock(day.id, blockId, direction)}
-            onAddExerciseToBlock={(blockId) => handleAddExerciseToBlock(day.id, blockId)}
-            addingExerciseBlockId={addingExerciseBlockId}
-            onRemoveExerciseFromBlock={(blockId, blockExerciseId) =>
-              handleRemoveExerciseFromBlock(day.id, blockId, blockExerciseId)
-            }
-            onRoundsChange={(blockId, rounds) => handleRoundsChange(day.id, blockId, rounds)}
-            onExerciseChange={(blockId, blockExerciseId, patch) =>
-              handleExerciseChange(day.id, blockId, blockExerciseId, patch)
-            }
-            onCategoryChange={(blockId, blockExerciseId, category) =>
-              handleCategoryChange(day.id, blockId, blockExerciseId, category)
-            }
-            onPrescriptionTypeChange={(blockId, blockExerciseId, prescriptionType) =>
-              handlePrescriptionTypeChange(day.id, blockId, blockExerciseId, prescriptionType)
-            }
-            onAddSet={(blockId, blockExerciseId) => handleAddSet(day.id, blockId, blockExerciseId)}
-            onSetChange={(blockId, blockExerciseId, setId, patch) =>
-              handleSetChange(day.id, blockId, blockExerciseId, setId, patch)
-            }
-            onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
-          />
-        ))}
+        {mode === "preview"
+          ? week.days.map((day) => (
+              <div key={day.id} className="flex w-full shrink-0 flex-col gap-3 rounded-2xl border border-border bg-surface p-4 lg:w-96">
+                <h2 className={cn("text-base font-semibold text-foreground", day.is_rest_day && "text-muted-foreground")}>
+                  {day.label || `Day ${day.position}`}
+                </h2>
+                <AthletePreviewDay day={day} />
+              </div>
+            ))
+          : week.days.map((day) => (
+              <DayColumn
+                key={day.id}
+                day={day}
+                otherDays={week.days
+                  .filter((d) => d.id !== day.id)
+                  .map((d) => ({ id: d.id, label: d.label, position: d.position }))}
+                mode={mode}
+                library={library}
+                onCreateCustomExercise={handleCreateCustomExercise}
+                onUpdateDay={(patch) => handleUpdateDay(day.id, patch)}
+                onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
+                onAddBlock={() => handleAddBlock(day.id)}
+                onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
+                onReorderBlocks={(orderedBlocks) => handleReorderBlocks(day.id, orderedBlocks)}
+                onAddExerciseToBlock={(blockId) => handleAddExerciseToBlock(day.id, blockId)}
+                addingExerciseBlockId={addingExerciseBlockId}
+                onRemoveExerciseFromBlock={(blockId, blockExerciseId) =>
+                  handleRemoveExerciseFromBlock(day.id, blockId, blockExerciseId)
+                }
+                onDuplicateExercise={(blockId, blockExerciseId) => handleDuplicateExercise(day.id, blockId, blockExerciseId)}
+                onRoundsChange={(blockId, rounds) => handleRoundsChange(day.id, blockId, rounds)}
+                onExerciseChange={(blockId, blockExerciseId, patch) =>
+                  handleExerciseChange(day.id, blockId, blockExerciseId, patch)
+                }
+                onNoteChange={(blockId, blockExerciseId, notes) => handleNoteChange(day.id, blockId, blockExerciseId, notes)}
+                onCategoryChange={(blockId, blockExerciseId, category) =>
+                  handleCategoryChange(day.id, blockId, blockExerciseId, category)
+                }
+                onPrescriptionTypeChange={(blockId, blockExerciseId, prescriptionType) =>
+                  handlePrescriptionTypeChange(day.id, blockId, blockExerciseId, prescriptionType)
+                }
+                onAddSet={(blockId, blockExerciseId) => handleAddSet(day.id, blockId, blockExerciseId)}
+                onSetChange={(blockId, blockExerciseId, setId, patch) =>
+                  handleSetChange(day.id, blockId, blockExerciseId, setId, patch)
+                }
+                onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
+              />
+            ))}
       </ScrollFadeX>
 
       <AddWeekDialog
