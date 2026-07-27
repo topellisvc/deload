@@ -4,7 +4,9 @@ import { useState } from "react";
 import { InlineNumberField, InlineDistanceField } from "@/components/programs/inline-fields";
 import { cn } from "@/lib/utils";
 
-function Chip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
+/** Exported for advanced-fields-editor.tsx's Method presets row — same
+ * one-tap-chip idiom, reused rather than re-implemented. */
+export function Chip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"

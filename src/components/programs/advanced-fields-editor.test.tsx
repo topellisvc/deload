@@ -44,4 +44,27 @@ describe("AdvancedFieldsEditor", () => {
     await user.click(screen.getByLabelText("Remove Band"));
     expect(onChange).toHaveBeenCalledWith(null);
   });
+
+  it("tapping a Methods preset chip adds its key/value pair", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<AdvancedFieldsEditor value={null} onChange={onChange} />);
+
+    await user.click(screen.getByRole("button", { name: "Tempo" }));
+
+    expect(onChange).toHaveBeenCalledWith({ Tempo: "3-1-1-0" });
+  });
+
+  it("tapping an already-applied preset chip removes it again", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<AdvancedFieldsEditor value={{ Tempo: "3-1-1-0" }} onChange={onChange} />);
+
+    const tempoChip = screen.getByRole("button", { name: "Tempo" });
+    expect(tempoChip).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(tempoChip);
+
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
 });

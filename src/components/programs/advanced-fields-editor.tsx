@@ -3,11 +3,41 @@
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Chip } from "@/components/programs/preset-fields";
 
 interface AdvancedFieldsEditorProps {
   value: Record<string, string> | null;
   onChange: (v: Record<string, string> | null) => void;
 }
+
+/**
+ * Every specialized programming method the spec's Advanced Mode section
+ * names, each as a one-tap starting point rather than a coach having to
+ * remember (or reinvent) both a key name and a sensible notation for it.
+ * Tapping a chip adds its key/value pair (editable afterward like any
+ * other custom field); tapping an already-applied one removes it. This
+ * covers the full named list through the same generic advanced_config
+ * mechanism rather than 14 bespoke inputs — see AdvancedFieldsEditor's
+ * own doc comment below on why that's the intended design, not a
+ * shortcut: a real purpose-built control for any one of these can still
+ * read/write the same key later without a schema change.
+ */
+const METHOD_PRESETS: { key: string; value: string }[] = [
+  { key: "Tempo", value: "3-1-1-0" },
+  { key: "Drop Set", value: "Drop 20% after failure" },
+  { key: "Cluster Set", value: "5x(2+2+2), 15s intra-cluster rest" },
+  { key: "Wave Loading", value: "3-2-1 wave, +5% each wave" },
+  { key: "EMOM", value: "Every 1:00 for 10:00" },
+  { key: "AMRAP", value: "AMRAP in 12:00" },
+  { key: "Time Cap", value: "20:00" },
+  { key: "To Failure", value: "Last set to failure" },
+  { key: "Pause Reps", value: "3 sec pause at bottom" },
+  { key: "Contrast", value: "Heavy 3 reps + explosive 5 reps, superset" },
+  { key: "Bands/Chains", value: "Add band/chain tension at lockout" },
+  { key: "Plyometric", value: "3x5 box jumps, full recovery" },
+  { key: "Oly Lift", value: "Power clean, technical focus" },
+  { key: "Cardio Protocol", value: "4x4min @ 90% HR, 3min recovery" },
+];
 
 /**
  * Advanced Mode's "Custom Fields" — a plain key/value editor bound to a set
@@ -45,8 +75,24 @@ export function AdvancedFieldsEditor({ value, onChange }: AdvancedFieldsEditorPr
     setNewValue("");
   }
 
+  function togglePreset(preset: { key: string; value: string }) {
+    if ((value ?? {})[preset.key] === preset.value) removeEntry(preset.key);
+    else setEntry(preset.key, preset.value);
+  }
+
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border border-dashed border-border-strong p-2.5">
+    <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border-strong p-2.5">
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Methods</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {METHOD_PRESETS.map((preset) => (
+            <Chip key={preset.key} selected={(value ?? {})[preset.key] === preset.value} onClick={() => togglePreset(preset)}>
+              {preset.key}
+            </Chip>
+          ))}
+        </div>
+      </div>
+
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Custom Fields</span>
       {entries.map(([key, val]) => (
         <div key={key} className="flex items-center gap-1.5">
