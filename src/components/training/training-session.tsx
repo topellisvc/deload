@@ -15,15 +15,15 @@ import type { DraftSet, PreviousPerformance, TrainingModeSession } from "@/lib/t
 import type { BlockRow } from "@/lib/programs/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
 import { WorkoutOverviewScreen } from "@/components/training/workout-overview-screen";
+import { ExerciseListScreen } from "@/components/training/exercise-list-screen";
 import { ExerciseScreen } from "@/components/training/exercise-screen";
 import { RestScreen } from "@/components/training/rest-screen";
 import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-screen";
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
 import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
-import { ExercisePickerDialog } from "@/components/training/exercise-picker-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
-type Phase = "overview" | "exercise" | "rest" | "exercise-complete" | "summary" | "program-complete";
+type Phase = "overview" | "exercises" | "exercise" | "rest" | "exercise-complete" | "summary" | "program-complete";
 
 interface TrainingSessionProps {
   trainingDayId: string;
@@ -64,7 +64,7 @@ function nextPosition(blockExerciseId: string, sets: DraftSet[]): number {
  * Exercise order isn't enforced: `currentExerciseId` can move to any
  * exercise in `exerciseList` at any time, either by finishing the current
  * one (auto-advances to the next not-yet-done exercise) or by an explicit
- * jump via the exercise picker (see ExercisePickerDialog) — added after
+ * jump via the exercise list (see ExerciseListScreen) — added after
  * athlete feedback that real gym order follows whatever equipment happens
  * to be free, not the program's listed order. Each exercise's progress is
  * tracked independently by its own logged-set count, never by position, so
@@ -116,7 +116,6 @@ export function TrainingSession({
   const [skippingWorkout, setSkippingWorkout] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmSkipOpen, setConfirmSkipOpen] = useState(false);
-  const [exercisePickerOpen, setExercisePickerOpen] = useState(false);
 
   const transitionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -188,7 +187,11 @@ export function TrainingSession({
       return;
     }
     setStartedAt(session.startedAt);
-    setPhase(exerciseList.length === 0 ? "summary" : "exercise");
+    // Lands on the full exercise list rather than jumping straight into
+    // exercise #1 — makes "these don't have to be done in order" obvious
+    // from the first moment, instead of only discoverable via a button
+    // once already mid-set (see ExerciseListScreen's doc comment).
+    setPhase(exerciseList.length === 0 ? "summary" : "exercises");
     if (exerciseList.length === 0) setCompletedAt(new Date().toISOString());
   }
 
@@ -216,6 +219,10 @@ export function TrainingSession({
       transitionTimeout.current = null;
     }
     goToExercise(exerciseId);
+  }
+
+  function openExerciseList() {
+    setPhase("exercises");
   }
 
   async function handleCompleteSet(payload: { weight: number | null; reps: number | null; notes: string | null }) {
@@ -434,6 +441,18 @@ export function TrainingSession({
         />
       )}
 
+      {phase === "exercises" && (
+        <ExerciseListScreen
+          dayLabel={dayLabel}
+          exercises={exerciseList}
+          currentExerciseId={currentExerciseId}
+          resumeExerciseId={findResumeExerciseId(exerciseList, loggedSetCounts)}
+          loggedSetCounts={loggedSetCounts}
+          onSelect={handleJumpToExercise}
+          onSkipWorkout={handleSkipWorkout}
+        />
+      )}
+
       {phase === "exercise" && currentExercise && (
         <ExerciseScreen
           key={currentExercise.id}
@@ -448,7 +467,7 @@ export function TrainingSession({
           onExerciseNoteChange={handleExerciseNoteChange}
           onCompleteSet={handleCompleteSet}
           onCardioFinish={handleCardioFinish}
-          onOpenExercisePicker={() => setExercisePickerOpen(true)}
+          onOpenExerciseList={openExerciseList}
           onSkipWorkout={handleSkipWorkout}
           busy={saving}
         />
@@ -460,7 +479,7 @@ export function TrainingSession({
           initialSeconds={restSeconds}
           nextTarget={restNextTarget}
           category={currentExercise.exercise_category}
-          onOpenExercisePicker={() => setExercisePickerOpen(true)}
+          onOpenExerciseList={openExerciseList}
           onSkip={handleRestDone}
           onContinue={handleRestDone}
         />
@@ -483,15 +502,6 @@ export function TrainingSession({
       )}
 
       {phase === "program-complete" && <ProgramCompleteScreen programName={programName} onDone={goToDashboard} />}
-
-      <ExercisePickerDialog
-        open={exercisePickerOpen}
-        onClose={() => setExercisePickerOpen(false)}
-        exercises={exerciseList}
-        currentExerciseId={currentExerciseId}
-        loggedSetCounts={loggedSetCounts}
-        onSelect={handleJumpToExercise}
-      />
 
       <ConfirmDialog
         open={confirmSkipOpen}

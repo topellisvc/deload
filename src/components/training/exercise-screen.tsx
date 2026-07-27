@@ -1,6 +1,7 @@
 "use client";
 
 import { ListOrdered, MessageSquareText, PersonStanding } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
 import { WorkoutProgressBar } from "@/components/training/workout-progress-bar";
 import { PreviousPerformanceCard } from "@/components/training/previous-performance-card";
@@ -35,7 +36,7 @@ interface ExerciseScreenProps {
     rpe: number | null;
     notes: string | null;
   }) => void;
-  onOpenExercisePicker: () => void;
+  onOpenExerciseList: () => void;
   onSkipWorkout: () => void;
   busy: boolean;
 }
@@ -60,7 +61,7 @@ export function ExerciseScreen({
   onExerciseNoteChange,
   onCompleteSet,
   onCardioFinish,
-  onOpenExercisePicker,
+  onOpenExerciseList,
   onSkipWorkout,
   busy,
 }: ExerciseScreenProps) {
@@ -68,26 +69,21 @@ export function ExerciseScreen({
   const exerciseName = getExerciseDisplayName(exercise);
 
   return (
-    <div className="mx-auto flex max-w-lg flex-col gap-5 px-6 py-8">
-      <div className="flex items-start justify-between gap-3">
-        <WorkoutProgressBar currentIndex={exerciseIndex} total={totalExercises} />
-        <div className="flex shrink-0 items-center gap-3 pt-0.5 text-xs font-medium">
-          <button
-            type="button"
-            onClick={onOpenExercisePicker}
-            className="flex items-center gap-1 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            <ListOrdered className="size-3.5" />
-            Exercises
-          </button>
-          <button
-            type="button"
-            onClick={onSkipWorkout}
-            className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            Skip Workout
-          </button>
-        </div>
+    <div className="mx-auto flex max-w-lg flex-col gap-4 px-6 py-8">
+      <WorkoutProgressBar currentIndex={exerciseIndex} total={totalExercises} />
+
+      <div className="flex items-center justify-between gap-3">
+        <Button variant="secondary" size="sm" onClick={onOpenExerciseList}>
+          <ListOrdered className="size-3.5" />
+          All Exercises
+        </Button>
+        <button
+          type="button"
+          onClick={onSkipWorkout}
+          className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          Skip Workout
+        </button>
       </div>
 
       <div className="flex items-center gap-2">

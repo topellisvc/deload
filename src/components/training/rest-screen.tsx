@@ -15,7 +15,7 @@ interface RestScreenProps {
    * that exercise's next set target, never a different exercise's. */
   nextTarget: SetPrescription;
   category: ExerciseCategory;
-  onOpenExercisePicker: () => void;
+  onOpenExerciseList: () => void;
   onSkip: () => void;
   onContinue: () => void;
 }
@@ -42,7 +42,7 @@ function formatClock(totalSeconds: number): string {
  * recompute the moment the tab becomes visible again rather than waiting up
  * to a second for the next tick.
  */
-export function RestScreen({ initialSeconds, nextTarget, category, onOpenExercisePicker, onSkip, onContinue }: RestScreenProps) {
+export function RestScreen({ initialSeconds, nextTarget, category, onOpenExerciseList, onSkip, onContinue }: RestScreenProps) {
   const endAtRef = useRef(Date.now() + initialSeconds * 1000);
   const [remaining, setRemaining] = useState(initialSeconds);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -66,14 +66,15 @@ export function RestScreen({ initialSeconds, nextTarget, category, onOpenExercis
 
   return (
     <div className="relative mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center gap-8 px-6 py-12 text-center">
-      <button
-        type="button"
-        onClick={onOpenExercisePicker}
-        className="absolute right-6 top-6 flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={onOpenExerciseList}
+        className="absolute right-6 top-6"
       >
         <ListOrdered className="size-3.5" />
-        Exercises
-      </button>
+        All Exercises
+      </Button>
 
       <div className="flex flex-col items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
