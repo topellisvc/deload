@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, PenLine } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import {
   getAllTopics,
@@ -15,6 +15,8 @@ import { TopicCard } from "@/components/insights/topic-card";
 import { ContributorCard } from "@/components/insights/contributor-card";
 import { SearchBar } from "@/components/insights/search-bar";
 import { InsightsContributeCta } from "@/components/insights/insights-contribute-cta";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const DESCRIPTION = "Evidence-based articles, practical coaching advice and sports science insights from verified professionals.";
 
@@ -67,8 +69,15 @@ export default async function InsightsHomePage() {
   ]);
 
   return (
-    <div className="flex flex-col gap-16 px-6 py-16">
+    <div className="relative flex flex-col gap-16 px-6 py-16">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionPageJsonLd) }} />
+
+      {contributor?.status === "approved" && (
+        <Link href="/insights/write" className={cn(buttonVariants({ size: "sm" }), "absolute right-6 top-6")}>
+          <PenLine className="size-3.5" />
+          Write New Article
+        </Link>
+      )}
 
       <section className="mx-auto flex max-w-2xl flex-col items-center gap-5 text-center">
         <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">Insights</h1>
