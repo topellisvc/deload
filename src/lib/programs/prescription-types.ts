@@ -203,6 +203,13 @@ const CARDIO_TYPES: PrescriptionTypeDef[] = [
     performanceFields: ["duration", "distance", "calories", "heart_rate", "pace", "rpe", "notes"],
   },
   {
+    value: "intervals",
+    label: "Intervals",
+    example: "8 × 30s hard / 90s easy",
+    prescriptionFields: ["sets", "duration", "distance", "rest"],
+    performanceFields: ["duration", "distance", "calories", "heart_rate", "pace", "rpe", "notes"],
+  },
+  {
     value: "coach_notes",
     label: "Coach Notes",
     example: "“Maintain conversational pace.”",

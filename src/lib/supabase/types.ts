@@ -218,7 +218,7 @@ export type RunningPrescriptionType =
   | "distance_time"
   | "coach_notes";
 
-export type CardioPrescriptionType = "time" | "distance" | "calories" | "heart_rate_zone" | "rpe" | "coach_notes";
+export type CardioPrescriptionType = "time" | "distance" | "calories" | "heart_rate_zone" | "rpe" | "intervals" | "coach_notes";
 
 export type PrescriptionType = StrengthPrescriptionType | RunningPrescriptionType | CardioPrescriptionType;
 
