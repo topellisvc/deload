@@ -77,13 +77,14 @@ export function ExerciseScreen({
           <ListOrdered className="size-3.5" />
           All Exercises
         </Button>
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={onEndWorkout}
-          className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
         >
           End Workout
-        </button>
+        </Button>
       </div>
 
       <div className="flex items-center gap-2">

@@ -67,13 +67,14 @@ export function RestScreen({ initialSeconds, nextTarget, category, onOpenExercis
 
   return (
     <div className="relative mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center gap-8 px-6 py-12 text-center">
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="sm"
         onClick={onEndWorkout}
-        className="absolute left-6 top-6 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        className="absolute left-6 top-6 border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
       >
         End Workout
-      </button>
+      </Button>
 
       <Button
         variant="secondary"

@@ -89,7 +89,12 @@ export function ExerciseListScreen({
         <span className="text-xs text-muted-foreground">
           {doneCount} of {exercises.length} done
         </span>
-        <Button variant="ghost" size="sm" onClick={onEndWorkout} className="text-muted-foreground">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onEndWorkout}
+          className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
+        >
           <StopCircle className="size-3.5" />
           End Workout
         </Button>
