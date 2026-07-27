@@ -18,9 +18,9 @@ const SITE_URL = "https://deloadhq.com";
 // the rest of the site's copy already follows (see page.tsx's doc comment,
 // og-image.tsx's "no fluff, no fake precision" line).
 const SITE_DESCRIPTION =
-  "Evidence-based training software for coaches and athletes — build real programs, track training live, and use free calculators backed by published research, not guesswork.";
+  "Evidence-based training software for anyone serious about how they train — coaches, trainers, and athletes get real programs, live tracking, and free calculators backed by published research, not guesswork.";
 const HOMEPAGE_OG_DESCRIPTION =
-  "Deload is evidence-based training software for coaches and athletes — a real program builder, live tracking, and coaching tools, backed by published research instead of guesswork.";
+  "Deload is evidence-based training software for anyone serious about how they train — coaches, personal trainers, and athletes get a real program builder, live tracking, and tools backed by published research instead of guesswork.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
