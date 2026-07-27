@@ -9,9 +9,10 @@ vi.mock("./email", () => ({
 import { sendNotificationEmail } from "./email";
 
 /** Captures notification inserts, and stubs coach_clients's
- * select().eq().eq().eq().maybeSingle() chain used to look up the
- * athlete's email for notifyProgramAssigned. */
-function makeSupabaseMock(relationship: { client_email: string } | null = null) {
+ * select().eq().eq().eq().maybeSingle() chain used to confirm an active
+ * relationship exists for notifyProgramAssigned (the actual email address
+ * lookup now happens in the API route, not here — see mutations.ts). */
+function makeSupabaseMock(relationship: { id: string } | null = null) {
   const inserted: Record<string, unknown>[] = [];
   const supabase = {
     from: vi.fn((table: string) => {
@@ -77,11 +78,11 @@ describe("notify", () => {
       actorId: "user-1",
       type: "invite_accepted",
       title: "Invite accepted",
-      email: { to: "client@example.com", subject: "Subject", heading: "Heading", message: "Message" },
+      email: { subject: "Subject", heading: "Heading", message: "Message" },
     });
 
     expect(sendNotificationEmail).toHaveBeenCalledWith({
-      to: "client@example.com",
+      recipientId: "user-2",
       subject: "Subject",
       heading: "Heading",
       message: "Message",
@@ -94,8 +95,8 @@ describe("notifyProgramAssigned", () => {
     vi.mocked(sendNotificationEmail).mockReset();
   });
 
-  it("notifies the athlete and emails them when the coach_clients relationship resolves an email", async () => {
-    const { supabase, inserted } = makeSupabaseMock({ client_email: "athlete@example.com" });
+  it("notifies the athlete and emails them when an active coach_clients relationship exists", async () => {
+    const { supabase, inserted } = makeSupabaseMock({ id: "rel-1" });
 
     await notifyProgramAssigned(supabase as never, {
       coachId: "coach-1",
@@ -115,7 +116,7 @@ describe("notifyProgramAssigned", () => {
       },
     ]);
     expect(sendNotificationEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "athlete@example.com", ctaHref: "https://www.deloadhq.com/programs/prog-1" })
+      expect.objectContaining({ recipientId: "athlete-1", ctaHref: "https://www.deloadhq.com/programs/prog-1" })
     );
   });
 
@@ -159,6 +160,6 @@ describe("notifyInviteAccepted", () => {
         link: "/coaching",
       },
     ]);
-    expect(sendNotificationEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "coach@example.com", ctaHref: "https://www.deloadhq.com/coaching" }));
+    expect(sendNotificationEmail).toHaveBeenCalledWith(expect.objectContaining({ recipientId: "coach-1", ctaHref: "https://www.deloadhq.com/coaching" }));
   });
 });

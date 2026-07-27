@@ -13,6 +13,12 @@ import { sendNotificationEmail, siteOrigin } from "@/lib/notifications/email";
  * accepting an invite) that already succeeded by the time this runs. RLS
  * (migration 0019) restricts this to real, currently-active coaching
  * relationships regardless of what a caller passes in.
+ *
+ * `email`, when provided, is always sent to `params.recipientId` — the
+ * same person the in-app notification row goes to. There's deliberately
+ * no separate "email to" field a caller could set independently; see
+ * NotificationEmailParams for why (the API route re-derives the actual
+ * address itself rather than trusting one passed through here).
  */
 export async function notify(
   supabase: SupabaseClient,
@@ -23,7 +29,7 @@ export async function notify(
     title: string;
     body?: string;
     link?: string;
-    email?: { to: string; subject: string; heading: string; message: string; ctaLabel?: string; ctaHref?: string };
+    email?: { subject: string; heading: string; message: string; ctaLabel?: string; ctaHref?: string };
   }
 ): Promise<void> {
   await supabase.from("notifications").insert({
@@ -36,7 +42,7 @@ export async function notify(
   });
 
   if (params.email) {
-    sendNotificationEmail(params.email);
+    sendNotificationEmail({ ...params.email, recipientId: params.recipientId });
   }
 }
 
@@ -44,10 +50,11 @@ export async function notify(
  * Trigger 1 of 2 (see migration 0019's comment): a coach assigns/sends a
  * program to an athlete. Called from lib/programs/mutations.ts's
  * createProgram and cloneProgram whenever athlete_id differs from the
- * acting owner. Looks up the athlete's email off the coach_clients roster
- * row (there's no other source — this app has no admin API to read
- * auth.users directly, see 0003_coach_clients.sql) so the email side can
- * work even though we only ever have the athlete's user id here.
+ * acting owner. Confirms an active coach_clients row exists before
+ * attempting the email leg at all (still gated the same as before), but no
+ * longer reads the athlete's address off it — the API route looks that up
+ * itself from the same table, scoped by RLS to the caller's own real
+ * relationships, rather than being handed an address to trust.
  */
 export async function notifyProgramAssigned(
   supabase: SupabaseClient,
@@ -55,11 +62,11 @@ export async function notifyProgramAssigned(
 ): Promise<void> {
   const { data: relationship } = await supabase
     .from("coach_clients")
-    .select("client_email")
+    .select("id")
     .eq("coach_id", params.coachId)
     .eq("client_id", params.athleteId)
     .eq("status", "active")
-    .maybeSingle<{ client_email: string }>();
+    .maybeSingle();
 
   await notify(supabase, {
     recipientId: params.athleteId,
@@ -70,7 +77,6 @@ export async function notifyProgramAssigned(
     link: `/programs/${params.programId}`,
     email: relationship
       ? {
-          to: relationship.client_email,
           subject: "Your coach sent you a new program",
           heading: "New program from your coach",
           message: `"${params.programName}" was just added to your programs on Deload.`,
@@ -86,8 +92,10 @@ export async function notifyProgramAssigned(
  * lib/coaching/mutations.ts's acceptInvite. Unlike the invite-sent leg
  * (deliberately not a notification row — see migration 0019's comment),
  * the coach here is a real, long-existing user, so both channels work
- * normally; coach_email comes straight off the coach_clients row being
- * accepted, same as the program-assigned lookup above.
+ * normally. coachEmail/clientEmail are still passed in for the in-app
+ * notification/email *body* text ("X accepted your invite") — that's just
+ * copy, not routing — but nothing here decides where the email is sent;
+ * see notify()/NotificationEmailParams.
  */
 export async function notifyInviteAccepted(
   supabase: SupabaseClient,
@@ -101,7 +109,6 @@ export async function notifyInviteAccepted(
     body: `${params.clientEmail} accepted your coaching invite.`,
     link: "/coaching",
     email: {
-      to: params.coachEmail,
       subject: `${params.clientEmail} accepted your invite`,
       heading: "Invite accepted",
       message: `${params.clientEmail} just accepted your coaching invite on Deload. You can now build and assign programs for them.`,
