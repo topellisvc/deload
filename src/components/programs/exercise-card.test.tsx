@@ -62,6 +62,9 @@ const baseProps = {
   onSaveAsTemplate: vi.fn(),
   onDuplicate: vi.fn(),
   onDelete: vi.fn(),
+  otherDays: [],
+  onMoveToDay: vi.fn(),
+  isMoving: false,
 };
 
 describe("ExerciseCard collapsed state", () => {

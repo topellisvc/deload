@@ -26,6 +26,9 @@ interface ExerciseBlockCardProps {
   isAddingExercise: boolean;
   onRemoveExerciseFromBlock: (blockExerciseId: string) => void;
   onDuplicateExercise: (blockExerciseId: string) => void;
+  otherDays: { id: string; label: string | null; position: number }[];
+  onMoveExerciseToDay: (blockExerciseId: string, targetDayId: string) => void;
+  movingExerciseId: string | null;
   onRoundsChange: (rounds: number) => void;
   onExerciseChange: (blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (blockExerciseId: string, notes: string | null) => void;
@@ -65,6 +68,9 @@ export function ExerciseBlockCard({
   isAddingExercise,
   onRemoveExerciseFromBlock,
   onDuplicateExercise,
+  otherDays,
+  onMoveExerciseToDay,
+  movingExerciseId,
   onRoundsChange,
   onExerciseChange,
   onNoteChange,
@@ -163,6 +169,9 @@ export function ExerciseBlockCard({
             onRemoveFromBlock={isGrouped ? () => onRemoveExerciseFromBlock(exercise.id) : undefined}
             onDuplicate={() => onDuplicateExercise(exercise.id)}
             onDelete={isGrouped ? () => onRemoveExerciseFromBlock(exercise.id) : onDeleteBlock}
+            otherDays={otherDays}
+            onMoveToDay={(targetDayId) => onMoveExerciseToDay(exercise.id, targetDayId)}
+            isMoving={movingExerciseId === exercise.id}
           />
         ))}
       </div>

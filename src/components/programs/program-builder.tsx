@@ -110,6 +110,12 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // read as "the first click didn't register" when actually the request
   // just hadn't resolved yet).
   const [addingExerciseBlockId, setAddingExerciseBlockId] = useState<string | null>(null);
+  // Mirrors addingExerciseBlockId's rationale — "move to another day" is a
+  // duplicate-then-remove round trip (see moveExerciseToDay's own comment),
+  // so this disables the source select and shows "Moving…" for the one
+  // exercise in flight rather than letting a second click during that
+  // window fire a duplicate move.
+  const [movingExerciseId, setMovingExerciseId] = useState<string | null>(null);
   const [mode, setMode] = useBuilderMode();
   // The coach's own saved custom exercises (migration 0031) — fetched once
   // on mount, not per-keystroke of every search box on the page (see
@@ -289,6 +295,75 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       return;
     }
     updateDay(week.id, dayId, (d) => ({ ...d, blocks: [...d.blocks, ...blocks] }));
+  }
+
+  async function handleDuplicateDay(dayId: string) {
+    const sourceDay = week.days.find((d) => d.id === dayId);
+    if (!sourceDay) return;
+    const { day: newDay, error } = await m.duplicateDay(supabase, {
+      sourceDay,
+      weekId: week.id,
+      position: nextPosition(week.days),
+    });
+    if (error || !newDay) {
+      fail(error ?? "Couldn't duplicate that day.");
+      return;
+    }
+    updateWeek(week.id, (w) => ({ ...w, days: [...w.days, newDay] }));
+  }
+
+  /** Composes duplicateExercise + removeExerciseFromBlock/deleteBlock (see
+   * mutations.ts's moveExerciseToDay) rather than a real relational move —
+   * this codebase has no DB transactions, so the mutation can partially
+   * fail (exercise copied to the target day but the original couldn't be
+   * removed). That case still returns the new block, just with a non-null
+   * error, so the target day gets the copy either way and the source day is
+   * only touched once removal actually succeeds. */
+  async function handleMoveExerciseToDay(sourceDayId: string, blockId: string, blockExerciseId: string, targetDayId: string) {
+    if (movingExerciseId === blockExerciseId) return;
+    const sourceDay = week.days.find((d) => d.id === sourceDayId);
+    const sourceBlock = sourceDay?.blocks.find((b) => b.id === blockId);
+    const exercise = sourceBlock?.exercises.find((ex) => ex.id === blockExerciseId);
+    const targetDay = week.days.find((d) => d.id === targetDayId);
+    if (!sourceDay || !sourceBlock || !exercise || !targetDay) return;
+
+    const sourceBlockHasOtherExercises = sourceBlock.exercises.length > 1;
+    setMovingExerciseId(blockExerciseId);
+    const { block, error } = await m.moveExerciseToDay(supabase, {
+      targetDayId,
+      targetPosition: nextPosition(targetDay.blocks.filter((b) => b.block_role === sourceBlock.block_role)),
+      blockRole: sourceBlock.block_role,
+      exercise,
+      sourceBlockId: blockId,
+      sourceBlockHasOtherExercises,
+    });
+    setMovingExerciseId(null);
+    if (!block) {
+      fail(error ?? "Couldn't move that exercise.");
+      return;
+    }
+    setProgram((p) => ({
+      ...p,
+      weeks: p.weeks.map((w) => {
+        if (w.id !== week.id) return w;
+        return {
+          ...w,
+          days: w.days.map((d) => {
+            if (d.id === targetDayId) return { ...d, blocks: [...d.blocks, block] };
+            if (d.id === sourceDayId && !error) {
+              return {
+                ...d,
+                blocks: sourceBlockHasOtherExercises
+                  ? d.blocks.map((b) => (b.id === blockId ? { ...b, exercises: b.exercises.filter((ex) => ex.id !== blockExerciseId) } : b))
+                  : d.blocks.filter((b) => b.id !== blockId),
+              };
+            }
+            return d;
+          }),
+        };
+      }),
+    }));
+    if (error) fail(error);
   }
 
   // ---- blocks ----
@@ -724,6 +799,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 onCreateCustomExercise={handleCreateCustomExercise}
                 onUpdateDay={(patch) => handleUpdateDay(day.id, patch)}
                 onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
+                onDuplicateDay={() => handleDuplicateDay(day.id)}
                 onAddBlock={(role) => handleAddBlock(day.id, role)}
                 onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
                 onReorderBlocks={(_role, orderedBlocks) => handleReorderBlocks(day.id, orderedBlocks)}
@@ -733,6 +809,10 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                   handleRemoveExerciseFromBlock(day.id, blockId, blockExerciseId)
                 }
                 onDuplicateExercise={(blockId, blockExerciseId) => handleDuplicateExercise(day.id, blockId, blockExerciseId)}
+                onMoveExerciseToDay={(blockId, blockExerciseId, targetDayId) =>
+                  handleMoveExerciseToDay(day.id, blockId, blockExerciseId, targetDayId)
+                }
+                movingExerciseId={movingExerciseId}
                 onRoundsChange={(blockId, rounds) => handleRoundsChange(day.id, blockId, rounds)}
                 onExerciseChange={(blockId, blockExerciseId, patch) =>
                   handleExerciseChange(day.id, blockId, blockExerciseId, patch)

@@ -666,6 +666,44 @@ export async function updateDay(
 }
 
 /**
+ * "Duplicate this day" — creates a brand-new day in the same week (appended
+ * at the end, like Add Week always appends a new week) and clones every
+ * block from `sourceDay` into it. Nothing in the schema caps how many days
+ * a week can have (`unique (week_id, position)` allows any count, same as
+ * program_weeks itself), so this is a straightforward extension of the
+ * same "add another one" pattern Add Week already uses at the week level.
+ * Reuses copyDayContents for the actual block cloning — an empty
+ * `targetDayBlocks` (nothing exists in the new day yet) means every
+ * section's position counter starts fresh at 1, exactly as it should for a
+ * brand-new day.
+ */
+export async function duplicateDay(
+  supabase: SupabaseClient,
+  params: { sourceDay: DayRow; weekId: string; position: number }
+): Promise<{ day: DayRow | null; error: string | null }> {
+  const dayId = newId();
+  const label = params.sourceDay.label ? `${params.sourceDay.label} copy` : null;
+
+  const { error: dayError } = await supabase.from("training_days").insert({
+    id: dayId,
+    week_id: params.weekId,
+    position: params.position,
+    label,
+    is_rest_day: false,
+  });
+  if (dayError) return { day: null, error: dayError.message };
+
+  const { blocks, error: blocksError } = await copyDayContents(supabase, {
+    sourceDay: params.sourceDay,
+    targetDayId: dayId,
+    targetDayBlocks: [],
+  });
+  if (blocksError) return { day: null, error: blocksError };
+
+  return { day: { id: dayId, week_id: params.weekId, position: params.position, label, is_rest_day: false, blocks }, error: null };
+}
+
+/**
  * Duplicates every block in `sourceDay` and appends the copies to the end
  * of the target day (non-destructive — existing content on the target day
  * is left alone).
@@ -866,6 +904,52 @@ export async function addExerciseBlockFromTemplate(
     exercise: params.template.template_data,
     blockRole: params.role,
   });
+}
+
+/**
+ * "Move to another day" — bulk-editing spec item distinct from Duplicate
+ * Exercise (which deliberately leaves the original in place). Composed
+ * from two already-tested operations rather than new insert/delete logic:
+ * duplicateExercise clones the exercise into the target day, then the
+ * source is cleaned up the same way deleting it there normally would —
+ * removeExerciseFromBlock if it was one member of a superset (its
+ * block-mates stay put), or deleteBlock if it was the block's only
+ * exercise. Not a real database transaction (nothing in this codebase
+ * uses one — see the file-level pattern of sequential Supabase calls
+ * throughout), so a failure on the cleanup step after a successful copy
+ * leaves the exercise in both places rather than neither; the returned
+ * error says so explicitly rather than claiming a clean failure.
+ */
+export async function moveExerciseToDay(
+  supabase: SupabaseClient,
+  params: {
+    targetDayId: string;
+    targetPosition: number;
+    blockRole: BlockRole;
+    exercise: BlockExerciseRow;
+    sourceBlockId: string;
+    /** True when the source block has other exercises left after removing
+     * this one (a superset losing one member) — false deletes the whole
+     * (now-empty) block instead. */
+    sourceBlockHasOtherExercises: boolean;
+  }
+): Promise<{ block: BlockRow | null; error: string | null }> {
+  const { block, error } = await duplicateExercise(supabase, {
+    dayId: params.targetDayId,
+    position: params.targetPosition,
+    exercise: params.exercise,
+    blockRole: params.blockRole,
+  });
+  if (error || !block) return { block: null, error };
+
+  const { error: removeError } = params.sourceBlockHasOtherExercises
+    ? await removeExerciseFromBlock(supabase, params.exercise.id)
+    : await deleteBlock(supabase, params.sourceBlockId);
+
+  if (removeError) {
+    return { block, error: "Moved, but couldn't remove it from the original day — you may need to delete it there yourself." };
+  }
+  return { block, error: null };
 }
 
 // ============================================================

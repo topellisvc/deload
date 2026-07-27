@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent, type SensorDescriptor, type SensorOptions } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { BookMarked, Copy, Flame, Plus, Sunrise } from "lucide-react";
+import { BookMarked, Copy, Files, Flame, Plus, Sunrise } from "lucide-react";
 import type { BlockRole, BlockRow, DayRow, DayTemplateRow, ExerciseCategory, ExerciseTemplateRow, PrescriptionType, SetRow } from "@/lib/programs/types";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import type { BuilderMode } from "@/lib/programs/use-builder-mode";
@@ -19,6 +19,7 @@ interface DayColumnProps {
   onCreateCustomExercise: (name: string, category: ExerciseCategory) => void;
   onUpdateDay: (patch: { label?: string | null; is_rest_day?: boolean }) => void;
   onCopyTo: (targetDayId: string) => void;
+  onDuplicateDay: () => void;
   onAddBlock: (role: BlockRole) => void;
   onDeleteBlock: (blockId: string) => void;
   onReorderBlocks: (role: BlockRole, orderedBlocks: { id: string; position: number }[]) => void;
@@ -42,6 +43,12 @@ interface DayColumnProps {
   addingExerciseBlockId: string | null;
   onRemoveExerciseFromBlock: (blockId: string, blockExerciseId: string) => void;
   onDuplicateExercise: (blockId: string, blockExerciseId: string) => void;
+  onMoveExerciseToDay: (blockId: string, blockExerciseId: string, targetDayId: string) => void;
+  /** Block-exercise id currently awaiting its "move to another day" network
+   * round-trip, if any — same reasoning as addingExerciseBlockId: the move
+   * needs the target day's server-generated copy before local state can
+   * update. */
+  movingExerciseId: string | null;
   onRoundsChange: (blockId: string, rounds: number) => void;
   onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
@@ -81,6 +88,7 @@ export function DayColumn({
   onCreateCustomExercise,
   onUpdateDay,
   onCopyTo,
+  onDuplicateDay,
   onAddBlock,
   onDeleteBlock,
   onReorderBlocks,
@@ -88,6 +96,8 @@ export function DayColumn({
   addingExerciseBlockId,
   onRemoveExerciseFromBlock,
   onDuplicateExercise,
+  onMoveExerciseToDay,
+  movingExerciseId,
   onRoundsChange,
   onExerciseChange,
   onNoteChange,
@@ -148,6 +158,9 @@ export function DayColumn({
     addingExerciseBlockId,
     onRemoveExerciseFromBlock,
     onDuplicateExercise,
+    otherDays,
+    onMoveExerciseToDay,
+    movingExerciseId,
     onRoundsChange,
     onExerciseChange,
     onNoteChange,
@@ -215,6 +228,18 @@ export function DayColumn({
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <BookMarked className="size-4" />
+            </button>
+          )}
+
+          {day.blocks.length > 0 && (
+            <button
+              type="button"
+              onClick={onDuplicateDay}
+              aria-label="Duplicate this day"
+              title="Duplicate day"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <Files className="size-4" />
             </button>
           )}
 
@@ -330,6 +355,9 @@ interface BlockSectionProps {
   addingExerciseBlockId: string | null;
   onRemoveExerciseFromBlock: (blockId: string, blockExerciseId: string) => void;
   onDuplicateExercise: (blockId: string, blockExerciseId: string) => void;
+  otherDays: { id: string; label: string | null; position: number }[];
+  onMoveExerciseToDay: (blockId: string, blockExerciseId: string, targetDayId: string) => void;
+  movingExerciseId: string | null;
   onRoundsChange: (blockId: string, rounds: number) => void;
   onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
@@ -364,6 +392,9 @@ function BlockSection({
   addingExerciseBlockId,
   onRemoveExerciseFromBlock,
   onDuplicateExercise,
+  otherDays,
+  onMoveExerciseToDay,
+  movingExerciseId,
   onRoundsChange,
   onExerciseChange,
   onNoteChange,
@@ -429,6 +460,9 @@ function BlockSection({
                 isAddingExercise={addingExerciseBlockId === block.id}
                 onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
                 onDuplicateExercise={(blockExerciseId) => onDuplicateExercise(block.id, blockExerciseId)}
+                otherDays={otherDays}
+                onMoveExerciseToDay={(blockExerciseId, targetDayId) => onMoveExerciseToDay(block.id, blockExerciseId, targetDayId)}
+                movingExerciseId={movingExerciseId}
                 onRoundsChange={(rounds) => onRoundsChange(block.id, rounds)}
                 onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
                 onNoteChange={(blockExerciseId, notes) => onNoteChange(block.id, blockExerciseId, notes)}

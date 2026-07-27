@@ -9,8 +9,10 @@ import {
   createProgramFromSavedTemplate,
   createProgramFromTemplate,
   deleteProgramTemplate,
+  duplicateDay,
   duplicateExercise,
   insertDayTemplate,
+  moveExerciseToDay,
   reorderBlocks,
   reorderSets,
   saveProgramAsTemplate,
@@ -782,5 +784,144 @@ describe("insertDayTemplate", () => {
     expect(blocks[0]!.day_id).toBe("target-day");
     expect(blocks[0]!.position).toBe(1);
     expect(blocks[0]!.exercises[0]!.custom_name).toBe("Bench Press");
+  });
+});
+
+describe("duplicateDay", () => {
+  const sourceDay: DayRow = {
+    id: "source-day",
+    week_id: "week-1",
+    position: 1,
+    label: "Upper Strength",
+    is_rest_day: false,
+    blocks: [
+      {
+        id: "src-block",
+        day_id: "source-day",
+        position: 1,
+        block_type: "straight",
+        block_role: "main",
+        rounds: 1,
+        exercises: [
+          { id: "src-ex", block_id: "src-block", position: 1, exercise_id: null, custom_name: "Bench Press", notes: null, exercise_category: "strength", sets: [] },
+        ],
+      },
+    ],
+  };
+
+  it("inserts a new day labeled '<original> copy' with fresh-id copies of every block", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const { day, error } = await duplicateDay(supabase as never, { sourceDay, weekId: "week-1", position: 2 });
+
+    expect(error).toBeNull();
+    expect(day!.label).toBe("Upper Strength copy");
+    expect(day!.week_id).toBe("week-1");
+    expect(day!.position).toBe(2);
+    expect(day!.id).not.toBe("source-day");
+    expect(inserted.training_days).toEqual([
+      { id: day!.id, week_id: "week-1", position: 2, label: "Upper Strength copy", is_rest_day: false },
+    ]);
+    expect(day!.blocks).toHaveLength(1);
+    expect(day!.blocks[0]!.id).not.toBe("src-block");
+    expect(day!.blocks[0]!.day_id).toBe(day!.id);
+    expect(day!.blocks[0]!.exercises[0]!.custom_name).toBe("Bench Press");
+  });
+
+  it("leaves the label null when the source day has none, instead of '<null> copy'", async () => {
+    const { supabase } = makeSupabaseMock();
+
+    const { day } = await duplicateDay(supabase as never, { sourceDay: { ...sourceDay, label: null }, weekId: "week-1", position: 2 });
+
+    expect(day!.label).toBeNull();
+  });
+});
+
+/** Extends makeSupabaseMock's insert-only mock with a `.delete().eq()`
+ * chain — moveExerciseToDay's removal half (removeExerciseFromBlock /
+ * deleteBlock) issues deletes, which the shared mock doesn't model. Kept
+ * local to this describe block rather than folded into makeSupabaseMock
+ * since no other existing test needs delete support. */
+function makeSupabaseMockWithDelete(deleteError: string | null = null) {
+  const inserted: Record<string, Record<string, unknown>[]> = {};
+  const deleted: { table: string; id: unknown }[] = [];
+  const supabase = {
+    from: vi.fn((table: string) => ({
+      insert: vi.fn((rows: Record<string, unknown> | Record<string, unknown>[]) => {
+        const list = Array.isArray(rows) ? rows : [rows];
+        inserted[table] = [...(inserted[table] ?? []), ...list];
+        return Promise.resolve({ error: null });
+      }),
+      delete: vi.fn(() => ({
+        eq: vi.fn((_column: string, id: unknown) => {
+          deleted.push({ table, id });
+          return Promise.resolve({ error: deleteError ? { message: deleteError } : null });
+        }),
+      })),
+    })),
+  };
+  return { supabase, inserted, deleted };
+}
+
+describe("moveExerciseToDay", () => {
+  const exercise: BlockExerciseRow = {
+    id: "ex-1",
+    block_id: "source-block",
+    position: 1,
+    exercise_id: null,
+    custom_name: "Bench Press",
+    notes: null,
+    exercise_category: "strength",
+    sets: [],
+  };
+
+  it("copies the exercise to the target day and deletes the source block when it had no other exercises", async () => {
+    const { supabase, inserted, deleted } = makeSupabaseMockWithDelete();
+
+    const { block, error } = await moveExerciseToDay(supabase as never, {
+      targetDayId: "target-day",
+      targetPosition: 1,
+      blockRole: "main",
+      exercise,
+      sourceBlockId: "source-block",
+      sourceBlockHasOtherExercises: false,
+    });
+
+    expect(error).toBeNull();
+    expect(block!.day_id).toBe("target-day");
+    expect(block!.exercises[0]!.custom_name).toBe("Bench Press");
+    expect(inserted.exercise_blocks![0]).toMatchObject({ day_id: "target-day", position: 1, block_role: "main" });
+    expect(deleted).toEqual([{ table: "exercise_blocks", id: "source-block" }]);
+  });
+
+  it("removes just the one exercise (not the whole block) when the source block has other exercises left", async () => {
+    const { supabase, deleted } = makeSupabaseMockWithDelete();
+
+    await moveExerciseToDay(supabase as never, {
+      targetDayId: "target-day",
+      targetPosition: 1,
+      blockRole: "main",
+      exercise,
+      sourceBlockId: "source-block",
+      sourceBlockHasOtherExercises: true,
+    });
+
+    expect(deleted).toEqual([{ table: "block_exercises", id: "ex-1" }]);
+  });
+
+  it("still returns the copied block but with a partial-failure message when the removal fails", async () => {
+    const { supabase } = makeSupabaseMockWithDelete("network error");
+
+    const { block, error } = await moveExerciseToDay(supabase as never, {
+      targetDayId: "target-day",
+      targetPosition: 1,
+      blockRole: "main",
+      exercise,
+      sourceBlockId: "source-block",
+      sourceBlockHasOtherExercises: false,
+    });
+
+    expect(block).not.toBeNull();
+    expect(error).toBe("Moved, but couldn't remove it from the original day — you may need to delete it there yourself.");
   });
 });

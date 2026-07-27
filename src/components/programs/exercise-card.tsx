@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, Copy, StickyNote, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, BookMarked, Copy, StickyNote, Trash2, X } from "lucide-react";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { summarizePrescriptionPrimary, summarizeRest } from "@/lib/programs/prescription-summary";
 import { EXERCISE_CATEGORY_ACTIVE_CLASSES, EXERCISE_CATEGORY_LABELS, defaultPrescriptionType } from "@/lib/programs/prescription-types";
@@ -52,6 +52,11 @@ interface ExerciseCardProps {
    * as onRemoveFromBlock — the caller decides which mutation that maps to,
    * this component just always shows one "delete" action either way. */
   onDelete: () => void;
+  otherDays: { id: string; label: string | null; position: number }[];
+  onMoveToDay: (targetDayId: string) => void;
+  /** True while this exercise's move (duplicate-then-remove) write is in
+   * flight — same rationale as isAddingExercise on ExerciseBlockCard. */
+  isMoving: boolean;
 }
 
 /**
@@ -83,6 +88,9 @@ export function ExerciseCard({
   onRemoveFromBlock,
   onDuplicate,
   onDelete,
+  otherDays,
+  onMoveToDay,
+  isMoving,
 }: ExerciseCardProps) {
   const category = exercise.exercise_category;
   const exerciseName = getExerciseDisplayName(exercise);
@@ -208,14 +216,42 @@ export function ExerciseCard({
 
           <CoachNoteField value={exercise.notes} onCommit={onNoteChange} />
 
-          <button
-            type="button"
-            onClick={onSaveAsTemplate}
-            className="flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <BookMarked className="size-3.5" />
-            Save as template
-          </button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onSaveAsTemplate}
+              className="flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <BookMarked className="size-3.5" />
+              Save as template
+            </button>
+
+            {otherDays.length > 0 && (
+              <div className="relative flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs font-medium text-muted-foreground">
+                <ArrowRightLeft className="size-3.5" />
+                {isMoving ? "Moving…" : "Move to…"}
+                <select
+                  aria-label={`Move ${exerciseName} to another day`}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) onMoveToDay(e.target.value);
+                    e.target.value = "";
+                  }}
+                  disabled={isMoving}
+                  className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 disabled:cursor-not-allowed"
+                >
+                  <option value="" disabled>
+                    Move to…
+                  </option>
+                  {otherDays.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      Move to {d.label || `Day ${d.position}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
