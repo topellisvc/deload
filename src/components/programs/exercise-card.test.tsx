@@ -58,6 +58,7 @@ const baseProps = {
   onAddSet: vi.fn(),
   onSetChange: vi.fn(),
   onDeleteSet: vi.fn(),
+  onReorderSets: vi.fn(),
   onDuplicate: vi.fn(),
   onDelete: vi.fn(),
 };
@@ -143,6 +144,18 @@ describe("ExerciseCard expanded state", () => {
     expect(screen.getByRole("radiogroup", { name: /exercise category/i })).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: /prescription type/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add row/i })).toBeInTheDocument();
+  });
+
+  it("renders the Cardio Builder's structured interval table instead of generic rows for the 'intervals' prescription type", () => {
+    const exercise = makeExercise({
+      exercise_category: "cardio",
+      custom_name: "Assault Bike",
+      sets: [makeSet({ prescription_type: "intervals", sets: 8, distance_meters: null, duration_seconds: 30, rest_seconds: 90 })],
+    });
+    render(<ExerciseCard exercise={exercise} expanded onToggleExpand={vi.fn()} {...baseProps} />);
+    expect(screen.getByRole("button", { name: "Add interval" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^add row$/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Repeat")).toBeInTheDocument();
   });
 
   it("does not show Custom Fields in simple mode, but does in advanced mode", () => {

@@ -10,6 +10,7 @@ import type { BuilderMode } from "@/lib/programs/use-builder-mode";
 import { ExerciseSearchField } from "@/components/programs/exercise-search-field";
 import { PrescriptionTypePicker } from "@/components/programs/prescription-type-picker";
 import { PrescriptionRowEditor } from "@/components/programs/prescription-row-editor";
+import { CardioIntervalTable } from "@/components/programs/cardio-interval-table";
 import { CoachNoteField } from "@/components/programs/coach-note-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ interface ExerciseCardProps {
   onAddSet: () => void;
   onSetChange: (setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (setId: string) => void;
+  onReorderSets: (orderedSets: { id: string; position: number }[]) => void;
   /** Only called when isGrouped — pulls this one exercise back out of a
    * superset without touching its block-mates. */
   onRemoveFromBlock?: () => void;
@@ -75,6 +77,7 @@ export function ExerciseCard({
   onAddSet,
   onSetChange,
   onDeleteSet,
+  onReorderSets,
   onRemoveFromBlock,
   onDuplicate,
   onDelete,
@@ -169,26 +172,37 @@ export function ExerciseCard({
 
           <PrescriptionTypePicker category={category} value={prescriptionType} onChange={onPrescriptionTypeChange} />
 
-          <div className="flex flex-col gap-2.5">
-            {exercise.sets.map((set) => (
-              <PrescriptionRowEditor
-                key={set.id}
-                category={category}
-                set={set}
-                onChange={(patch) => onSetChange(set.id, patch)}
-                onDelete={() => onDeleteSet(set.id)}
-                advanced={mode === "advanced"}
-              />
-            ))}
-          </div>
+          {prescriptionType === "intervals" ? (
+            // The spec's "Cardio Builder" — a structured table (own
+            // add/delete/reorder controls) instead of the generic stacked
+            // rows every other prescription type uses. See
+            // cardio-interval-table.tsx's own doc comment for why this
+            // needed no schema change.
+            <CardioIntervalTable sets={exercise.sets} onChange={onSetChange} onDelete={onDeleteSet} onAdd={onAddSet} onReorder={onReorderSets} />
+          ) : (
+            <>
+              <div className="flex flex-col gap-2.5">
+                {exercise.sets.map((set) => (
+                  <PrescriptionRowEditor
+                    key={set.id}
+                    category={category}
+                    set={set}
+                    onChange={(patch) => onSetChange(set.id, patch)}
+                    onDelete={() => onDeleteSet(set.id)}
+                    advanced={mode === "advanced"}
+                  />
+                ))}
+              </div>
 
-          <button
-            type="button"
-            onClick={onAddSet}
-            className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            Add row
-          </button>
+              <button
+                type="button"
+                onClick={onAddSet}
+                className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                Add row
+              </button>
+            </>
+          )}
 
           <CoachNoteField value={exercise.notes} onCommit={onNoteChange} />
         </div>

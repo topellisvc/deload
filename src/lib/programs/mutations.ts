@@ -994,6 +994,25 @@ export async function reorderBlocks(supabase: SupabaseClient, blocks: { id: stri
   return { error: null };
 }
 
+/** Reorders the set rows within one exercise — same staged-negative-position
+ * pattern as reorderBlocks (and for the same reason: `unique(block_exercise_id, position)`
+ * would reject writing final positions directly if any of them collide with
+ * an existing row's current position). Used by the Cardio Builder's
+ * drag-and-drop interval reordering; nothing stops it being reused for a
+ * future strength multi-row reorder too. */
+export async function reorderSets(supabase: SupabaseClient, sets: { id: string; position: number }[]): Promise<{ error: string | null }> {
+  for (const set of sets) {
+    const tempPosition = -(1 + Math.floor(Math.random() * 1_000_000));
+    const { error } = await supabase.from("set_prescriptions").update({ position: tempPosition }).eq("id", set.id);
+    if (error) return { error: error.message };
+  }
+  for (const set of sets) {
+    const { error } = await supabase.from("set_prescriptions").update({ position: set.position }).eq("id", set.id);
+    if (error) return { error: error.message };
+  }
+  return { error: null };
+}
+
 export async function updateBlockExercise(
   supabase: SupabaseClient,
   blockExerciseId: string,

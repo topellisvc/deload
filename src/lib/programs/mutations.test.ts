@@ -9,6 +9,7 @@ import {
   deleteProgramTemplate,
   duplicateExercise,
   reorderBlocks,
+  reorderSets,
   saveProgramAsTemplate,
 } from "./mutations";
 import type { BlockExerciseRow } from "./types";
@@ -482,6 +483,57 @@ describe("reorderBlocks", () => {
     };
 
     const result = await reorderBlocks(supabase as never, [{ id: "block-a", position: 1 }]);
+    expect(result.error).toBe("boom");
+  });
+});
+
+describe("reorderSets", () => {
+  /** Same staged-negative-position mechanics as reorderBlocks, just against
+   * set_prescriptions — the Cardio Builder's drag-and-drop interval
+   * reordering relies on this. */
+  function makeUpdateMock() {
+    const updates: { table: string; id: string; position: number }[] = [];
+    const supabase = {
+      from: vi.fn((table: string) => ({
+        update: vi.fn((patch: { position: number }) => ({
+          eq: vi.fn((_col: string, id: string) => {
+            updates.push({ table, id, position: patch.position });
+            return Promise.resolve({ error: null });
+          }),
+        })),
+      })),
+    };
+    return { supabase, updates };
+  }
+
+  it("stages every set through a negative position before any real final position is written", async () => {
+    const { supabase, updates } = makeUpdateMock();
+
+    await reorderSets(supabase as never, [
+      { id: "set-a", position: 2 },
+      { id: "set-b", position: 1 },
+    ]);
+
+    expect(updates).toHaveLength(4);
+    const [first, second, third, fourth] = updates;
+    expect(first!.id).toBe("set-a");
+    expect(first!.position).toBeLessThan(0);
+    expect(second!.id).toBe("set-b");
+    expect(second!.position).toBeLessThan(0);
+    expect(third).toEqual({ table: "set_prescriptions", id: "set-a", position: 2 });
+    expect(fourth).toEqual({ table: "set_prescriptions", id: "set-b", position: 1 });
+  });
+
+  it("propagates an error from the first failing write instead of silently continuing", async () => {
+    const supabase = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => ({
+          eq: vi.fn(() => Promise.resolve({ error: { message: "boom" } })),
+        })),
+      })),
+    };
+
+    const result = await reorderSets(supabase as never, [{ id: "set-a", position: 1 }]);
     expect(result.error).toBe("boom");
   });
 });

@@ -389,6 +389,21 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     });
   }
 
+  function handleReorderSets(dayId: string, blockId: string, blockExerciseId: string, orderedSets: { id: string; position: number }[]) {
+    const positionById = new Map(orderedSets.map((s) => [s.id, s.position]));
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.map((ex) =>
+        ex.id === blockExerciseId
+          ? { ...ex, sets: [...ex.sets].map((s) => ({ ...s, position: positionById.get(s.id) ?? s.position })).sort((a, c) => a.position - c.position) }
+          : ex
+      ),
+    }));
+    m.reorderSets(supabase, orderedSets).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
   async function handleAddSet(dayId: string, blockId: string, blockExerciseId: string) {
     const day = week.days.find((d) => d.id === dayId);
     const block = day?.blocks.find((b) => b.id === blockId);
@@ -646,6 +661,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                   handleSetChange(day.id, blockId, blockExerciseId, setId, patch)
                 }
                 onDeleteSet={(blockId, blockExerciseId, setId) => handleDeleteSet(day.id, blockId, blockExerciseId, setId)}
+                onReorderSets={(blockId, blockExerciseId, orderedSets) => handleReorderSets(day.id, blockId, blockExerciseId, orderedSets)}
               />
             ))}
       </ScrollFadeX>

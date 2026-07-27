@@ -37,6 +37,7 @@ interface DayColumnProps {
   onAddSet: (blockId: string, blockExerciseId: string) => void;
   onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
   onDeleteSet: (blockId: string, blockExerciseId: string, setId: string) => void;
+  onReorderSets: (blockId: string, blockExerciseId: string, orderedSets: { id: string; position: number }[]) => void;
 }
 
 /**
@@ -77,6 +78,7 @@ export function DayColumn({
   onAddSet,
   onSetChange,
   onDeleteSet,
+  onReorderSets,
 }: DayColumnProps) {
   const [label, setLabel] = useState(day.label ?? "");
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
@@ -212,6 +214,7 @@ export function DayColumn({
                     onAddSet={(blockExerciseId) => onAddSet(block.id, blockExerciseId)}
                     onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
                     onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}
+                    onReorderSets={(blockExerciseId, orderedSets) => onReorderSets(block.id, blockExerciseId, orderedSets)}
                   />
                 ))}
               </div>
