@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
-import { publishArticle, reviewArticle, unpublishArticle } from "@/lib/insights/mutations";
+import { adminDeleteArticle, publishArticle, reviewArticle, unpublishArticle } from "@/lib/insights/mutations";
 import type { InsightsReviewQueueArticle } from "@/lib/insights/types";
 
 interface ArticleReviewQueueProps {
@@ -92,6 +92,25 @@ export function ArticleReviewQueue({ inReview, approved, published }: ArticleRev
     showToast(`Unpublished "${article.title}"`);
   }
 
+  /** Permanent, from any of the three sections — a published article
+   * being deleted here is deliberately no different from a draft one:
+   * once an admin confirms, it's just gone, live readers included. */
+  async function handleDelete(article: InsightsReviewQueueArticle) {
+    if (!confirm(`Permanently delete "${article.title}"? This can't be undone.`)) return;
+    setBusyId(article.id);
+    const supabase = createClient();
+    const { error } = await adminDeleteArticle(supabase, article.id);
+    setBusyId(null);
+    if (error) {
+      showToast(error, "error");
+      return;
+    }
+    setReviewList((prev) => prev.filter((a) => a.id !== article.id));
+    setApprovedList((prev) => prev.filter((a) => a.id !== article.id));
+    setPublishedList((prev) => prev.filter((a) => a.id !== article.id));
+    showToast(`Deleted "${article.title}"`);
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <QueueSection
@@ -112,6 +131,15 @@ export function ArticleReviewQueue({ inReview, approved, published }: ArticleRev
             >
               Request Changes
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-danger hover:bg-danger/10"
+              onClick={() => handleDelete(article)}
+              disabled={busyId === article.id}
+            >
+              Delete
+            </Button>
           </>
         )}
       />
@@ -121,9 +149,20 @@ export function ArticleReviewQueue({ inReview, approved, published }: ArticleRev
         emptyLabel="Nothing approved yet."
         articles={approvedList}
         renderActions={(article) => (
-          <Button size="sm" onClick={() => handlePublish(article)} disabled={busyId === article.id}>
-            Publish
-          </Button>
+          <>
+            <Button size="sm" onClick={() => handlePublish(article)} disabled={busyId === article.id}>
+              Publish
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-danger hover:bg-danger/10"
+              onClick={() => handleDelete(article)}
+              disabled={busyId === article.id}
+            >
+              Delete
+            </Button>
+          </>
         )}
       />
 
@@ -132,15 +171,26 @@ export function ArticleReviewQueue({ inReview, approved, published }: ArticleRev
         emptyLabel="Nothing published yet."
         articles={publishedList}
         renderActions={(article) => (
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
-            onClick={() => handleUnpublish(article)}
-            disabled={busyId === article.id}
-          >
-            Unpublish
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
+              onClick={() => handleUnpublish(article)}
+              disabled={busyId === article.id}
+            >
+              Unpublish
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-danger hover:bg-danger/10"
+              onClick={() => handleDelete(article)}
+              disabled={busyId === article.id}
+            >
+              Delete
+            </Button>
+          </>
         )}
       />
 

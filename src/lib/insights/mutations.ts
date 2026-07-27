@@ -307,3 +307,22 @@ export async function deleteDraftArticle(supabase: SupabaseClient, articleId: st
   const { error } = await supabase.from("insights_articles").delete().eq("id", articleId).eq("status", "draft");
   return { error: error ? "Couldn't delete this draft. Try again." : null };
 }
+
+/**
+ * Admin-only, full delete of an article in ANY status — unlike
+ * deleteDraftArticle above (a contributor cleaning up their own
+ * not-yet-submitted work), this is for an admin permanently removing
+ * something from the review queue regardless of where it is in the
+ * pipeline (awaiting review, approved, or already published). RLS
+ * (migration 0023's "admins can delete any article" policy) is the real
+ * gate — a non-admin caller's request simply deletes zero rows. Topic
+ * tags and references cascade automatically (both declared `on delete
+ * cascade` against insights_articles in 0023); a featured image already
+ * uploaded to Storage is left behind rather than also deleted here, since
+ * an admin deleting the article record is a distinct action from tidying
+ * up storage.
+ */
+export async function adminDeleteArticle(supabase: SupabaseClient, articleId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("insights_articles").delete().eq("id", articleId);
+  return { error: error ? "Couldn't delete this article. Try again." : null };
+}
