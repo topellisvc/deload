@@ -42,6 +42,24 @@
 -- model directly: coaches can create/edit their own (owner_id = them),
 -- everyone can read every exercise, only admins can touch global ones.
 
+-- Postgres marks to_tsvector(regconfig, text) STABLE, not IMMUTABLE, in its
+-- own catalog — regardless of how the config argument is supplied (a bare
+-- literal, or explicitly cast to regconfig), because a text search
+-- configuration is technically catalog data that could change. A GENERATED
+-- column's expression must be IMMUTABLE, so calling to_tsvector directly
+-- there always fails with "generation expression is not immutable" — this
+-- thin wrapper is the standard, documented workaround: it re-declares the
+-- same call as IMMUTABLE, which is safe here since the 'english' config
+-- itself is never going to change.
+create or replace function public.immutable_to_tsvector(config regconfig, content text)
+returns tsvector
+language sql
+immutable
+parallel safe
+as $$
+  select to_tsvector(config, content);
+$$;
+
 create table if not exists public.exercises (
   id text primary key,
   name text not null,
@@ -84,12 +102,12 @@ create table if not exists public.exercises (
   -- "search should feel fast" (spec). Regenerated automatically by
   -- Postgres on every write, no app-side upkeep.
   search_vector tsvector generated always as (
-    setweight(to_tsvector('english', coalesce(name, '')), 'A') ||
-    setweight(to_tsvector('english', coalesce(array_to_string(tags, ' '), '')), 'B') ||
-    setweight(to_tsvector('english', coalesce(replace(category, '_', ' '), '')), 'C') ||
-    setweight(to_tsvector('english', coalesce(replace(primary_muscle_group, '_', ' '), '')), 'C') ||
-    setweight(to_tsvector('english', coalesce(replace(equipment, '_', ' '), '')), 'C') ||
-    setweight(to_tsvector('english', coalesce(replace(movement_pattern, '_', ' '), '')), 'C')
+    setweight(public.immutable_to_tsvector('english', coalesce(name, '')), 'A') ||
+    setweight(public.immutable_to_tsvector('english', coalesce(array_to_string(tags, ' '), '')), 'B') ||
+    setweight(public.immutable_to_tsvector('english', coalesce(replace(category, '_', ' '), '')), 'C') ||
+    setweight(public.immutable_to_tsvector('english', coalesce(replace(primary_muscle_group, '_', ' '), '')), 'C') ||
+    setweight(public.immutable_to_tsvector('english', coalesce(replace(equipment, '_', ' '), '')), 'C') ||
+    setweight(public.immutable_to_tsvector('english', coalesce(replace(movement_pattern, '_', ' '), '')), 'C')
   ) stored,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
