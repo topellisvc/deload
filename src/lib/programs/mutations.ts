@@ -395,6 +395,50 @@ export async function createProgramFromSavedTemplate(
     : { program: null, error: "Program was created, but couldn't be loaded back." };
 }
 
+/**
+ * Materializes the output of the "Describe a program" feature
+ * (lib/programs/text-parse.ts's parsedProgramToTree, itself fed by a Claude
+ * API call in app/api/programs/parse-text/route.ts) — same
+ * one-addWeek-call-per-week shape as createProgramFromSavedTemplate just
+ * above, since parsedProgramToWeeks produces the identical blank-id
+ * WeekRow[] convention starter-templates.ts's hand-authored literals use.
+ * recordProvenance: false for the same reason as that function: these
+ * weeks were never real persisted rows, so there's nothing genuine for
+ * based_on_week_id to point at.
+ */
+export async function createProgramFromParsedProgram(
+  supabase: SupabaseClient,
+  params: { name: string; discipline: ProgramDiscipline; weeks: WeekRow[]; userId: string; athleteId?: string }
+): Promise<{ program: ProgramTree | null; error: string | null }> {
+  const programId = newId();
+  const athleteId = params.athleteId ?? params.userId;
+
+  const { error: programError } = await supabase.from("programs").insert({
+    id: programId,
+    owner_id: params.userId,
+    athlete_id: athleteId,
+    name: params.name,
+    discipline: params.discipline,
+  });
+  if (programError) return { program: null, error: programError.message };
+
+  for (const week of params.weeks) {
+    const { error } = await addWeek(supabase, {
+      programId,
+      position: week.position,
+      dayTemplate: [],
+      sourceWeek: week,
+      recordProvenance: false,
+    });
+    if (error) return { program: null, error };
+  }
+
+  const program = await getProgramTree(supabase, programId);
+  return program
+    ? { program, error: null }
+    : { program: null, error: "Program was created, but couldn't be loaded back." };
+}
+
 export async function updateProgram(
   supabase: SupabaseClient,
   programId: string,

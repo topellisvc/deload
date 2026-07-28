@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ClipboardList, Plus } from "lucide-react";
+import { AlertTriangle, ClipboardList, Plus, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
+import { DescribeProgramDialog } from "@/components/programs/describe-program-dialog";
 import { ProgramCard } from "@/components/programs/program-card";
 import { SendProgramDialog } from "@/components/programs/send-program-dialog";
 import { SaveAsTemplateDialog } from "@/components/programs/save-as-template-dialog";
@@ -30,6 +31,7 @@ interface ProgramsListProps {
 export function ProgramsList({ programs: initialPrograms, userId, activeClients, templates: initialTemplates }: ProgramsListProps) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [describeDialogOpen, setDescribeDialogOpen] = useState(false);
   const [programs, setPrograms] = useState(initialPrograms);
   const [templates, setTemplates] = useState(initialTemplates);
   const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
@@ -203,10 +205,16 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
             all on one screen.
           </p>
         </div>
-        <Button onClick={() => setDialogOpen(true)} className="self-start sm:self-auto">
-          <Plus className="size-4" />
-          New program
-        </Button>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <Button variant="outline" onClick={() => setDescribeDialogOpen(true)}>
+            <Sparkles className="size-4" />
+            Describe a program
+          </Button>
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="size-4" />
+            New program
+          </Button>
+        </div>
       </div>
 
       {(activeError || sendError || templateError || deleteError) && (
@@ -263,6 +271,13 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
       <NewProgramDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
+        userId={userId}
+        activeClients={activeClients}
+      />
+
+      <DescribeProgramDialog
+        open={describeDialogOpen}
+        onClose={() => setDescribeDialogOpen(false)}
         userId={userId}
         activeClients={activeClients}
       />
