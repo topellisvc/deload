@@ -11,7 +11,7 @@ export function isActivePath(pathname: string, href: string): boolean {
 }
 
 export const navLinkClassName =
-  "rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+  "whitespace-nowrap rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
 
 /** Layered on top of navLinkClassName (via cn) when isActivePath is true. */
 export const navLinkActiveClassName = "bg-muted text-foreground";

@@ -52,7 +52,7 @@ export function SiteHeader() {
 
         {/* Desktop nav — Dashboard/Coaching/Profile are auth-gated islands
             (hidden when signed out); Tools and Programs are static links. */}
-        <nav className="hidden items-center gap-1 lg:flex">
+        <nav className="hidden items-center gap-0.5 xl:gap-1 lg:flex">
           <AuthNavLink href="/dashboard" label="Dashboard" />
           <Link href="/programs" aria-current={programsActive ? "page" : undefined} className={cn(navLinkClassName, programsActive && navLinkActiveClassName)}>
             Programs

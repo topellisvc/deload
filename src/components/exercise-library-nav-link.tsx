@@ -49,7 +49,7 @@ export function ExerciseLibraryNavLink({ className }: { className?: string }) {
 
   return (
     <Link href="/exercises" aria-current={active ? "page" : undefined} className={cn(navLinkClassName, active && navLinkActiveClassName, className)}>
-      Exercise Library
+      Exercises
     </Link>
   );
 }
