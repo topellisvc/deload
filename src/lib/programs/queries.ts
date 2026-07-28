@@ -16,6 +16,7 @@ import type {
   ProgramTree,
   WeekRow,
 } from "@/lib/programs/types";
+import { getExerciseNamesByIds } from "@/lib/exercises/queries";
 
 /**
  * The program tree is five tables deep (program -> weeks -> days -> blocks
@@ -84,6 +85,14 @@ export async function getProgramTree(
     : { data: [] };
   const sets = (setsData ?? []) as SetPrescription[];
 
+  // Same flat-query-and-stitch approach as every other level above: one
+  // more indexed lookup (this time against the Exercise Library) rather
+  // than a PostgREST embedded select — see this function's header comment.
+  const exerciseNamesById = await getExerciseNamesByIds(
+    supabase,
+    blockExercises.map((be) => be.exercise_id).filter((id): id is string => !!id)
+  );
+
   const setsByBlockExercise = groupBy(sets, (s) => s.block_exercise_id);
   const blockExercisesByBlock = groupBy(blockExercises, (be) => be.block_id);
   const blocksByDay = groupBy(blocks, (b) => b.day_id);
@@ -99,6 +108,7 @@ export async function getProgramTree(
           (be): BlockExerciseRow => ({
             ...be,
             sets: setsByBlockExercise.get(be.id) ?? [],
+            exercise_name: be.exercise_id ? (exerciseNamesById.get(be.exercise_id) ?? null) : null,
           })
         ),
       })),

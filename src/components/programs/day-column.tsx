@@ -18,6 +18,12 @@ interface DayColumnProps {
   mode: Exclude<BuilderMode, "preview">;
   library: ExerciseSearchResult[];
   onCreateCustomExercise: (name: string, category: ExerciseCategory) => void;
+  /** DB-backed Exercise Library search/create, threaded down to
+   * ExerciseSearchField (see that component's own doc comments) — optional
+   * so tests that don't render a real Supabase-backed builder keep working
+   * unchanged. */
+  librarySearch?: (query: string, category: ExerciseCategory) => Promise<ExerciseSearchResult[]>;
+  onCreateInLibrary?: (name: string, category: ExerciseCategory) => Promise<{ id: string; name: string } | null>;
   onUpdateDay: (patch: { label?: string | null; is_rest_day?: boolean }) => void;
   onCopyTo: (targetDayId: string) => void;
   onDuplicateDay: () => void;
@@ -93,6 +99,8 @@ export function DayColumn({
   mode,
   library,
   onCreateCustomExercise,
+  librarySearch,
+  onCreateInLibrary,
   onUpdateDay,
   onCopyTo,
   onDuplicateDay,
@@ -222,6 +230,8 @@ export function DayColumn({
     mode,
     library,
     onCreateCustomExercise,
+    librarySearch,
+    onCreateInLibrary,
     expandedExerciseId,
     toggleExpand,
     onDeleteBlock,
@@ -434,6 +444,12 @@ interface BlockSectionProps {
   mode: Exclude<BuilderMode, "preview">;
   library: ExerciseSearchResult[];
   onCreateCustomExercise: (name: string, category: ExerciseCategory) => void;
+  /** DB-backed Exercise Library search/create, threaded down to
+   * ExerciseSearchField (see that component's own doc comments) — optional
+   * so tests that don't render a real Supabase-backed builder keep working
+   * unchanged. */
+  librarySearch?: (query: string, category: ExerciseCategory) => Promise<ExerciseSearchResult[]>;
+  onCreateInLibrary?: (name: string, category: ExerciseCategory) => Promise<{ id: string; name: string } | null>;
   expandedExerciseId: string | null;
   toggleExpand: (exerciseId: string) => void;
   onDeleteBlock: (blockId: string) => void;
@@ -471,6 +487,8 @@ function BlockSection({
   mode,
   library,
   onCreateCustomExercise,
+  librarySearch,
+  onCreateInLibrary,
   expandedExerciseId,
   toggleExpand,
   onDeleteBlock,
@@ -542,6 +560,8 @@ function BlockSection({
                 mode={mode}
                 library={library}
                 onCreateCustomExercise={onCreateCustomExercise}
+                librarySearch={librarySearch}
+                onCreateInLibrary={onCreateInLibrary}
                 onDeleteBlock={() => onDeleteBlock(block.id)}
                 onAddExerciseToBlock={() => onAddExerciseToBlock(block.id)}
                 isAddingExercise={addingExerciseBlockId === block.id}

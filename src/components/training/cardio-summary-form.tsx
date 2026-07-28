@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
 import { BigDistanceField, BigDurationField, BigNumberField, BigTextField } from "@/components/training/big-fields";
@@ -9,6 +10,9 @@ import type { ExerciseCategory, SetPrescription } from "@/lib/programs/types";
 
 interface CardioSummaryFormProps {
   exerciseName: string;
+  /** See StrengthSetLogger's identical prop for why this exists — null
+   * for a custom_name-only exercise with no Exercise Library entry. */
+  exerciseHref: string | null;
   category: ExerciseCategory;
   target: SetPrescription;
   fields: PerformanceField[];
@@ -33,7 +37,7 @@ interface CardioSummaryFormProps {
  * etc. Shared between running and cardio categories since both draw from
  * the same field vocabulary.
  */
-export function CardioSummaryForm({ exerciseName, category, target, fields, onFinish, busy }: CardioSummaryFormProps) {
+export function CardioSummaryForm({ exerciseName, exerciseHref, category, target, fields, onFinish, busy }: CardioSummaryFormProps) {
   const set = new Set(fields);
   const [distanceMeters, setDistanceMeters] = useState<number | null>(null);
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
@@ -45,7 +49,15 @@ export function CardioSummaryForm({ exerciseName, category, target, fields, onFi
 
   return (
     <div className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-5">
-      <h2 className="text-xl font-bold text-foreground">{exerciseName}</h2>
+      <h2 className="text-xl font-bold text-foreground">
+        {exerciseHref ? (
+          <Link href={exerciseHref} className="underline decoration-dotted underline-offset-4 hover:text-primary">
+            {exerciseName}
+          </Link>
+        ) : (
+          exerciseName
+        )}
+      </h2>
 
       <div className="flex flex-col items-center gap-1 rounded-xl bg-muted/50 py-3">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Prescription</span>

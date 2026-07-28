@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SetDetails } from "@/components/programs/set-details";
@@ -14,6 +15,13 @@ export interface LastSetValues {
 
 interface StrengthSetLoggerProps {
   exerciseName: string;
+  /** Set when this exercise resolves to a real Exercise Library id — lets
+   * the athlete "tap an exercise name to open the Exercise Detail page"
+   * (spec) mid-workout without leaving Training Mode's flow (tapping just
+   * navigates there; nothing here streams library content inline yet).
+   * Null for a custom_name-only exercise, which has no detail page to
+   * link to. */
+  exerciseHref: string | null;
   setNumber: number;
   totalSets: number;
   target: SetPrescription;
@@ -51,7 +59,17 @@ function defaultReps(target: SetPrescription): number | null {
  * desktop Coach Review / logging table for anyone who wants it there —
  * this is Training Mode's own, deliberately narrower, input.)
  */
-export function StrengthSetLogger({ exerciseName, setNumber, totalSets, target, suggestedWeight, lastSet, onComplete, busy }: StrengthSetLoggerProps) {
+export function StrengthSetLogger({
+  exerciseName,
+  exerciseHref,
+  setNumber,
+  totalSets,
+  target,
+  suggestedWeight,
+  lastSet,
+  onComplete,
+  busy,
+}: StrengthSetLoggerProps) {
   const [weight, setWeight] = useState<number | null>(() => defaultWeight(target, suggestedWeight));
   const [reps, setReps] = useState<number | null>(() => defaultReps(target));
   const [notes, setNotes] = useState("");
@@ -69,7 +87,15 @@ export function StrengthSetLogger({ exerciseName, setNumber, totalSets, target, 
   return (
     <div className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-foreground">{exerciseName}</h2>
+        <h2 className="text-xl font-bold text-foreground">
+          {exerciseHref ? (
+            <Link href={exerciseHref} className="underline decoration-dotted underline-offset-4 hover:text-primary">
+              {exerciseName}
+            </Link>
+          ) : (
+            exerciseName
+          )}
+        </h2>
         <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
           Set {setNumber} of {totalSets}
         </span>

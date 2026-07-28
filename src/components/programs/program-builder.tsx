@@ -23,6 +23,8 @@ import { defaultCategoryForDiscipline, defaultPrescriptionType } from "@/lib/pro
 import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import * as m from "@/lib/programs/mutations";
 import { getExerciseLibrary, addToExerciseLibrary } from "@/lib/programs/exercise-library";
+import { searchExerciseLibraryForPicker } from "@/lib/exercises/queries";
+import { createCustomExerciseFromPicker } from "@/lib/exercises/mutations";
 import { getExerciseTemplates } from "@/lib/programs/exercise-templates";
 import { getDayTemplates } from "@/lib/programs/day-templates";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
@@ -647,6 +649,25 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     void addToExerciseLibrary(supabase, { ownerId: program.owner_id, name, category });
   }
 
+  /** DB-backed search over the shared Exercise Library (see
+   * lib/exercises/queries.ts) — ExerciseSearchField's optional
+   * `librarySearch` prop, threaded all the way down through DayColumn ->
+   * ExerciseBlockCard -> ExerciseCard. */
+  function handleLibrarySearch(query: string, category: ExerciseCategory) {
+    return searchExerciseLibraryForPicker(supabase, { query, blockCategory: category });
+  }
+
+  /** The picker's "Create <name>" flow now creates a real, shared Exercise
+   * Library row (spec: "Create New Exercise, which immediately adds it to
+   * the library") instead of only a private legacy exercise_library entry
+   * — the created exercise gets a real exercise_id other coaches can find
+   * too. Falls back to handleCreateCustomExercise's plain custom_name path
+   * (via ExerciseSearchField itself) if this returns null. */
+  async function handleCreateInLibrary(name: string, category: ExerciseCategory) {
+    const created = await createCustomExerciseFromPicker(supabase, { name, blockCategory: category, ownerId: program.owner_id });
+    return created;
+  }
+
   async function handleDuplicateExercise(dayId: string, blockId: string, blockExerciseId: string) {
     const day = week.days.find((d) => d.id === dayId);
     const sourceBlock = day?.blocks.find((b) => b.id === blockId);
@@ -952,6 +973,8 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 mode={mode}
                 library={library}
                 onCreateCustomExercise={handleCreateCustomExercise}
+                librarySearch={handleLibrarySearch}
+                onCreateInLibrary={handleCreateInLibrary}
                 onUpdateDay={(patch) => handleUpdateDay(day.id, patch)}
                 onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
                 onDuplicateDay={() => handleDuplicateDay(day.id)}

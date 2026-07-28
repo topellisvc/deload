@@ -45,6 +45,11 @@ export type SetRow = SetPrescription;
 
 export interface BlockExerciseRow extends BlockExercise {
   sets: SetRow[];
+  /** Resolved from the Exercise Library (public.exercises) at fetch time —
+   * see getExerciseDisplayName's doc comment. Undefined/null for a
+   * custom_name-only exercise or one whose exercise_id doesn't (yet)
+   * resolve to a library row. */
+  exercise_name?: string | null;
 }
 
 export interface BlockRow extends ExerciseBlock {

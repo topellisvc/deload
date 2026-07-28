@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Dumbbell, Plus, Search } from "lucide-react";
-import { searchExercises, isNewExerciseName, type ExerciseSearchResult } from "@/lib/programs/exercise-search";
+import { searchExercises, type ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import type { ExerciseCategory } from "@/lib/programs/types";
 import { cn } from "@/lib/utils";
@@ -20,8 +20,23 @@ interface ExerciseSearchFieldProps {
   /** Fired (in addition to onChange) when the coach picks "Create <name>"
    * for a name that doesn't match anything yet — the caller's chance to
    * persist it to exercise_library so it's a real search result next time,
-   * not just this one row's custom_name. */
+   * not just this one row's custom_name. Ignored when onCreateInLibrary is
+   * provided and succeeds (that path already persists it, more durably). */
   onCreateCustomExercise?: (name: string) => void;
+  /** DB-backed results from the shared Exercise Library (see
+   * lib/exercises/queries.ts's searchExerciseLibraryForPicker), merged in
+   * ahead of the built-in/legacy-library results from searchExercises.
+   * Optional and additive on purpose — omitting it (as every existing test
+   * does) reproduces the exact pre-Exercise-Library behavior, since this
+   * component itself never talks to Supabase directly. */
+  librarySearch?: (query: string) => Promise<ExerciseSearchResult[]>;
+  /** When provided, "Create <name>" awaits this to create a real Exercise
+   * Library row and resolves with a real exercise_id instead of falling
+   * back to a custom_name-only row — the Program Builder's version of the
+   * spec's "Create New Exercise, which immediately adds it to the
+   * library." Falls back to the plain custom_name behavior if this
+   * resolves to null (e.g. a name collision) or isn't provided at all. */
+  onCreateInLibrary?: (name: string) => Promise<{ id: string; name: string } | null>;
   className?: string;
 }
 
@@ -45,6 +60,8 @@ export function ExerciseSearchField({
   onChange,
   library = [],
   onCreateCustomExercise,
+  librarySearch,
+  onCreateInLibrary,
   className,
 }: ExerciseSearchFieldProps) {
   const currentLabel = exerciseId ? getExerciseDisplayName({ exercise_id: exerciseId, custom_name: customName }) : (customName ?? "");
@@ -59,13 +76,21 @@ export function ExerciseSearchField({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    searchExercises(query, category, library).then((r) => {
-      if (!cancelled) setResults(r);
-    });
+    Promise.all([searchExercises(query, category, library), librarySearch ? librarySearch(query) : Promise.resolve([])]).then(
+      ([builtIn, fromLibrary]) => {
+        if (cancelled) return;
+        // Exercise Library results lead (it's the source of truth going
+        // forward), deduped by name against the built-in/legacy-library
+        // results so a seeded catalog entry doesn't show up twice just
+        // because its name also happens to be in the static lists.
+        const libraryLower = new Set(fromLibrary.map((r) => r.name.toLowerCase()));
+        setResults([...fromLibrary, ...builtIn.filter((r) => !libraryLower.has(r.name.toLowerCase()))]);
+      }
+    );
     return () => {
       cancelled = true;
     };
-  }, [open, query, category, library]);
+  }, [open, query, category, library, librarySearch]);
 
   useEffect(() => setHighlighted(0), [results]);
 
@@ -106,15 +131,30 @@ export function ExerciseSearchField({
     close();
   }
 
-  function createCustom() {
+  async function createCustom() {
     const trimmed = query.trim();
     if (!trimmed) return;
+    if (onCreateInLibrary) {
+      const created = await onCreateInLibrary(trimmed);
+      if (created) {
+        onChange({ exercise_id: created.id, custom_name: null });
+        close();
+        return;
+      }
+    }
     onChange({ exercise_id: null, custom_name: trimmed });
     onCreateCustomExercise?.(trimmed);
     close();
   }
 
-  const offerCreate = isNewExerciseName(query, category, library);
+  // Derived from the already-fetched `results` (which include any live
+  // Exercise Library matches) rather than only isNewExerciseName's
+  // static-lists-and-legacy-library check — a substring-filtered list
+  // still contains an exact match if one exists, so this stays equivalent
+  // to the old check while also catching a DB match isNewExerciseName has
+  // no way to see.
+  const trimmedQuery = query.trim();
+  const offerCreate = trimmedQuery.length > 0 && !results.some((r) => r.name.toLowerCase() === trimmedQuery.toLowerCase());
   // The create-custom row is always the last item in keyboard nav order —
   // folding it into one combined list means Up/Down/Enter don't need to
   // special-case "am I on a real result or the create row" separately.

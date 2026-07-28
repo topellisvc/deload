@@ -64,13 +64,26 @@ export function resolveExerciseId(category: ExerciseCategory, name: string): str
   return STRENGTH_NAME_TO_ID.get(name.trim().toLowerCase()) ?? null;
 }
 
-/** Resolves a block_exercise's display name — exercise_id looks up the
- * strength catalog (lib/workout-generator/exercises.ts), custom_name is
- * used verbatim otherwise. Extracted from what used to be a private map
- * inside ExercisePicker so every place that renders an exercise's name
- * (the program builder, workout logging, Training Mode) resolves it the
- * same way instead of a couple of call sites showing the raw id. */
-export function getExerciseDisplayName(exercise: { exercise_id: string | null; custom_name: string | null }): string {
+/**
+ * Resolves a block_exercise's display name. Checked in order:
+ * 1. `exercise_name` — a name resolved from the Exercise Library (`public.
+ *    exercises`) at fetch time by getProgramTree/getTrainingDayForTraining
+ *    (a flat `{id, name}` lookup, same convention as every other level of
+ *    those queries — see their header comments). Kept as a plain string
+ *    field here rather than an async lookup so this function can stay
+ *    synchronous, which every call site (Training Mode, the builder,
+ *    workout logging) still relies on.
+ * 2. The static strength catalog (lib/workout-generator/exercises.ts) —
+ *    covers any block_exercises row whose exercise_id predates the
+ *    Exercise Library and hasn't been re-fetched with a joined name yet.
+ * 3. `custom_name`, then the raw id, then a final fallback.
+ */
+export function getExerciseDisplayName(exercise: {
+  exercise_id: string | null;
+  custom_name: string | null;
+  exercise_name?: string | null;
+}): string {
+  if (exercise.exercise_name) return exercise.exercise_name;
   if (exercise.exercise_id) return STRENGTH_ID_TO_NAME.get(exercise.exercise_id) ?? exercise.custom_name ?? exercise.exercise_id;
   return exercise.custom_name ?? "Exercise";
 }

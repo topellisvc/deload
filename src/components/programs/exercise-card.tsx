@@ -35,6 +35,8 @@ interface ExerciseCardProps {
   mode: Exclude<BuilderMode, "preview">;
   library: ExerciseSearchResult[];
   onCreateCustomExercise: (name: string, category: ExerciseCategory) => void;
+  librarySearch?: (query: string, category: ExerciseCategory) => Promise<ExerciseSearchResult[]>;
+  onCreateInLibrary?: (name: string, category: ExerciseCategory) => Promise<{ id: string; name: string } | null>;
   onExerciseChange: (patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (notes: string | null) => void;
   onCategoryChange: (category: ExerciseCategory) => void;
@@ -76,6 +78,8 @@ export function ExerciseCard({
   mode,
   library,
   onCreateCustomExercise,
+  librarySearch,
+  onCreateInLibrary,
   onExerciseChange,
   onNoteChange,
   onCategoryChange,
@@ -185,6 +189,8 @@ export function ExerciseCard({
             onChange={onExerciseChange}
             library={library}
             onCreateCustomExercise={(name) => onCreateCustomExercise(name, category)}
+            librarySearch={librarySearch ? (query) => librarySearch(query, category) : undefined}
+            onCreateInLibrary={onCreateInLibrary ? (name) => onCreateInLibrary(name, category) : undefined}
           />
 
           <SegmentedControl aria-label="Exercise category" options={CATEGORY_OPTIONS} value={category} onChange={onCategoryChange} className="w-fit" />

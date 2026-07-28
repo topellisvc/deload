@@ -7,8 +7,10 @@ import { getClientLastActivity, getMyClients, getMyRole } from "@/lib/coaching/q
 import { getProgramsForClient } from "@/lib/programs/queries";
 import { getConversationMessages } from "@/lib/messaging/queries";
 import { getSessionHistory, getLoggedSets, groupLoggedSetsByExercise } from "@/lib/logging/queries";
+import { listExercises } from "@/lib/exercises/queries";
 import { ClientDetail } from "@/components/clients/client-detail";
 import { ClientHistorySection } from "@/components/coaching/client-history-section";
+import { ExerciseHistoryLookup } from "@/components/coaching/exercise-history-lookup";
 import { NotesSection } from "@/components/coaching/notes-section";
 import { MessageThread } from "@/components/coaching/message-thread";
 
@@ -57,11 +59,12 @@ export default async function AthletePage({ params }: AthletePageProps) {
   // still pending" (no linked user yet, so there's nothing here to show).
   if (!client) notFound();
 
-  const [programs, lastActivityOn, historyEntries, messages] = await Promise.all([
+  const [programs, lastActivityOn, historyEntries, messages, exercises] = await Promise.all([
     getProgramsForClient(supabase, user.id, id),
     getClientLastActivity(supabase, id),
     getSessionHistory(supabase, id),
     getConversationMessages(supabase, client.id),
+    listExercises(supabase, {}),
   ]);
   // Depends on historyEntries' log ids, so it can't join the Promise.all
   // above — same two-step shape /history's own page uses for itself.
@@ -84,6 +87,8 @@ export default async function AthletePage({ params }: AthletePageProps) {
         <ClientDetail coachId={user.id} client={client} programs={programs} lastActivityOn={lastActivityOn} activeClients={activeClients} />
 
         <ClientHistorySection entries={historyEntries} loggedSetsByExercise={loggedSetsByExercise} />
+
+        <ExerciseHistoryLookup athleteId={id} exercises={exercises} />
 
         <MessageThread
           coachClientId={client.id}

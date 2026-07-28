@@ -69,6 +69,10 @@ export function ExerciseScreen({
 }: ExerciseScreenProps) {
   const category = exercise.exercise_category;
   const exerciseName = getExerciseDisplayName(exercise);
+  // "Tap an exercise name to open the Exercise Detail page" (spec) — only
+  // real Exercise Library rows (exercise_id set) have a detail page to
+  // link to; a plain custom_name has nothing to tap through to.
+  const exerciseHref = exercise.exercise_id ? `/exercises/${exercise.exercise_id}` : null;
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-4 px-6 py-8">
@@ -125,6 +129,7 @@ export function ExerciseScreen({
           key={exercise.id}
           exercise={exercise}
           exerciseName={exerciseName}
+          exerciseHref={exerciseHref}
           loggedSetCount={loggedSetCount}
           draftSets={draftSets}
           personalRecords={personalRecords}
@@ -135,6 +140,7 @@ export function ExerciseScreen({
         <CardioSummaryForm
           key={exercise.id}
           exerciseName={exerciseName}
+          exerciseHref={exerciseHref}
           category={category}
           target={exercise.sets[0]!}
           fields={getPrescriptionTypeDef(category, exercise.sets[0]!.prescription_type)?.performanceFields ?? []}
@@ -151,6 +157,7 @@ export function ExerciseScreen({
 function StrengthLoggerSlot({
   exercise,
   exerciseName,
+  exerciseHref,
   loggedSetCount,
   draftSets,
   personalRecords,
@@ -159,6 +166,7 @@ function StrengthLoggerSlot({
 }: {
   exercise: BlockExerciseRow;
   exerciseName: string;
+  exerciseHref: string | null;
   loggedSetCount: number;
   draftSets: DraftSet[];
   personalRecords: PersonalRecord[];
@@ -183,6 +191,7 @@ function StrengthLoggerSlot({
     <StrengthSetLogger
       key={`${target.id}-${loggedSetCount}`}
       exerciseName={exerciseName}
+      exerciseHref={exerciseHref}
       setNumber={loggedSetCount + 1}
       totalSets={targets.length}
       target={target}

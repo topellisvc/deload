@@ -7,6 +7,7 @@ import { Dumbbell, Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthStatus } from "@/components/auth/auth-status";
 import { AuthNavLink } from "@/components/auth-nav-link";
+import { ExerciseLibraryNavLink } from "@/components/exercise-library-nav-link";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { isActivePath, navLinkActiveClassName, navLinkClassName } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -58,6 +59,7 @@ export function SiteHeader() {
           </Link>
           <AuthNavLink href="/history" label="History" />
           <AuthNavLink href="/coaching" label="Coaching" />
+          <ExerciseLibraryNavLink />
           {/* Static link, not AuthNavLink — Insights must be visible and
               crawlable for signed-out visitors and search engines (the
               spec's whole SEO/discovery goal depends on that), unlike the
@@ -105,6 +107,7 @@ export function SiteHeader() {
           </Link>
           <AuthNavLink href="/history" label="History" />
           <AuthNavLink href="/coaching" label="Coaching" />
+          <ExerciseLibraryNavLink />
           {/* Static link, not AuthNavLink — Insights must be visible and
               crawlable for signed-out visitors and search engines (the
               spec's whole SEO/discovery goal depends on that), unlike the

@@ -17,6 +17,8 @@ interface ExerciseBlockCardProps {
   mode: Exclude<BuilderMode, "preview">;
   library: ExerciseSearchResult[];
   onCreateCustomExercise: (name: string, category: ExerciseCategory) => void;
+  librarySearch?: (query: string, category: ExerciseCategory) => Promise<ExerciseSearchResult[]>;
+  onCreateInLibrary?: (name: string, category: ExerciseCategory) => Promise<{ id: string; name: string } | null>;
   onDeleteBlock: () => void;
   onAddExerciseToBlock: () => void;
   /** True while this block's "add exercise" write is in flight. The click
@@ -63,6 +65,8 @@ export function ExerciseBlockCard({
   mode,
   library,
   onCreateCustomExercise,
+  librarySearch,
+  onCreateInLibrary,
   onDeleteBlock,
   onAddExerciseToBlock,
   isAddingExercise,
@@ -157,6 +161,8 @@ export function ExerciseBlockCard({
             mode={mode}
             library={library}
             onCreateCustomExercise={onCreateCustomExercise}
+            librarySearch={librarySearch}
+            onCreateInLibrary={onCreateInLibrary}
             onExerciseChange={(patch) => onExerciseChange(exercise.id, patch)}
             onNoteChange={(notes) => onNoteChange(exercise.id, notes)}
             onCategoryChange={(category) => onCategoryChange(exercise.id, category)}

@@ -3,6 +3,7 @@ import type { BlockExercise, ExerciseBlock, LoggedSet, Program, SetPrescription,
 import type { BlockExerciseRow, BlockRow } from "@/lib/programs/types";
 import type { PreviousPerformance, TrainingDayDetail, TrainingModeSession, TrainingModeSessionRow } from "@/lib/training/types";
 import { mapTrainingModeSessionRow } from "@/lib/training/types";
+import { getExerciseNamesByIds } from "@/lib/exercises/queries";
 
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
   const map = new Map<K, T[]>();
@@ -65,11 +66,20 @@ export async function getTrainingDayForTraining(supabase: SupabaseClient, traini
       const setsByBlockExercise = groupBy(sets, (s) => s.block_exercise_id);
       const blockExercisesByBlock = groupBy(blockExercises, (be) => be.block_id);
 
+      // Same flat-query-and-stitch lookup getProgramTree uses (see its
+      // header comment) — a single day's worth of exercise ids, resolved
+      // against the Exercise Library in one indexed query.
+      const exerciseNamesById = await getExerciseNamesByIds(
+        supabase,
+        blockExercises.map((be) => be.exercise_id).filter((id): id is string => !!id)
+      );
+
       return blocks.map((block): BlockRow => ({
         ...block,
         exercises: (blockExercisesByBlock.get(block.id) ?? []).map((be): BlockExerciseRow => ({
           ...be,
           sets: setsByBlockExercise.get(be.id) ?? [],
+          exercise_name: be.exercise_id ? (exerciseNamesById.get(be.exercise_id) ?? null) : null,
         })),
       }));
     })(),
