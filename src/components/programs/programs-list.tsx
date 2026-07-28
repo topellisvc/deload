@@ -206,9 +206,12 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
           </p>
         </div>
         <div className="flex flex-wrap gap-2 self-start sm:self-auto">
-          <Button variant="outline" onClick={() => setDescribeDialogOpen(true)}>
+          <Button variant="outline" disabled className="opacity-60">
             <Sparkles className="size-4" />
             Describe a program
+            <span className="ml-1 rounded-full bg-surface-hover px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Coming soon
+            </span>
           </Button>
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="size-4" />

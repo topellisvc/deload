@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ParsedProgramSchema, parsedProgramToWeeks, parsedProgramToTree } from "@/lib/programs/text-parse";
+import { ParsedProgramSchema, parsedProgramToWeeks, parsedProgramToTree, type ParsedProgram } from "@/lib/programs/text-parse";
 
-function baseParsed() {
+function baseParsed(): ParsedProgram {
   return {
     name: "Test Block",
-    discipline: "hybrid" as const,
+    discipline: "hybrid",
     weeks: [
       {
         label: null,
@@ -15,9 +15,9 @@ function baseParsed() {
             exercises: [
               {
                 name: "Back Squat",
-                category: "strength" as const,
+                category: "strength",
                 role: null,
-                prescription_type: "fixed_weight" as const,
+                prescription_type: "fixed_weight",
                 notes: null,
                 sets: [{ sets: 5, reps: "5", weight_kg: 80, percent_1rm: null, rpe: null, rir: null, rest_seconds: null, distance_meters: null, duration_seconds: null, pace_seconds_per_km: null, heart_rate_zone: null, calories: null, notes: null }],
               },
@@ -79,7 +79,6 @@ describe("parsedProgramToWeeks", () => {
     parsed.weeks[0]!.days[0]!.exercises[0]! = {
       ...parsed.weeks[0]!.days[0]!.exercises[0]!,
       category: "running",
-      // @ts-expect-error deliberately mismatched for the test
       prescription_type: "percent_1rm",
     };
     const weeks = parsedProgramToWeeks(parsed);
