@@ -42,24 +42,6 @@
 -- model directly: coaches can create/edit their own (owner_id = them),
 -- everyone can read every exercise, only admins can touch global ones.
 
--- Postgres marks to_tsvector(regconfig, text) STABLE, not IMMUTABLE, in its
--- own catalog — regardless of how the config argument is supplied (a bare
--- literal, or explicitly cast to regconfig), because a text search
--- configuration is technically catalog data that could change. A GENERATED
--- column's expression must be IMMUTABLE, so calling to_tsvector directly
--- there always fails with "generation expression is not immutable" — this
--- thin wrapper is the standard, documented workaround: it re-declares the
--- same call as IMMUTABLE, which is safe here since the 'english' config
--- itself is never going to change.
-create or replace function public.immutable_to_tsvector(config regconfig, content text)
-returns tsvector
-language sql
-immutable
-parallel safe
-as $$
-  select to_tsvector(config, content);
-$$;
-
 create table if not exists public.exercises (
   id text primary key,
   name text not null,
@@ -99,16 +81,17 @@ create table if not exists public.exercises (
   owner_id uuid references auth.users (id) on delete set null,
   is_archived boolean not null default false,
   -- Full text search across name/category/muscle group/equipment/tags —
-  -- "search should feel fast" (spec). Regenerated automatically by
-  -- Postgres on every write, no app-side upkeep.
-  search_vector tsvector generated always as (
-    setweight(public.immutable_to_tsvector('english', coalesce(name, '')), 'A') ||
-    setweight(public.immutable_to_tsvector('english', coalesce(array_to_string(tags, ' '), '')), 'B') ||
-    setweight(public.immutable_to_tsvector('english', coalesce(replace(category, '_', ' '), '')), 'C') ||
-    setweight(public.immutable_to_tsvector('english', coalesce(replace(primary_muscle_group, '_', ' '), '')), 'C') ||
-    setweight(public.immutable_to_tsvector('english', coalesce(replace(equipment, '_', ' '), '')), 'C') ||
-    setweight(public.immutable_to_tsvector('english', coalesce(replace(movement_pattern, '_', ' '), '')), 'C')
-  ) stored,
+  -- "search should feel fast" (spec). NOT a GENERATED column: Postgres
+  -- marks to_tsvector(regconfig, text) STABLE rather than IMMUTABLE in its
+  -- own catalog (a text search config is technically catalog data that
+  -- could change), and a GENERATED column's expression must be IMMUTABLE —
+  -- even a same-signature IMMUTABLE wrapper function around to_tsvector
+  -- still tripped the same "generation expression is not immutable" check
+  -- in testing. A plain column kept in sync by a BEFORE INSERT OR UPDATE
+  -- trigger (exercises_set_search_vector, below) sidesteps the restriction
+  -- entirely — trigger functions have no immutability requirement — and
+  -- ends up populated exactly the same way on every write.
+  search_vector tsvector,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -171,6 +154,31 @@ drop trigger if exists exercises_set_updated_at on public.exercises;
 create trigger exercises_set_updated_at
   before update on public.exercises
   for each row execute function public.set_exercises_updated_at();
+
+-- Keeps search_vector (a plain column, not GENERATED — see that column's
+-- comment) in sync on every write. plpgsql trigger functions have no
+-- immutability requirement, so the plain to_tsvector(regconfig, text) call
+-- that a GENERATED column's expression can't use is completely fine here.
+create or replace function public.set_exercises_search_vector()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.search_vector :=
+    setweight(to_tsvector('english', coalesce(new.name, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(array_to_string(new.tags, ' '), '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(replace(new.category, '_', ' '), '')), 'C') ||
+    setweight(to_tsvector('english', coalesce(replace(new.primary_muscle_group, '_', ' '), '')), 'C') ||
+    setweight(to_tsvector('english', coalesce(replace(new.equipment, '_', ' '), '')), 'C') ||
+    setweight(to_tsvector('english', coalesce(replace(new.movement_pattern, '_', ' '), '')), 'C');
+  return new;
+end;
+$$;
+
+drop trigger if exists exercises_set_search_vector on public.exercises;
+create trigger exercises_set_search_vector
+  before insert or update on public.exercises
+  for each row execute function public.set_exercises_search_vector();
 
 -- ============================================================
 -- exercise_coaching_cues
