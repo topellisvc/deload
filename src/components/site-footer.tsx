@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function SiteFooter() {
   return (
     // Same bottom clearance as <main> in layout.tsx, and for the same
@@ -14,7 +16,15 @@ export function SiteFooter() {
           or professional coaching advice. Consult a qualified coach or
           medical professional for guidance specific to you.
         </p>
-        <p>&copy; {new Date().getFullYear()} Deload. All rights reserved.</p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <p>&copy; {new Date().getFullYear()} Deload. All rights reserved.</p>
+          <Link href="/privacy" className="text-muted-foreground transition-colors hover:text-foreground">
+            Privacy Policy
+          </Link>
+          <Link href="/terms" className="text-muted-foreground transition-colors hover:text-foreground">
+            Terms of Service
+          </Link>
+        </div>
       </div>
     </footer>
   );

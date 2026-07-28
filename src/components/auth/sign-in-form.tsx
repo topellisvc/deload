@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mail, CheckCircle2, AlertTriangle, KeyRound } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -156,6 +157,18 @@ export function SignInForm({ redirectTo = "/" }: SignInFormProps) {
           <Button type="submit" size="lg" disabled={status === "sending"}>
             {status === "sending" ? "Sending…" : "Continue with email"}
           </Button>
+
+          <p className="text-center text-xs text-muted-foreground">
+            By continuing, you agree to Deload&apos;s{" "}
+            <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
       </CardContent>
     </Card>
