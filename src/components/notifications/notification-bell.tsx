@@ -53,13 +53,16 @@ export function NotificationBell() {
     const supabase = createClient();
     let cancelled = false;
 
-    Promise.all([getRecentNotifications(supabase, user.id), getUnreadNotificationCount(supabase, user.id)]).then(
-      ([recent, count]) => {
+    Promise.all([getRecentNotifications(supabase, user.id), getUnreadNotificationCount(supabase, user.id)])
+      .then(([recent, count]) => {
         if (cancelled) return;
         setNotifications(recent);
         setUnreadCount(count);
-      }
-    );
+      })
+      // A failed fetch just leaves the dropdown at its last-known state
+      // rather than throwing an unhandled rejection — same reasoning as
+      // the fix in auth-provider.tsx.
+      .catch(() => {});
 
     // A random suffix, not just the user id, as the topic name: Supabase's
     // realtime client dedupes channels by topic and hands back an existing

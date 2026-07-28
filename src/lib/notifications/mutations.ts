@@ -32,14 +32,27 @@ export async function notify(
     email?: { subject: string; heading: string; message: string; ctaLabel?: string; ctaHref?: string };
   }
 ): Promise<void> {
-  await supabase.from("notifications").insert({
-    recipient_id: params.recipientId,
-    actor_id: params.actorId,
-    type: params.type,
-    title: params.title,
-    body: params.body ?? null,
-    link: params.link ?? null,
-  });
+  // The doc comment above promises callers this never throws — Supabase
+  // normally keeps that promise on its own (a Postgrest-level failure like
+  // an RLS violation resolves as `{ error }`, it doesn't throw), but a
+  // genuine network failure (offline, DNS, a blocked request) makes the
+  // underlying fetch reject, which *would* throw through this await and
+  // out to notifyProgramAssigned/notifyInviteAccepted's own bare
+  // `await notify(...)` call sites — turning "the program was created
+  // fine but its notification failed" into "creating the program failed,"
+  // which is exactly the failure mode this function exists to prevent.
+  try {
+    await supabase.from("notifications").insert({
+      recipient_id: params.recipientId,
+      actor_id: params.actorId,
+      type: params.type,
+      title: params.title,
+      body: params.body ?? null,
+      link: params.link ?? null,
+    });
+  } catch {
+    return;
+  }
 
   if (params.email) {
     sendNotificationEmail({ ...params.email, recipientId: params.recipientId });

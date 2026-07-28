@@ -35,9 +35,15 @@ export function useUnreadNotificationCount(): number {
     let cancelled = false;
 
     function refetch() {
-      getUnreadNotificationCount(supabase, user!.id).then((n) => {
-        if (!cancelled) setCount(n);
-      });
+      getUnreadNotificationCount(supabase, user!.id)
+        .then((n) => {
+          if (!cancelled) setCount(n);
+        })
+        // A failed fetch (offline, a blocked request) just leaves the
+        // count at whatever it last was rather than throwing an unhandled
+        // rejection — same "degrade instead of hang/crash" reasoning as
+        // the fix in auth-provider.tsx.
+        .catch(() => {});
     }
 
     refetch();

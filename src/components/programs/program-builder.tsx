@@ -173,15 +173,26 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
   useEffect(() => {
     let cancelled = false;
-    getExerciseLibrary(supabase, program.owner_id).then((entries) => {
-      if (!cancelled) setLibrary(entries.map((e) => ({ id: null, name: e.name, category: e.category })));
-    });
-    getExerciseTemplates(supabase, program.owner_id).then((templates) => {
-      if (!cancelled) setExerciseTemplates(templates);
-    });
-    getDayTemplates(supabase, program.owner_id).then((templates) => {
-      if (!cancelled) setDayTemplates(templates);
-    });
+    // Each .catch(() => {}) just leaves that one list empty on a failed
+    // fetch rather than throwing an unhandled rejection — same reasoning
+    // as the fix in auth-provider.tsx. The three lists are independent
+    // (library/exercise-templates/day-templates each power a different,
+    // optional picker), so one failing shouldn't affect the other two.
+    getExerciseLibrary(supabase, program.owner_id)
+      .then((entries) => {
+        if (!cancelled) setLibrary(entries.map((e) => ({ id: null, name: e.name, category: e.category })));
+      })
+      .catch(() => {});
+    getExerciseTemplates(supabase, program.owner_id)
+      .then((templates) => {
+        if (!cancelled) setExerciseTemplates(templates);
+      })
+      .catch(() => {});
+    getDayTemplates(supabase, program.owner_id)
+      .then((templates) => {
+        if (!cancelled) setDayTemplates(templates);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

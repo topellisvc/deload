@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Dumbbell, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -29,6 +29,24 @@ export function RoleOnboarding() {
   const [needsSelection, setNeedsSelection] = useState(false);
   const [submitting, setSubmitting] = useState<UserRole | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // This is a mandatory step (no close/skip button, by design — see the
+  // doc comment above), so unlike ui/dialog.tsx it deliberately does NOT
+  // close on Escape or an overlay click; a keyboard user shouldn't be able
+  // to dismiss it any more than a mouse user can. What it's missing
+  // without this, though, is the a11y semantics a modal needs regardless
+  // of whether it's dismissable: a screen reader announcing that a dialog
+  // opened, and focus actually landing inside it instead of staying on
+  // whatever was focused on the page behind it.
+  useEffect(() => {
+    if (!needsSelection) return;
+    panelRef.current?.focus();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [needsSelection]);
 
   useEffect(() => {
     if (!user) {
@@ -38,9 +56,15 @@ export function RoleOnboarding() {
     let cancelled = false;
     const supabase = createClient();
 
-    getMyProfile(supabase, user.id).then(({ roleSelected }) => {
-      if (!cancelled) setNeedsSelection(!roleSelected);
-    });
+    getMyProfile(supabase, user.id)
+      .then(({ roleSelected }) => {
+        if (!cancelled) setNeedsSelection(!roleSelected);
+      })
+      // A failed lookup just skips the prompt this time rather than
+      // throwing an unhandled rejection — same reasoning as the fix in
+      // auth-provider.tsx. It'll get another chance to show on the next
+      // page load's fetch.
+      .catch(() => {});
 
     return () => {
       cancelled = true;
@@ -69,8 +93,15 @@ export function RoleOnboarding() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-lg">
-        <h2 className="text-lg font-semibold tracking-tight text-foreground">How will you use Deload?</h2>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="role-onboarding-title"
+        tabIndex={-1}
+        className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-lg focus:outline-none"
+      >
+        <h2 id="role-onboarding-title" className="text-lg font-semibold tracking-tight text-foreground">How will you use Deload?</h2>
         <p className="mt-1.5 text-sm text-muted-foreground">
           You can switch to coaching later too — this just decides what you see first.
         </p>
