@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -14,14 +15,28 @@ interface DialogProps {
 }
 
 /**
- * Minimal controlled modal. No portal/focus-trap library in the project
- * yet, so this keeps it simple: renders inline (fine at our current DOM
- * depth), closes on Escape or overlay click, and moves focus into the
- * dialog on open. Good enough for the create-program / add-week flows;
- * worth revisiting with a proper primitive if modal usage grows.
+ * Minimal controlled modal. No focus-trap library in the project yet, so
+ * this keeps it simple: closes on Escape or overlay click, and moves focus
+ * into the dialog on open.
+ *
+ * Portals into document.body rather than rendering inline — `fixed inset-0`
+ * only positions relative to the viewport if nothing between it and the
+ * viewport establishes a new containing block, and `backdrop-filter`
+ * (SiteHeader's sticky `backdrop-blur-md`) does exactly that, same as
+ * `filter`/`transform` would. A dialog opened from something nested inside
+ * the header (e.g. AccountMenu's SendFeedbackDialog) would otherwise get
+ * squashed into the header's own small bounding box instead of centering
+ * in the viewport — found live when that one rendered cut off at the top
+ * of the page. The `mounted` check avoids an SSR/hydration mismatch from
+ * touching `document` before the client render.
  */
 export function Dialog({ open, onClose, title, description, children, className }: DialogProps) {
   const dialogRef = React.useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   React.useEffect(() => {
     if (!open) return;
@@ -37,9 +52,9 @@ export function Dialog({ open, onClose, title, description, children, className 
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -75,6 +90,7 @@ export function Dialog({ open, onClose, title, description, children, className 
         </div>
         <div className="overflow-y-auto p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
