@@ -30,7 +30,7 @@ const NAME_STORAGE_KEY = "deload:signin_name";
 const ROLE_STORAGE_KEY = "deload:signin_role";
 
 const ROLE_OPTIONS: { value: UserRole; label: string; description: string; icon: typeof Dumbbell }[] = [
-  { value: "athlete", label: "Training myself", description: "Build and follow my own programs", icon: Dumbbell },
+  { value: "athlete", label: "Training myself", description: "Build my own programs, or follow one from a coach", icon: Dumbbell },
   { value: "coach", label: "Training others", description: "Invite clients and build programs for them", icon: Sparkles },
 ];
 

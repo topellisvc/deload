@@ -129,7 +129,7 @@ export function RoleOnboarding() {
               <span className="text-sm font-medium text-foreground">
                 {submitting === "athlete" ? "Setting you up…" : "Training myself"}
               </span>
-              <span className="text-xs text-muted-foreground">Build and follow my own programs</span>
+              <span className="text-xs text-muted-foreground">Build my own programs, or follow one from a coach</span>
             </span>
           </button>
 
