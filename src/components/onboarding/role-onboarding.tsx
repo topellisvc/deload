@@ -127,7 +127,7 @@ export function RoleOnboarding() {
             <Dumbbell className="mt-0.5 size-5 shrink-0 text-primary" />
             <span className="flex flex-col gap-0.5">
               <span className="text-sm font-medium text-foreground">
-                {submitting === "athlete" ? "Setting you up…" : "Train myself"}
+                {submitting === "athlete" ? "Setting you up…" : "Training myself"}
               </span>
               <span className="text-xs text-muted-foreground">Build and follow my own programs</span>
             </span>
@@ -146,7 +146,7 @@ export function RoleOnboarding() {
             <Sparkles className="mt-0.5 size-5 shrink-0 text-primary" />
             <span className="flex flex-col gap-0.5">
               <span className="text-sm font-medium text-foreground">
-                {submitting === "coach" ? "Setting you up…" : "Coach others"}
+                {submitting === "coach" ? "Setting you up…" : "Training others"}
               </span>
               <span className="text-xs text-muted-foreground">Invite clients and build programs for them — free for now</span>
             </span>
