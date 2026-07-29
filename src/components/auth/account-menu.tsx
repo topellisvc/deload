@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { LogOut, Moon, Sun, User } from "lucide-react";
+import { LogOut, MessageSquarePlus, Moon, Sun, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/providers/auth-provider";
+import { SendFeedbackDialog } from "@/components/feedback/send-feedback-dialog";
 
 /**
  * Consolidates what used to be three separate desktop header items — the
@@ -24,6 +25,7 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -120,6 +122,20 @@ export function AccountMenu() {
           <div className="border-t border-border py-1">
             <button
               type="button"
+              onClick={() => {
+                setOpen(false);
+                setFeedbackOpen(true);
+              }}
+              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover"
+            >
+              <MessageSquarePlus className="size-4 text-muted-foreground" />
+              Send feedback
+            </button>
+          </div>
+
+          <div className="border-t border-border py-1">
+            <button
+              type="button"
               onClick={handleSignOut}
               className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover"
             >
@@ -129,6 +145,8 @@ export function AccountMenu() {
           </div>
         </div>
       )}
+
+      {feedbackOpen && <SendFeedbackDialog userId={user.id} onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
 }
