@@ -95,6 +95,14 @@ export async function upgradeToCoach(supabase: SupabaseClient, userId: string): 
   return chooseRole(supabase, userId, "coach");
 }
 
+/** Marks the one-time WelcomeTour modal as seen (migration 0040) — same
+ * "record that they've been shown this already" action as chooseRole's
+ * role_selected flag, just for the separate welcome-tour flag. */
+export async function markTourSeen(supabase: SupabaseClient, userId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("profiles").update({ tour_seen: true }).eq("id", userId);
+  return { error: friendlyError(error, "Couldn't save that. Try again.") };
+}
+
 export async function removeClient(
   supabase: SupabaseClient,
   coachClientId: string

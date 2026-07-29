@@ -13,6 +13,7 @@ export async function getMyProfileDetails(supabase: SupabaseClient, userId: stri
       id: userId,
       role: "athlete",
       role_selected: false,
+      tour_seen: true,
       display_name: null,
       height_value: null,
       height_unit: null,

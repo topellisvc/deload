@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { BottomNav } from "@/components/bottom-nav";
 import { RoleOnboarding } from "@/components/onboarding/role-onboarding";
+import { WelcomeTour } from "@/components/onboarding/welcome-tour";
 import { ToastProvider } from "@/components/ui/toast";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import "./globals.css";
@@ -125,6 +126,7 @@ export default function RootLayout({
             </div>
             <BottomNav />
             <RoleOnboarding />
+            <WelcomeTour />
           </ToastProvider>
         </AuthProvider>
         <Analytics />

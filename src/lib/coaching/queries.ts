@@ -99,20 +99,20 @@ export async function getMyRole(supabase: SupabaseClient, userId: string): Promi
 
 /**
  * Role plus whether they've actually been asked yet — used by the
- * client-side onboarding/nav islands (RoleOnboarding, CoachNavLink) that
- * can't check this server-side without forcing every static page into
- * dynamic rendering (see AuthStatus's comment for why auth state is
- * checked client-side in the header).
+ * client-side onboarding/nav islands (RoleOnboarding, WelcomeTour,
+ * CoachNavLink) that can't check this server-side without forcing every
+ * static page into dynamic rendering (see AuthStatus's comment for why
+ * auth state is checked client-side in the header).
  */
 export async function getMyProfile(
   supabase: SupabaseClient,
   userId: string
-): Promise<{ role: UserRole; roleSelected: boolean }> {
+): Promise<{ role: UserRole; roleSelected: boolean; tourSeen: boolean }> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("role, role_selected")
+    .select("role, role_selected, tour_seen")
     .eq("id", userId)
-    .maybeSingle<{ role: UserRole; role_selected: boolean }>();
+    .maybeSingle<{ role: UserRole; role_selected: boolean; tour_seen: boolean }>();
   // A query error here (e.g. a bad RLS policy) used to fail silently into
   // the same `data ?? ...` fallback as "no row yet" — which made
   // RoleOnboarding pop back up and look like a fresh account instead of
@@ -133,7 +133,11 @@ export async function getMyProfile(
       hint: error.hint,
     });
   }
-  return { role: data?.role ?? "athlete", roleSelected: data?.role_selected ?? false };
+  // tourSeen defaults true (not false) in the missing-row edge case — the
+  // opposite direction from roleSelected's fallback, deliberately: a
+  // broken/missing profile row should never surface an onboarding tour
+  // for what's actually an error state.
+  return { role: data?.role ?? "athlete", roleSelected: data?.role_selected ?? false, tourSeen: data?.tour_seen ?? true };
 }
 
 /** Everyone this user has invited as a client (pending + active), newest first. */

@@ -20,6 +20,9 @@ export interface Profile {
   id: string;
   role: UserRole;
   role_selected: boolean;
+  /** Migration 0040 — gates the one-time WelcomeTour modal, same
+   * show-once pattern as role_selected/RoleOnboarding. */
+  tour_seen: boolean;
   display_name: string | null;
   height_value: number | null;
   height_unit: ProfileLengthUnit | null;
