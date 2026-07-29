@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Dumbbell, Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthStatus } from "@/components/auth/auth-status";
+import { AccountMenu } from "@/components/auth/account-menu";
 import { AuthNavLink } from "@/components/auth-nav-link";
 import { ExerciseLibraryNavLink } from "@/components/exercise-library-nav-link";
 import { NotificationBell } from "@/components/notifications/notification-bell";
@@ -13,14 +14,20 @@ import { isActivePath, navLinkActiveClassName, navLinkClassName } from "@/lib/na
 import { cn } from "@/lib/utils";
 
 /**
- * Dashboard, Programs, History, Coaching, Insights, Tools, Profile, plus
- * auth status and the theme toggle — nine items total once everything's
- * auth-gated in, too many to stay inline once the viewport narrows.
- * Collapses into a hamburger below `lg` (1024px); at `lg` and above it's
- * the same flat row as before. Every item — auth-gated ones via
- * AuthNavLink, the static ones (Programs, Insights, Tools) inline here —
- * highlights itself as the current page via lib/nav.ts's isActivePath, so
- * it's always clear where you are.
+ * Dashboard, Programs, History, Coaching, Exercises, Insights, Tools, plus
+ * the bell and account menu — still a lot once everything's auth-gated in,
+ * too many to stay inline once the viewport narrows. Collapses into a
+ * hamburger below `lg` (1024px); at `lg` and above it's the same flat row
+ * as before. Every link — auth-gated ones via AuthNavLink, the static ones
+ * (Programs, Insights, Tools) inline here — highlights itself as the
+ * current page via lib/nav.ts's isActivePath, so it's always clear where
+ * you are.
+ *
+ * Desktop's email/Profile/sign-out/theme-toggle cluster lives behind
+ * AccountMenu's single avatar trigger instead of four separate items (see
+ * that file) — Profile and the email both pointed at the same page, so
+ * showing both was redundant. The mobile hamburger panel below still uses
+ * AuthStatus directly; it's a vertical list already, not a crowded row.
  */
 export function SiteHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -70,10 +77,8 @@ export function SiteHeader() {
           <Link href="/tools" aria-current={toolsActive ? "page" : undefined} className={cn(navLinkClassName, toolsActive && navLinkActiveClassName)}>
             Tools
           </Link>
-          <AuthNavLink href="/profile" label="Profile" />
           <NotificationBell />
-          <AuthStatus />
-          <ThemeToggle />
+          <AccountMenu />
         </nav>
 
         {/* Mobile: theme toggle and the notification bell stay reachable
