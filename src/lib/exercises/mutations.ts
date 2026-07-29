@@ -7,6 +7,7 @@ import type {
   ExerciseEquipment,
   ExerciseLibraryCategory,
   ExerciseRelationshipType,
+  ExerciseReviewStatus,
   MovementPattern,
   MuscleGroup,
 } from "@/lib/exercises/types";
@@ -71,6 +72,12 @@ export async function createExercise(supabase: SupabaseClient, input: CreateExer
         instructions_finishing: input.instructionsFinishing ?? null,
         tags: input.tags ?? [],
         owner_id: input.ownerId,
+        // Global/admin exercises (ownerId null) skip review entirely; a
+        // coach's own exercise starts pending until an admin approves it
+        // (migration 0038 — RLS keeps it hidden from everyone else in the
+        // meantime, and only lets it through the INSERT policy at all
+        // when it's exactly this value).
+        review_status: input.ownerId === null ? "approved" : "pending",
       })
       .select()
       .maybeSingle();
@@ -141,6 +148,20 @@ export async function archiveExercise(supabase: SupabaseClient, id: string): Pro
 export async function restoreExercise(supabase: SupabaseClient, id: string): Promise<{ error: string | null }> {
   const { error } = await supabase.from("exercises").update({ is_archived: false }).eq("id", id);
   return { error: error ? "Couldn't restore that exercise." : null };
+}
+
+/** Admin-only approve/reject for a coach-submitted exercise (migration
+ * 0038). The `protect_exercise_review_status` trigger silently no-ops this
+ * column change for anyone who isn't an admin, so this is safe to expose
+ * from any authenticated client — RLS/the trigger is the real gate, not
+ * this function. */
+export async function setExerciseReviewStatus(
+  supabase: SupabaseClient,
+  id: string,
+  status: Extract<ExerciseReviewStatus, "approved" | "rejected">
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("exercises").update({ review_status: status }).eq("id", id);
+  return { error: error ? "Couldn't update review status." : null };
 }
 
 /** Relies entirely on the "exercises are deletable by admins when unused"

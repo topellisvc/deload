@@ -65,6 +65,14 @@ export type ExerciseDifficulty = "beginner" | "intermediate" | "advanced";
 
 export type ExerciseRelationshipType = "progression" | "regression" | "variation";
 
+/** Migration 0038: gates visibility of coach-created exercises. Global/
+ * admin-curated rows (owner_id null) are always "approved" and never go
+ * through this — only a coach's own inline-created exercises start
+ * "pending" and stay invisible to everyone but their owner and admins
+ * until an admin approves them. RLS is the actual enforcement (see that
+ * migration); this type just mirrors the column. */
+export type ExerciseReviewStatus = "pending" | "approved" | "rejected";
+
 /** One row of `public.exercises` — the library's core entity. */
 export interface Exercise {
   id: string;
@@ -87,6 +95,7 @@ export interface Exercise {
    * here as keys before ever earning a real column. */
   metadata: Record<string, unknown>;
   owner_id: string | null;
+  review_status: ExerciseReviewStatus;
   is_archived: boolean;
   created_at: string;
   updated_at: string;

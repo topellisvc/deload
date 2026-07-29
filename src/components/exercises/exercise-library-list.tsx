@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { DifficultyBadge } from "@/components/exercises/difficulty-badge";
+import { ReviewStatusBadge } from "@/components/exercises/review-status-badge";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "grid" | "list";
@@ -192,6 +193,10 @@ function ExerciseGridCard({ exercise }: { exercise: Exercise }) {
         <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
           {EXERCISE_EQUIPMENT_LABELS[exercise.equipment]}
         </span>
+        {/* Global exercises are always "approved" (0038), so this only
+         * ever fires for a coach-owned row — RLS already restricts which
+         * of those even reach this viewer (its owner or an admin). */}
+        {exercise.review_status !== "approved" && <ReviewStatusBadge status={exercise.review_status} />}
       </div>
     </Link>
   );
@@ -214,6 +219,7 @@ function ExerciseListRow({ exercise }: { exercise: Exercise }) {
         </span>
       </div>
       <DifficultyBadge difficulty={exercise.difficulty} />
+      {exercise.review_status !== "approved" && <ReviewStatusBadge status={exercise.review_status} />}
     </Link>
   );
 }

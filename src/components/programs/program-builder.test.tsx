@@ -90,6 +90,11 @@ vi.mock("@/lib/programs/day-templates", () => ({
   saveDayAsTemplate: vi.fn(),
   deleteDayTemplate: vi.fn(),
 }));
+// ProgramBuilder now calls useToast (pending-review message on the picker's
+// "Create <name>" flow, migration 0038) — out of scope for these tests,
+// none of which exercise that path, so a no-op stub avoids needing a real
+// ToastProvider wrapped around every render() call below.
+vi.mock("@/components/ui/toast", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock("@/lib/programs/mutations", () => ({
   createProgram: vi.fn(),
   cloneProgram: vi.fn(),

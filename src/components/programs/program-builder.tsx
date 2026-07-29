@@ -38,6 +38,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScrollFadeX } from "@/components/ui/scroll-fade-x";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 const BUILDER_MODE_OPTIONS: { value: BuilderMode; label: string }[] = [
@@ -125,6 +126,7 @@ interface ProgramBuilderProps {
 export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const { showToast } = useToast();
   const [program, setProgram] = useState(initialProgram);
   const [selectedWeekId, setSelectedWeekId] = useState(initialProgram.weeks[0]?.id ?? "");
   const [addWeekOpen, setAddWeekOpen] = useState(false);
@@ -665,6 +667,12 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
    * (via ExerciseSearchField itself) if this returns null. */
   async function handleCreateInLibrary(name: string, category: ExerciseCategory) {
     const created = await createCustomExerciseFromPicker(supabase, { name, blockCategory: category, ownerId: program.owner_id });
+    // New coach-owned exercises start "pending" (migration 0038) — visible
+    // and usable right away by whoever just created it (it's added to
+    // this program immediately after), but hidden from everyone else
+    // until an admin approves it. Let them know so a hidden-until-approved
+    // exercise doesn't look like a bug later.
+    if (created) showToast(`"${created.name}" added — it's ready to use here, and will show up in the shared library once an admin reviews it.`);
     return created;
   }
 

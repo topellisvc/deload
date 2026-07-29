@@ -2,6 +2,7 @@ import type {
   ExerciseDifficulty,
   ExerciseEquipment,
   ExerciseLibraryCategory,
+  ExerciseReviewStatus,
   MovementPattern,
   MuscleGroup,
 } from "@/lib/exercises/types";
@@ -113,6 +114,12 @@ export const EXERCISE_DIFFICULTY_LABELS: Record<ExerciseDifficulty, string> = {
   beginner: "Beginner",
   intermediate: "Intermediate",
   advanced: "Advanced",
+};
+
+export const EXERCISE_REVIEW_STATUS_LABELS: Record<ExerciseReviewStatus, string> = {
+  pending: "Pending review",
+  approved: "Approved",
+  rejected: "Rejected",
 };
 
 /**

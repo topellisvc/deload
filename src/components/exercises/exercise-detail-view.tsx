@@ -17,6 +17,7 @@ import {
 import type { ExerciseDetail, ExerciseUsageStats, RelatedExercise } from "@/lib/exercises/types";
 import { EXERCISE_EQUIPMENT_LABELS, EXERCISE_LIBRARY_CATEGORY_LABELS, MOVEMENT_PATTERN_LABELS, MUSCLE_GROUP_LABELS } from "@/lib/exercises/constants";
 import { DifficultyBadge } from "@/components/exercises/difficulty-badge";
+import { ReviewStatusBadge } from "@/components/exercises/review-status-badge";
 import { EditExerciseDialog } from "@/components/exercises/edit-exercise-dialog";
 import { ArchiveExerciseButton } from "@/components/exercises/archive-exercise-button";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,11 @@ export function ExerciseDetailView({
                 <Chip>{EXERCISE_LIBRARY_CATEGORY_LABELS[exercise.category]}</Chip>
                 <Chip>{EXERCISE_EQUIPMENT_LABELS[exercise.equipment]}</Chip>
                 {exercise.movement_pattern && <Chip>{MOVEMENT_PATTERN_LABELS[exercise.movement_pattern]}</Chip>}
+                {/* Global exercises are always "approved" (0038) — this
+                 * only ever shows for a coach-owned exercise, and RLS
+                 * already restricts this page to its owner or an admin
+                 * whenever it isn't. */}
+                {exercise.review_status !== "approved" && <ReviewStatusBadge status={exercise.review_status} />}
               </div>
             </div>
           </div>
