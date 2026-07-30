@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getMyProfileDetails } from "@/lib/profile/queries";
 import { listExercises } from "@/lib/exercises/queries";
 import { assembleWeeks } from "@/lib/programs/generate/assemble";
 import { buildCardioTemplate, isCardioGoal } from "@/lib/programs/generate/cardio-templates";
@@ -86,6 +87,16 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // programs/generate/page.tsx's redirect is the gate a browser hits, but
+  // this route is reachable directly (POST /api/programs/generate) by
+  // anyone with a session — same "disabled button isn't a security
+  // boundary" reasoning as that page's own comment, applied one layer
+  // deeper so beta access is actually enforced, not just hidden from the UI.
+  const profile = await getMyProfileDetails(supabase, user.id);
+  if (!profile.beta_build_for_me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

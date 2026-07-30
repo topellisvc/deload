@@ -24,11 +24,17 @@ interface ProgramsListProps {
   userId: string;
   activeClients: CoachClient[];
   templates: ProgramTemplateRow[];
+  /** profiles.beta_build_for_me (migration 0053) — "Build my program" is
+   * greyed out for everyone until an admin grants this per account from
+   * /admin. The page's own server-side redirect (programs/generate/page.tsx)
+   * is the real gate; this just keeps the button from being clickable in
+   * the first place for someone who doesn't have access yet. */
+  canBuildProgram: boolean;
 }
 
 /** Invitations and the coach roster used to render at the top of this
  * page — both moved to /coaching as part of the Coaching hub. */
-export function ProgramsList({ programs: initialPrograms, userId, activeClients, templates: initialTemplates }: ProgramsListProps) {
+export function ProgramsList({ programs: initialPrograms, userId, activeClients, templates: initialTemplates, canBuildProgram }: ProgramsListProps) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [describeDialogOpen, setDescribeDialogOpen] = useState(false);
@@ -213,9 +219,19 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
               Coming soon
             </span>
           </Button>
-          <Button variant="outline" onClick={() => router.push("/programs/generate")}>
+          <Button
+            variant="outline"
+            disabled={!canBuildProgram}
+            className={canBuildProgram ? undefined : "opacity-60"}
+            onClick={() => router.push("/programs/generate")}
+          >
             <Wand2 className="size-4" />
             Build my program
+            {!canBuildProgram && (
+              <span className="ml-1 rounded-full bg-surface-hover px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Beta
+              </span>
+            )}
           </Button>
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="size-4" />

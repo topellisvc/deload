@@ -48,6 +48,11 @@ export interface Profile {
    * admin is still whichever of those they were before), so it's its
    * own boolean rather than a third role value. */
   is_admin: boolean;
+  /** Migration 0053 — gates the questionnaire-driven "Build my program"
+   * generator (/programs/generate) while it's in beta. Defaults to false
+   * for everyone, including admins; granted per account from the /admin
+   * roster's toggle, not inherited from is_admin. */
+  beta_build_for_me: boolean;
   created_at: string;
 }
 

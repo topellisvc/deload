@@ -68,7 +68,7 @@ describe("ProgramsList", () => {
   it("calls deleteProgram and optimistically removes the card when the owner deletes their own program", async () => {
     vi.mocked(deleteProgram).mockResolvedValue({ error: null });
     const user = userEvent.setup();
-    render(<ProgramsList programs={[makeProgram()]} userId="user-1" activeClients={[]} templates={[]} />);
+    render(<ProgramsList programs={[makeProgram()]} userId="user-1" activeClients={[]} templates={[]} canBuildProgram />);
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
     const dialog = screen.getByRole("dialog");
@@ -89,6 +89,7 @@ describe("ProgramsList", () => {
         userId="user-1"
         activeClients={[]}
         templates={[]}
+        canBuildProgram
       />
     );
 
@@ -104,7 +105,7 @@ describe("ProgramsList", () => {
   it("puts the card back and shows the error when the delete mutation fails", async () => {
     vi.mocked(deleteProgram).mockResolvedValue({ error: "Network error" });
     const user = userEvent.setup();
-    render(<ProgramsList programs={[makeProgram()]} userId="user-1" activeClients={[]} templates={[]} />);
+    render(<ProgramsList programs={[makeProgram()]} userId="user-1" activeClients={[]} templates={[]} canBuildProgram />);
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
     const dialog = screen.getByRole("dialog");
@@ -126,6 +127,7 @@ describe("ProgramsList", () => {
         userId="user-1"
         activeClients={[]}
         templates={[]}
+        canBuildProgram
       />
     );
 
@@ -144,7 +146,7 @@ describe("ProgramsList", () => {
   it("rolls back the optimistic activation and shows the error when setActiveProgram fails", async () => {
     vi.mocked(setActiveProgram).mockResolvedValue({ error: "Network error" });
     const user = userEvent.setup();
-    render(<ProgramsList programs={[makeProgram({ is_active: false })]} userId="user-1" activeClients={[]} templates={[]} />);
+    render(<ProgramsList programs={[makeProgram({ is_active: false })]} userId="user-1" activeClients={[]} templates={[]} canBuildProgram />);
 
     await user.click(screen.getByRole("button", { name: /set as active/i }));
 
@@ -152,5 +154,21 @@ describe("ProgramsList", () => {
     // Rolled back: the button is offered again instead of the program
     // being stuck looking active.
     expect(screen.getByRole("button", { name: /set as active/i })).toBeInTheDocument();
+  });
+
+  it("greys out and disables 'Build my program' for accounts without beta_build_for_me", () => {
+    render(<ProgramsList programs={[]} userId="user-1" activeClients={[]} templates={[]} canBuildProgram={false} />);
+
+    const button = screen.getByRole("button", { name: /build my program/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByText("Beta")).toBeInTheDocument();
+  });
+
+  it("enables 'Build my program' once beta_build_for_me is granted", () => {
+    render(<ProgramsList programs={[]} userId="user-1" activeClients={[]} templates={[]} canBuildProgram />);
+
+    const button = screen.getByRole("button", { name: /build my program/i });
+    expect(button).not.toBeDisabled();
+    expect(screen.queryByText("Beta")).not.toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyProgramTemplates, getProgramSummaries } from "@/lib/programs/queries";
 import { getMyClients } from "@/lib/coaching/queries";
+import { getMyProfileDetails } from "@/lib/profile/queries";
 import { ProgramsList } from "@/components/programs/programs-list";
 
 export const metadata: Metadata = {
@@ -26,14 +27,23 @@ export default async function ProgramsPage() {
     redirect("/sign-in?redirect_to=/programs");
   }
 
-  // Independent of each other (all three only need user.id) — run
+  // Independent of each other (all four only need user.id) — run
   // concurrently instead of stacking round-trips.
-  const [programs, clients, templates] = await Promise.all([
+  const [programs, clients, templates, profile] = await Promise.all([
     getProgramSummaries(supabase, user.id),
     getMyClients(supabase, user.id),
     getMyProgramTemplates(supabase, user.id),
+    getMyProfileDetails(supabase, user.id),
   ]);
   const activeClients = clients.filter((c) => c.status === "active");
 
-  return <ProgramsList programs={programs} userId={user.id} activeClients={activeClients} templates={templates} />;
+  return (
+    <ProgramsList
+      programs={programs}
+      userId={user.id}
+      activeClients={activeClients}
+      templates={templates}
+      canBuildProgram={profile.beta_build_for_me}
+    />
+  );
 }

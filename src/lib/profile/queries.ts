@@ -62,6 +62,7 @@ export async function getMyProfileDetails(supabase: SupabaseClient, userId: stri
       training_style: null,
       email: null,
       is_admin: false,
+      beta_build_for_me: false,
       created_at: new Date().toISOString(),
     }
   );

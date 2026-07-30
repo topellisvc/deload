@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getMyProfileDetails } from "@/lib/profile/queries";
 import { GenerateProgramForm } from "@/components/programs/generate-program-form";
 
 export const metadata: Metadata = {
@@ -25,6 +26,16 @@ export default async function GenerateProgramPage() {
 
   if (!user) {
     redirect("/sign-in?redirect_to=/programs/generate");
+  }
+
+  // programs-list.tsx already greys the entry-point button out for anyone
+  // without access — this is the real gate, not just the cosmetic one,
+  // same "disabled button isn't a security boundary" reasoning as every
+  // other admin-gated route in this app checking server-side (see
+  // src/app/admin/page.tsx's is_admin check).
+  const profile = await getMyProfileDetails(supabase, user.id);
+  if (!profile.beta_build_for_me) {
+    redirect("/programs");
   }
 
   return (
