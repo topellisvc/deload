@@ -135,6 +135,9 @@ export function DescribeProgramDialog({ open, onClose, userId, activeClients }: 
                 </option>
               ))}
             </select>
+            {forClientId === MYSELF && (
+              <p className="text-xs text-muted-foreground">You can send this to any client later — this just decides who logs it for now.</p>
+            )}
           </div>
         )}
 
