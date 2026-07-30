@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GlobalRefusalScreen, InjuryProfile, ProgramGenerationInput, RedFlagScreen, TrainingGoal, WeekContext } from "@/lib/programs/generate/types";
 import { buildResistanceTemplate, isResistanceGoal } from "@/lib/programs/generate/resistance-templates";
+import { percentOf1RM } from "@/lib/programs/generate/e1rm";
 
 function clearRedFlags(): RedFlagScreen {
   return {
@@ -46,6 +47,7 @@ function baseInput(overrides: Partial<ProgramGenerationInput> = {}): ProgramGene
     conditioningModality: "no_preference",
     coachedOnOlympicLifts: false,
     includeCardio: false,
+    loadCalculationMethod: "autoregulated_rir",
     ...overrides,
   };
 }
@@ -286,5 +288,138 @@ describe("prescriptions — calibration and deload behave correctly through a re
     const [week2, week3, week4] = [rirFor(2), rirFor(3), rirFor(4)];
     expect(week2).toBeGreaterThan(week3); // week 2 (rir 2) > week 3 (rir 1)
     expect(week4).toBeGreaterThan(week3); // week 4 (rir 4, the wave's own light week) eases off week 3
+  });
+});
+
+// At daysPerWeek 3, chooseSplit always returns "full_body" and day 0 is
+// full_body_a, whose primary slot is squat_bilateral — a trackable pattern
+// (TRACKABLE_PATTERN_LIFT_LABEL) with a "Squat" label. full_body_a's
+// secondary slot is horizontal_push, which IS in that same map but isn't
+// primary — useful for proving the %1RM methods only ever touch a primary
+// slot, not just any trackable pattern.
+describe("buildResistanceTemplate — load calculation method", () => {
+  const standardCtx: WeekContext = { weekIndex: 3, totalWeeks: 8, phase: "standard", deload: null };
+
+  function daySlots(method: ProgramGenerationInput["loadCalculationMethod"], experienceLevel: ProgramGenerationInput["experienceLevel"] = "intermediate") {
+    const result = buildResistanceTemplate(baseInput({ daysPerWeek: 3, experienceLevel, loadCalculationMethod: method }));
+    if (!("template" in result)) throw new Error("expected a template");
+    return { result, day: result.template.weekStructure.days[0]! };
+  }
+
+  it("autoregulated_rir (the default) leaves every slot's prescription exactly as the split built it", () => {
+    const { day } = daySlots("autoregulated_rir");
+    const primary = day.slots.find((s) => s.isPrimary)!;
+    expect(primary.prescription.forWeek(standardCtx).prescriptionType).toBe("rir");
+  });
+
+  it("percent_1rm converts only the primary slot on a trackable pattern, using e1rm's own percentOf1RM table", () => {
+    const { day: rirDay } = daySlots("autoregulated_rir");
+    const { day: percentDay } = daySlots("percent_1rm");
+
+    const rirPrimary = rirDay.slots.find((s) => s.isPrimary)!;
+    const percentPrimary = percentDay.slots.find((s) => s.isPrimary)!;
+    expect(rirPrimary.movementPattern).toBe("squat_bilateral");
+
+    const rirPlan = rirPrimary.prescription.forWeek(standardCtx);
+    const percentPlan = percentPrimary.prescription.forWeek(standardCtx);
+
+    const expectedPercent = percentOf1RM(rirPlan.minReps ?? Number(rirPlan.reps), rirPlan.rir!);
+    expect(percentPlan.prescriptionType).toBe("percent_1rm");
+    expect(percentPlan.percent1RM).toBe(expectedPercent);
+    expect(percentPlan.rir).toBeUndefined();
+  });
+
+  it("percent_1rm leaves a secondary slot alone even though its pattern (horizontal_push) is itself trackable — only a primary slot converts", () => {
+    const { day: rirDay } = daySlots("autoregulated_rir");
+    const { day: percentDay } = daySlots("percent_1rm");
+    const rirSecondary = rirDay.slots.find((s) => !s.isPrimary && s.movementPattern === "horizontal_push")!;
+    const percentSecondary = percentDay.slots.find((s) => !s.isPrimary && s.movementPattern === "horizontal_push")!;
+    expect(percentSecondary.prescription.forWeek(standardCtx).prescriptionType).toBe(rirSecondary.prescription.forWeek(standardCtx).prescriptionType);
+    expect(percentSecondary.prescription.forWeek(standardCtx).prescriptionType).not.toBe("percent_1rm");
+  });
+
+  it("coach_entered turns every slot in the day — primary and accessory alike — into a blank fixed_weight row with reps carried over", () => {
+    const { day } = daySlots("coach_entered");
+    for (const slot of day.slots) {
+      const plan = slot.prescription.forWeek(standardCtx);
+      expect(plan.prescriptionType).toBe("fixed_weight");
+      expect(plan.rir).toBeUndefined();
+      expect(plan.percent1RM).toBeUndefined();
+      expect(plan.reps).toEqual(expect.anything());
+    }
+  });
+
+  it("athlete_choice turns every slot into athlete_chooses_weight with reps but no effort target", () => {
+    const { day } = daySlots("athlete_choice");
+    for (const slot of day.slots) {
+      const plan = slot.prescription.forWeek(standardCtx);
+      expect(plan.prescriptionType).toBe("athlete_chooses_weight");
+      expect(plan.rir).toBeUndefined();
+      expect(plan.reps).toEqual(expect.anything());
+    }
+  });
+
+  it("test_then_percent_1rm inserts a testing week at position 1, shifting every existing week (including scheduled deloads) up by one", () => {
+    const { result } = daySlots("test_then_percent_1rm", "intermediate");
+    // Unmodified, an intermediate 8-week program calibrates week 1 and
+    // deloads at 5 — shifted, that's calibration at 2 and deload at 6, with
+    // a brand-new testing week at 1 and the program now 9 weeks long.
+    expect(result.template.phaseByWeek.get(1)).toBe("testing");
+    expect(result.template.phaseByWeek.get(2)).toBe("calibration");
+    expect(result.template.phaseByWeek.get(3)).toBe("standard");
+    expect(result.template.deloadWeeks.get(6)).toBe("volume_cut");
+    expect(result.template.phaseByWeek.size).toBe(9);
+  });
+
+  it("the testing week's own prescription is a single graded set naming the trackable lift, not a normal RIR wave", () => {
+    const { day } = daySlots("test_then_percent_1rm", "intermediate");
+    const primary = day.slots.find((s) => s.isPrimary)!;
+    const testingCtx: WeekContext = { weekIndex: 1, totalWeeks: 9, phase: "testing", deload: null };
+    const plan = primary.prescription.forWeek(testingCtx);
+    expect(plan.prescriptionType).toBe("rir");
+    expect(plan.sets).toBe(1);
+    expect(plan.rir).toBe(1);
+    expect(plan.notes).toContain("Testing week");
+    expect(plan.notes).toContain("Squat");
+  });
+
+  it("after the testing week, later weeks resolve to a normal percent_1rm conversion", () => {
+    const { day: rirDay } = daySlots("autoregulated_rir");
+    const { day: testDay } = daySlots("test_then_percent_1rm", "intermediate");
+    const rirPrimary = rirDay.slots.find((s) => s.isPrimary)!;
+    const testPrimary = testDay.slots.find((s) => s.isPrimary)!;
+    // The wave/calibration math runs on the raw (already-shifted) weekIndex,
+    // so comparing against the un-shifted build means using the *same*
+    // weekIndex on both sides here, not the "equivalent pre-shift" week.
+    const laterCtx: WeekContext = { weekIndex: 4, totalWeeks: 9, phase: "standard", deload: null };
+    const rirPlan = rirPrimary.prescription.forWeek(laterCtx);
+    const testPlan = testPrimary.prescription.forWeek(laterCtx);
+    expect(testPlan.prescriptionType).toBe("percent_1rm");
+    expect(testPlan.percent1RM).toBe(percentOf1RM(rirPlan.minReps ?? Number(rirPlan.reps), rirPlan.rir!));
+  });
+
+  it("downgrades test_then_percent_1rm to autoregulated_rir for a beginner, with an explanatory warning, and doesn't insert a testing week", () => {
+    const { result, day } = daySlots("test_then_percent_1rm", "beginner");
+    expect(result.template.phaseByWeek.get(1)).toBe("calibration");
+    expect(result.template.phaseByWeek.size).toBe(8);
+    expect(result.warnings.some((w) => w.toLowerCase().includes("isn't something this generator does for beginners"))).toBe(true);
+    const primary = day.slots.find((s) => s.isPrimary)!;
+    expect(primary.prescription.forWeek({ weekIndex: 3, totalWeeks: 8, phase: "standard", deload: null }).prescriptionType).toBe("rir");
+  });
+
+  it("warns that a percentage needs a saved max, for percent_1rm and test_then_percent_1rm but not the other methods", () => {
+    const methods: ProgramGenerationInput["loadCalculationMethod"][] = ["autoregulated_rir", "percent_1rm", "coach_entered", "athlete_choice", "test_then_percent_1rm"];
+    const expectFires: Record<string, boolean> = {
+      autoregulated_rir: false,
+      percent_1rm: true,
+      coach_entered: false,
+      athlete_choice: false,
+      test_then_percent_1rm: true,
+    };
+    for (const method of methods) {
+      const { result } = daySlots(method, "intermediate");
+      const fires = result.warnings.some((w) => w.includes("Weights shown as a percentage need a saved max"));
+      expect(fires).toBe(expectFires[method]);
+    }
   });
 });

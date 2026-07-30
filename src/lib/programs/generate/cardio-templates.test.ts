@@ -46,6 +46,7 @@ function baseInput(overrides: Partial<ProgramGenerationInput> = {}): ProgramGene
     conditioningModality: "cycling",
     coachedOnOlympicLifts: false,
     includeCardio: false,
+    loadCalculationMethod: "autoregulated_rir",
     ...overrides,
   };
 }

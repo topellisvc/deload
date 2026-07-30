@@ -11,6 +11,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { createClient } from "@/lib/supabase/client";
 import { createProgramFromParsedProgram } from "@/lib/programs/mutations";
 import { upsertAthleteInjuryProfile } from "@/lib/profile/mutations";
+import { isResistanceGoal } from "@/lib/programs/generate/resistance-templates";
 import type {
   EquipmentAccess,
   GlobalRefusalScreen,
@@ -18,6 +19,7 @@ import type {
   HybridPriority,
   InjuryProfile,
   KneePresentation,
+  LoadCalculationMethod,
   LowerBackPattern,
   ProgramGenerationInput,
   RedFlagScreen,
@@ -80,6 +82,40 @@ const MAINTAINABLE_GOAL_OPTIONS = GOAL_OPTIONS.filter((g) =>
 );
 
 const RUN_GOALS: TrainingGoal[] = ["run_general", "run_5k", "run_10k", "run_half_marathon", "run_marathon"];
+
+/** "Load calculation" Section below filters this list by minLevel before
+ * rendering it, so test_then_percent_1rm never even appears as a choice
+ * for a beginner — that's the actual guardrail. The generator's own
+ * downgrade-with-a-warning (resistance-templates.ts) only exists as a
+ * defensive backstop in case this filtering is ever bypassed. */
+const LOAD_METHOD_OPTIONS: { value: LoadCalculationMethod; label: string; description: string; minLevel?: ExperienceLevel }[] = [
+  {
+    value: "test_then_percent_1rm",
+    label: "Test my maxes first (recommended)",
+    description: "Adds one week at the start to find your working max on each main lift, then calculates the rest of the program as a percentage of it.",
+    minLevel: "intermediate",
+  },
+  {
+    value: "percent_1rm",
+    label: "% of 1RM, using my current maxes",
+    description: "Uses the squat/bench/deadlift/overhead press maxes already saved on your profile — add them there first if you haven't.",
+  },
+  {
+    value: "autoregulated_rir",
+    label: "Autoregulated (reps in reserve)",
+    description: "No max needed — you pick a weight each session that hits the target reps at the target effort. This is the default.",
+  },
+  {
+    value: "coach_entered",
+    label: "Coach enters weights manually",
+    description: "Leaves the weight blank for a coach to fill in by hand before you train.",
+  },
+  {
+    value: "athlete_choice",
+    label: "My choice, no target given",
+    description: "Just sets and reps — no weight or effort guidance at all.",
+  },
+];
 
 const LAGGING_MUSCLE_OPTIONS: MuscleGroup[] = ["chest", "back", "shoulders", "quadriceps", "hamstrings", "glutes", "calves", "core", "biceps", "triceps", "forearms"];
 
@@ -165,6 +201,50 @@ function CheckboxRow({ id, label, checked, onChange }: { id: string; label: stri
   );
 }
 
+/** A single-select row with a label and a description sentence — the load-
+ * calculation options need more explanation than a SegmentedControl or a
+ * plain <Select> can show at once, so this is a lightweight radio variant
+ * of CheckboxRow's pattern rather than a new component in components/ui/. */
+function RadioRow<T extends string>({
+  id,
+  name,
+  value,
+  label,
+  description,
+  selected,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  value: T;
+  label: string;
+  description?: string;
+  selected: boolean;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm transition-colors ${
+        selected ? "border-primary bg-primary/5" : "border-border hover:bg-surface-hover"
+      }`}
+    >
+      <input
+        id={id}
+        type="radio"
+        name={name}
+        checked={selected}
+        onChange={() => onChange(value)}
+        className="mt-0.5 size-4 shrink-0 border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      />
+      <span className="flex flex-col gap-0.5">
+        <span className="font-medium text-foreground">{label}</span>
+        {description && <span className="text-muted-foreground">{description}</span>}
+      </span>
+    </label>
+  );
+}
+
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-5 sm:p-6">
@@ -222,6 +302,7 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
   const [laggingMuscleGroups, setLaggingMuscleGroups] = useState<MuscleGroup[]>([]);
 
   const [includeCardio, setIncludeCardio] = useState(false);
+  const [loadCalculationMethod, setLoadCalculationMethod] = useState<LoadCalculationMethod>("autoregulated_rir");
 
   const [currentWeeklyKm, setCurrentWeeklyKm] = useState(15);
   const [weeksAtCurrentVolume, setWeeksAtCurrentVolume] = useState(4);
@@ -305,6 +386,7 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
       conditioningModality: "no_preference",
       coachedOnOlympicLifts,
       includeCardio,
+      loadCalculationMethod,
     };
   }
 
@@ -465,7 +547,15 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
           <SegmentedControl
             aria-label="Experience level"
             value={experienceLevel}
-            onChange={setExperienceLevel}
+            onChange={(level) => {
+              setExperienceLevel(level);
+              // Testing a working max isn't offered to beginners at all (see
+              // LOAD_METHOD_OPTIONS's doc comment) — reset back to the
+              // default rather than leaving a now-hidden option selected.
+              if (level === "beginner" && loadCalculationMethod === "test_then_percent_1rm") {
+                setLoadCalculationMethod("autoregulated_rir");
+              }
+            }}
             options={[
               { value: "beginner", label: "Beginner" },
               { value: "intermediate", label: "Intermediate" },
@@ -550,6 +640,25 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
       {(goal === "general_fitness" || goal === "lose_fat") && (
         <Section title="Cardio" description="Optional — 2 easy cardio sessions on top of your lifting days. Included, not developed; pick Conditioning or Hybrid if cardio itself is the priority.">
           <CheckboxRow id="includeCardio" label="Include cardio sessions in this program" checked={includeCardio} onChange={setIncludeCardio} />
+        </Section>
+      )}
+
+      {isResistanceGoal(goal) && (
+        <Section title="How should weight be calculated?" description="This determines how the main lifts are loaded week to week — you can always adjust weights by hand once the program is running.">
+          <div className="flex flex-col gap-2">
+            {LOAD_METHOD_OPTIONS.filter((opt) => !opt.minLevel || experienceLevel !== "beginner").map((opt) => (
+              <RadioRow
+                key={opt.value}
+                id={`loadMethod-${opt.value}`}
+                name="loadCalculationMethod"
+                value={opt.value}
+                label={opt.label}
+                description={opt.description}
+                selected={loadCalculationMethod === opt.value}
+                onChange={setLoadCalculationMethod}
+              />
+            ))}
+          </div>
         </Section>
       )}
 

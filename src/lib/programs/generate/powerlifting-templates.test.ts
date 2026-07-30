@@ -53,6 +53,7 @@ function baseInput(overrides: Partial<ProgramGenerationInput> = {}): ProgramGene
     conditioningModality: "no_preference",
     coachedOnOlympicLifts: false,
     includeCardio: false,
+    loadCalculationMethod: "autoregulated_rir",
     ...overrides,
   };
 }

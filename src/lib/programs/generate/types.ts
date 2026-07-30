@@ -303,6 +303,43 @@ export interface BodybuildingProfile {
  * they'll actually do it (§14 point 1). */
 export type ConditioningModality = "cycling" | "rowing" | "incline_walking" | "elliptical" | "swimming" | "no_preference";
 
+/**
+ * How a resistance program's working weight gets decided — only read by
+ * resistance-templates.ts (see ProgramGenerationInput.loadCalculationMethod).
+ *
+ * - `autoregulated_rir`: the existing, only-ever-built behaviour — every
+ *   main lift targets a rep range at a RIR/effort ceiling, and the athlete
+ *   picks whatever weight actually hits that. No stored max needed or used.
+ * - `percent_1rm`: main lifts on a trackable pattern (squat_bilateral,
+ *   horizontal_push, hinge_bilateral, vertical_push — the four
+ *   lib/profile/personal-records.ts record types) get a percentage of the
+ *   athlete's *existing* saved max instead of a RIR target. If they don't
+ *   have one saved, the percentage still generates (SetDetails already
+ *   renders a percent_1rm row with no resolvable weight as a dash — see
+ *   suggestedWeightFromPercent1RM's doc comment) rather than silently
+ *   falling back, so nothing here needs to know at generation time whether
+ *   a PR exists.
+ * - `coach_entered`: every slot (not just trackable main lifts) becomes
+ *   fixed_weight with no weight filled in — assemble.ts's toSetRow already
+ *   always leaves weight_value null, so this needs no new plumbing, just a
+ *   different prescriptionType for a coach to fill in by hand.
+ * - `athlete_choice`: every slot becomes athlete_chooses_weight — sets and
+ *   reps only, no load or effort target at all.
+ * - `test_then_percent_1rm`: percent_1rm, but preceded by one inserted
+ *   testing week (see ProgramPhase's "testing" doc comment) that
+ *   establishes the max each trackable pattern's percentages are computed
+ *   from. Deliberately gated to intermediate/advanced only —
+ *   e1rm.ts's own header comment cites the source document's own mistake
+ *   list, which ranks "asking a novice to test a max" as one of the worst
+ *   things a generated program can do (novices are least reliable at
+ *   grading effort exactly on a near-max set, and there's no coach present
+ *   to catch a form breakdown). resistance-templates.ts downgrades a
+ *   beginner who somehow requests this to autoregulated_rir with a warning
+ *   rather than building a testing week for them — the UI should simply
+ *   never offer this option to a beginner in the first place.
+ */
+export type LoadCalculationMethod = "autoregulated_rir" | "percent_1rm" | "coach_entered" | "athlete_choice" | "test_then_percent_1rm";
+
 export interface ProgramGenerationInput {
   goal: TrainingGoal;
   experienceLevel: ExperienceLevel;
@@ -338,6 +375,9 @@ export interface ProgramGenerationInput {
    * developed, so it doesn't reduce or replace any lifting day. Ignored
    * for every other goal. */
   includeCardio: boolean;
+  /** Only read by resistance-templates.ts; every other template family
+   * ignores it. See LoadCalculationMethod's own doc comment. */
+  loadCalculationMethod: LoadCalculationMethod;
   /** §6's middle ground. Hang power clean, high pull and power snatch from
    * blocks are "allowed but not default" — motivated people can learn them,
    * but the coach wants them behind an explicit "have you been coached on
@@ -413,10 +453,22 @@ export type DeloadKind = "volume_cut" | "joint_connective" | "systemic";
  * ceiling rather than a load, 2 sets not 4 on any exercise the athlete has
  * never done) also apply to a returner's ramp-in weeks per §14 point 12, and
  * to the first week after a reactive light week. Phase, not position.
+ *
+ * `testing` is resistance-templates.ts's own addition, not from the source
+ * document — only reachable when ProgramGenerationInput.loadCalculationMethod
+ * is "test_then_percent_1rm" (intermediate/advanced only; see that type's
+ * doc comment for why beginners don't get this phase at all). One extra
+ * week, inserted before the program's normal week 1, where each trackable
+ * main lift gets a single graded top set instead of its usual prescription
+ * — the result is what the rest of the program's %1RM numbers are computed
+ * from. Every other slot treats a testing week like a calibration week
+ * (light, conservative) rather than training normally alongside a max
+ * effort test.
  */
 export type ProgramPhase =
   // Universal
   | "calibration"
+  | "testing"
   | "standard"
   | "deload"
   // Resistance blocks — §2's advanced 4- and 8-week structures

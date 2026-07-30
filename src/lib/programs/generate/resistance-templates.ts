@@ -1,10 +1,12 @@
 import { easyPrescription } from "@/lib/programs/generate/cardio-templates";
+import { percentOf1RM } from "@/lib/programs/generate/e1rm";
 import { needsHumanReason, recommendConsultationReason } from "@/lib/programs/generate/injuries";
 import { chooseSplit, missingWeeklyPatterns, slotSequenceForDayRole, type DayRole, type SlotRequest } from "@/lib/programs/generate/splits";
 import type {
   DayPlan,
   DeloadKind,
   ExerciseSlot,
+  LoadCalculationMethod,
   ProgramGenerationInput,
   ProgramPhase,
   ProgramTemplate,
@@ -129,7 +131,13 @@ function flatPrescription(spec: RepRangeSpec, extraNote?: string): SlotPrescript
         restSeconds: spec.restSeconds,
         notes: extraNote ?? null,
       };
-      if (ctx.phase === "calibration") return { ...base, ...calibrationOverride(spec) };
+      // A testing week (see ProgramPhase's doc comment) isn't a calibration
+      // week by name, but every slot that isn't itself being tested this
+      // week (accessories, secondary compounds, an untested main lift) gets
+      // the same light, conservative treatment — nothing here should be
+      // pushed hard the same week another lift is getting a graded max
+      // effort attempt.
+      if (ctx.phase === "calibration" || ctx.phase === "testing") return { ...base, ...calibrationOverride(spec) };
       if (ctx.deload) return applyDeload(base, ctx.deload.kind);
       return base;
     },
@@ -168,7 +176,7 @@ function intermediateMainLiftPrescription(goal: ResistanceGoal): SlotPrescriptio
   const backoffNote = "First set is today's top set. Treat the remaining sets as backoff work at roughly 88-90% of that top set's load.";
   return {
     forWeek(ctx: WeekContext): WeekSetPlan {
-      if (ctx.phase === "calibration") {
+      if (ctx.phase === "calibration" || ctx.phase === "testing") {
         return { prescriptionType: "rir", sets: Math.min(spec.sets, 2), minReps: spec.minReps, maxReps: spec.maxReps, rir: 3, restSeconds: spec.restSeconds, ...calibrationOverride(spec) };
       }
       const weekInWave = ((ctx.weekIndex - 1) % 4) + 1;
@@ -203,7 +211,7 @@ function advancedMainLiftPrescription(): SlotPrescription {
   ];
   return {
     forWeek(ctx: WeekContext): WeekSetPlan {
-      if (ctx.phase === "calibration") {
+      if (ctx.phase === "calibration" || ctx.phase === "testing") {
         return { prescriptionType: "rir", sets: 2, minReps: 5, maxReps: 8, rir: 3, restSeconds: 240, notes: "Calibration week — leave 3+ reps in the tank on every set." };
       }
       const weekInBlock = ((ctx.weekIndex - 1) % 4) + 1;
@@ -274,6 +282,140 @@ function cardioDaysFor(modality: ProgramGenerationInput["conditioningModality"])
   ];
 }
 
+/**
+ * LoadCalculationMethod support — everything below converts a slot's
+ * already-computed WeekSetPlan (built the normal RIR-based way, above) into
+ * whichever shape the athlete's chosen method actually wants, rather than
+ * duplicating the reps/sets/wave/block logic per method. That keeps the
+ * programming science (what week gets which reps/effort) in exactly one
+ * place regardless of how the resulting number gets displayed.
+ */
+
+/** Only these four patterns have a matching lib/profile/personal-records.ts
+ * record type — %1RM methods can only ever apply to a main lift on one of
+ * these; every other slot (accessories, secondary compounds, or a main
+ * lift on any other pattern) keeps its normal RIR-based prescription
+ * regardless of the chosen method, since there's nothing to compute a
+ * percentage of. */
+const TRACKABLE_PATTERN_LIFT_LABEL: Partial<Record<SlotPattern, string>> = {
+  squat_bilateral: "Squat",
+  horizontal_push: "Bench Press",
+  hinge_bilateral: "Deadlift",
+  vertical_push: "Overhead Press",
+};
+
+/** The single integer (reps, RIR) pair a WeekSetPlan actually targets, for
+ * feeding into e1rm.ts's percentOf1RM. Every RIR-based plan this file
+ * produces has an integer rir and either a bare reps count or a minReps —
+ * when a plan gives a range (minReps/maxReps differ), this reads the
+ * bottom of it, matching this file's own "default to the bottom of a
+ * range" convention (see MAIN_LIFT_SPEC's doc comment). */
+function targetRepsAndRir(plan: WeekSetPlan): { reps: number; rir: number } | null {
+  const repsFromRange = plan.minReps ?? (plan.reps != null ? Number(plan.reps) : null);
+  if (repsFromRange == null || plan.rir == null) return null;
+  if (!Number.isInteger(repsFromRange) || !Number.isInteger(plan.rir)) return null;
+  return { reps: repsFromRange, rir: plan.rir };
+}
+
+/** A shared reps label for the methods that drop the RIR/percent target
+ * entirely (coach_entered, athlete_choice) but still need to say how many
+ * reps the set is for. */
+function repsLabel(plan: WeekSetPlan): string | null {
+  if (plan.reps != null) return plan.reps;
+  if (plan.minReps != null && plan.maxReps != null) return plan.minReps === plan.maxReps ? String(plan.minReps) : `${plan.minReps}-${plan.maxReps}`;
+  if (plan.minReps != null) return String(plan.minReps);
+  return null;
+}
+
+/** Converts an already-resolved RIR-based plan to a percent_1rm plan, using
+ * the exact reps/RIR target that plan already carries — see e1rm.ts's
+ * percentOf1RM (the same Appendix A table §8's volume counting and the
+ * runtime RIR gate already use, not a separate percentage scheme invented
+ * here). Falls back to returning the plan unchanged (still RIR-based) when
+ * a target can't be read from it or falls outside the table's range —
+ * fails open to the always-safe default rather than emitting a percent_1rm
+ * row with nothing to compute. */
+function toPercent1RMPlan(plan: WeekSetPlan): WeekSetPlan {
+  const target = targetRepsAndRir(plan);
+  if (!target) return plan;
+  const percent = percentOf1RM(target.reps, target.rir);
+  if (percent == null) return plan;
+  return { ...plan, prescriptionType: "percent_1rm", percent1RM: percent, rir: undefined, rpe: undefined };
+}
+
+function asPercent1RM(base: SlotPrescription): SlotPrescription {
+  return { forWeek: (ctx) => toPercent1RMPlan(base.forWeek(ctx)) };
+}
+
+/** Week 1 of a test_then_percent_1rm program, for whichever trackable main
+ * lift this slot represents — one graded top set rather than this file's
+ * usual multi-set prescription (WeekSetPlan has one `sets` count; the
+ * warm-up sets leading into the graded set are described in notes rather
+ * than modeled as structured data, same convention this file already uses
+ * for the intermediate wave's top-set-plus-backoff split). 5 reps at RIR 1
+ * — not a true 1-3 rep max attempt — deliberately: further from a true
+ * failure event, and still squarely inside e1rm.ts's reliable range. */
+function testingProtocolPlan(liftLabel: string): WeekSetPlan {
+  return {
+    prescriptionType: "rir",
+    sets: 1,
+    reps: "5",
+    rir: 1,
+    restSeconds: 180,
+    notes: `Testing week — warm up gradually, then work up to one hard set of 5 reps on the ${liftLabel} with about 1 rep left in the tank. Log the weight and reps here, then save it as your ${liftLabel} max on your profile — that's what the rest of this program's weights are calculated from.`,
+  };
+}
+
+function asTestThenPercent1RM(base: SlotPrescription, liftLabel: string): SlotPrescription {
+  return {
+    forWeek(ctx: WeekContext): WeekSetPlan {
+      if (ctx.phase === "testing") return testingProtocolPlan(liftLabel);
+      return toPercent1RMPlan(base.forWeek(ctx));
+    },
+  };
+}
+
+/** assemble.ts's toSetRow always leaves weight_value null regardless of
+ * prescriptionType (see its own doc comment on why) — so a coach_entered
+ * slot needs no weight field here at all, just the right prescriptionType
+ * and reps for a coach to fill a weight in against later. */
+function asCoachEntered(base: SlotPrescription): SlotPrescription {
+  return {
+    forWeek(ctx) {
+      const plan = base.forWeek(ctx);
+      return { ...plan, prescriptionType: "fixed_weight", reps: repsLabel(plan), percent1RM: undefined, rir: undefined, rpe: undefined };
+    },
+  };
+}
+
+function asAthleteChoice(base: SlotPrescription): SlotPrescription {
+  return {
+    forWeek(ctx) {
+      const plan = base.forWeek(ctx);
+      return { ...plan, prescriptionType: "athlete_chooses_weight", reps: repsLabel(plan), percent1RM: undefined, rir: undefined, rpe: undefined };
+    },
+  };
+}
+
+/** Applies ProgramGenerationInput.loadCalculationMethod to one slot's
+ * already-built prescription. coach_entered/athlete_choice apply to every
+ * slot in the day — there's no reason to restrict "let a human pick the
+ * number" to just the trackable lifts. The two %1RM methods only ever
+ * apply to a primary slot on a trackable pattern (see
+ * TRACKABLE_PATTERN_LIFT_LABEL); everything else keeps its normal
+ * RIR-based prescription no matter which method was chosen. */
+function applyLoadCalculationMethod(base: SlotPrescription, method: LoadCalculationMethod, isPrimary: boolean, pattern: SlotPattern | null): SlotPrescription {
+  if (method === "coach_entered") return asCoachEntered(base);
+  if (method === "athlete_choice") return asAthleteChoice(base);
+
+  const liftLabel = isPrimary && pattern ? TRACKABLE_PATTERN_LIFT_LABEL[pattern] : undefined;
+  if (!liftLabel) return base;
+
+  if (method === "percent_1rm") return asPercent1RM(base);
+  if (method === "test_then_percent_1rm") return asTestThenPercent1RM(base, liftLabel);
+  return base; // autoregulated_rir — unchanged
+}
+
 function dayLabel(role: DayRole, index: number): string {
   const labels: Record<DayRole, string> = {
     full_body_a: "Full Body A",
@@ -298,7 +440,8 @@ function buildDayPlan(
   index: number,
   goal: ResistanceGoal,
   level: ProgramGenerationInput["experienceLevel"],
-  extraSlots: SlotRequest[]
+  extraSlots: SlotRequest[],
+  loadCalculationMethod: LoadCalculationMethod
 ): DayPlan {
   const baseSlots = slotSequenceForDayRole(role);
   // §4's bodybuilding weak-point rule: "put them first in the session" —
@@ -308,13 +451,14 @@ function buildDayPlan(
 
   const exerciseSlots: ExerciseSlot[] = slots.map((slot) => {
     const isPrimary = slot.emphasis === "primary";
-    const prescription = isPrimary
+    const basePrescription = isPrimary
       ? slot.pattern
         ? mainLiftPrescription(level, goal, slot.pattern)
         : accessoryPrescription(goal)
       : slot.emphasis === "secondary"
         ? secondaryPrescription(goal)
         : accessoryPrescription(goal);
+    const prescription = applyLoadCalculationMethod(basePrescription, loadCalculationMethod, isPrimary, slot.pattern);
     return {
       role: "main",
       category: "strength",
@@ -361,6 +505,25 @@ function buildPhaseAndDeloadMaps(
   return { phaseByWeek, deloadWeeks };
 }
 
+/** Inserts one "testing" week before the program's normal week 1, shifting
+ * every existing week (including any scheduled deload/calibration weeks)
+ * up by one position — a requested 8-week program becomes 9 real weeks.
+ * Only called for test_then_percent_1rm; see that LoadCalculationMethod
+ * value's doc comment for why it's the one method that changes the
+ * program's actual length. */
+function withTestingWeek(
+  phaseByWeek: Map<number, ProgramPhase>,
+  deloadWeeks: Map<number, DeloadKind>
+): { phaseByWeek: Map<number, ProgramPhase>; deloadWeeks: Map<number, DeloadKind> } {
+  const shiftedPhaseByWeek = new Map<number, ProgramPhase>([[1, "testing"]]);
+  for (const [week, phase] of phaseByWeek) shiftedPhaseByWeek.set(week + 1, phase);
+
+  const shiftedDeloadWeeks = new Map<number, DeloadKind>();
+  for (const [week, kind] of deloadWeeks) shiftedDeloadWeeks.set(week + 1, kind);
+
+  return { phaseByWeek: shiftedPhaseByWeek, deloadWeeks: shiftedDeloadWeeks };
+}
+
 export function buildResistanceTemplate(input: ProgramGenerationInput): TemplateResult {
   const routeOut = needsHumanReason({ redFlags: input.redFlags, globalRefusals: input.globalRefusals, injuries: input.injuries });
   if (routeOut) return { needsHumanReason: routeOut };
@@ -385,7 +548,15 @@ export function buildResistanceTemplate(input: ProgramGenerationInput): Template
       ? input.bodybuilding.laggingMuscleGroups.slice(0, 2).map((group) => ({ pattern: null, primaryMuscleGroup: group, emphasis: "accessory" as const }))
       : [];
 
-  const liftingDays = dayRoles.map((role, index) => buildDayPlan(role, index, goal, input.experienceLevel, laggingGroupSlots));
+  // See LoadCalculationMethod's doc comment — a beginner requesting
+  // test_then_percent_1rm is downgraded rather than honoured; the UI
+  // shouldn't offer this option to a beginner in the first place, but the
+  // generator doesn't trust that and silently trusts an impossible combo.
+  const beginnerRequestedTesting = input.loadCalculationMethod === "test_then_percent_1rm" && input.experienceLevel === "beginner";
+  const loadCalculationMethod: LoadCalculationMethod = beginnerRequestedTesting ? "autoregulated_rir" : input.loadCalculationMethod;
+  const includesTestingWeek = loadCalculationMethod === "test_then_percent_1rm";
+
+  const liftingDays = dayRoles.map((role, index) => buildDayPlan(role, index, goal, input.experienceLevel, laggingGroupSlots, loadCalculationMethod));
   const includesCardio = input.includeCardio && CARDIO_ELIGIBLE_GOALS.has(goal);
   const days = includesCardio ? [...liftingDays, ...cardioDaysFor(input.conditioningModality)] : liftingDays;
 
@@ -393,7 +564,8 @@ export function buildResistanceTemplate(input: ProgramGenerationInput): Template
   // only calibration a brand-new user gets. Approximated here as an extended
   // calibration window rather than a separate phase value.
   const calibrationWeeks = input.athlete.recentLayoff ? Math.min(3, input.programLengthWeeks) : Math.min(1, input.programLengthWeeks);
-  const { phaseByWeek, deloadWeeks } = buildPhaseAndDeloadMaps(input.experienceLevel, input.programLengthWeeks, calibrationWeeks);
+  const basePhases = buildPhaseAndDeloadMaps(input.experienceLevel, input.programLengthWeeks, calibrationWeeks);
+  const { phaseByWeek, deloadWeeks } = includesTestingWeek ? withTestingWeek(basePhases.phaseByWeek, basePhases.deloadWeeks) : basePhases;
 
   const template: ProgramTemplate = {
     name: templateName(goal, splitType),
@@ -414,6 +586,21 @@ export function buildResistanceTemplate(input: ProgramGenerationInput): Template
   if (goal === "lose_fat") {
     warnings.push(
       "Expect load and reps to plateau rather than climb most weeks — that's the deficit, not a training failure. Success here looks like maintaining your numbers, not beating them every week."
+    );
+  }
+  if (beginnerRequestedTesting) {
+    warnings.push(
+      "Testing a working max isn't something this generator does for beginners — it's using autoregulated RIR targets instead, the safer way to find a starting weight without a coach present to catch a bad rep."
+    );
+  }
+  if (includesTestingWeek) {
+    warnings.push(
+      `This program includes an extra testing week at the start to establish your working maxes — your requested ${input.programLengthWeeks}-week program now spans ${input.programLengthWeeks + 1} weeks total.`
+    );
+  }
+  if (loadCalculationMethod === "percent_1rm" || includesTestingWeek) {
+    warnings.push(
+      "Weights shown as a percentage need a saved max to calculate an actual number — add or update your squat/bench/deadlift/overhead press maxes on your profile so these resolve to real working weights."
     );
   }
   if (input.athlete.recentLayoff) {
