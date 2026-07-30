@@ -54,6 +54,7 @@ const baseProps = {
   onExerciseChange: vi.fn(),
   onNoteChange: vi.fn(),
   onCategoryChange: vi.fn(),
+  onTestMaxBeforeChange: vi.fn(),
   onPrescriptionTypeChange: vi.fn(),
   onAddSet: vi.fn(),
   onSetChange: vi.fn(),
@@ -148,6 +149,47 @@ describe("ExerciseCard expanded state", () => {
     expect(screen.getByRole("radiogroup", { name: /exercise category/i })).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: /prescription type/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add row/i })).toBeInTheDocument();
+  });
+
+  it("shows the 'Test max before' checkbox for a strength exercise with a real library exercise_id", () => {
+    render(<ExerciseCard exercise={makeExercise({ exercise_id: "bench-press" })} expanded onToggleExpand={vi.fn()} {...baseProps} />);
+    expect(screen.getByRole("checkbox", { name: /test max before/i })).toBeInTheDocument();
+  });
+
+  it("hides the 'Test max before' checkbox for a custom_name-only exercise (no exercise_id to test against)", () => {
+    render(<ExerciseCard exercise={makeExercise({ exercise_id: null })} expanded onToggleExpand={vi.fn()} {...baseProps} />);
+    expect(screen.queryByRole("checkbox", { name: /test max before/i })).not.toBeInTheDocument();
+  });
+
+  it("hides the 'Test max before' checkbox for a non-strength exercise", () => {
+    render(
+      <ExerciseCard
+        exercise={makeExercise({ exercise_id: "assault-bike", exercise_category: "cardio", sets: [makeSet({ prescription_type: "time" })] })}
+        expanded
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+      />
+    );
+    expect(screen.queryByRole("checkbox", { name: /test max before/i })).not.toBeInTheDocument();
+  });
+
+  it("reflects test_max_before's current value and calls onTestMaxBeforeChange when toggled", async () => {
+    const onTestMaxBeforeChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ExerciseCard
+        exercise={makeExercise({ exercise_id: "bench-press", test_max_before: false })}
+        expanded
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+        onTestMaxBeforeChange={onTestMaxBeforeChange}
+      />
+    );
+    const checkbox = screen.getByRole("checkbox", { name: /test max before/i });
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(checkbox);
+    expect(onTestMaxBeforeChange).toHaveBeenCalledWith(true);
   });
 
   it("renders the Cardio Builder's structured interval table instead of generic rows for the 'intervals' prescription type", () => {

@@ -35,6 +35,7 @@ interface ExerciseBlockCardProps {
   onExerciseChange: (blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockExerciseId: string, category: ExerciseCategory) => void;
+  onTestMaxBeforeChange: (blockExerciseId: string, testMaxBefore: boolean) => void;
   onPrescriptionTypeChange: (blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockExerciseId: string) => void;
   onSetChange: (blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
@@ -79,6 +80,7 @@ export function ExerciseBlockCard({
   onExerciseChange,
   onNoteChange,
   onCategoryChange,
+  onTestMaxBeforeChange,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
@@ -166,6 +168,7 @@ export function ExerciseBlockCard({
             onExerciseChange={(patch) => onExerciseChange(exercise.id, patch)}
             onNoteChange={(notes) => onNoteChange(exercise.id, notes)}
             onCategoryChange={(category) => onCategoryChange(exercise.id, category)}
+            onTestMaxBeforeChange={(testMaxBefore) => onTestMaxBeforeChange(exercise.id, testMaxBefore)}
             onPrescriptionTypeChange={(type) => onPrescriptionTypeChange(exercise.id, type)}
             onAddSet={() => onAddSet(exercise.id)}
             onSetChange={(setId, patch) => onSetChange(exercise.id, setId, patch)}

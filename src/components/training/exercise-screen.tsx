@@ -9,7 +9,7 @@ import { StrengthSetLogger, type LastSetValues } from "@/components/training/str
 import { CardioSummaryForm } from "@/components/training/cardio-summary-form";
 import { BigTextField } from "@/components/training/big-fields";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
-import { getPrescriptionTypeDef, suggestedWeightFromPercent1RM } from "@/lib/programs/prescription-types";
+import { exerciseMaxRecordType, getPrescriptionTypeDef, suggestedWeightFromPercent1RM } from "@/lib/programs/prescription-types";
 import { EXERCISE_CATEGORY_LABELS } from "@/lib/programs/prescription-types";
 import { buildSetTargets } from "@/lib/training/sequence";
 import type { BlockExerciseRow } from "@/lib/programs/types";
@@ -178,8 +178,12 @@ function StrengthLoggerSlot({
   if (!target) return null;
 
   let suggestedWeight: number | null = null;
-  if (target.prescription_type === "percent_1rm" && target.percent_1rm_value != null && target.pr_record_type) {
-    const pr = personalRecords.find((r) => r.record_type === target.pr_record_type);
+  if (target.prescription_type === "percent_1rm" && target.percent_1rm_value != null) {
+    // Same pr_record_type-or-own-exercise-history fallback as
+    // exercise-performance-card.tsx — see exerciseMaxRecordType's doc
+    // comment.
+    const recordType = target.pr_record_type ?? exerciseMaxRecordType(exercise.exercise_id ?? "");
+    const pr = personalRecords.find((r) => r.record_type === recordType);
     suggestedWeight = suggestedWeightFromPercent1RM(target.percent_1rm_value, pr?.value_number ?? null);
   }
 

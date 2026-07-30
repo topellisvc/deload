@@ -20,13 +20,29 @@ vi.mock("@/lib/profile/mutations", () => ({ upsertPersonalRecord: vi.fn() }));
 
 // Enough of the Supabase client's fluent query builder to satisfy
 // finishWorkout's "does a session_logs row already exist for today"
-// lookup, deleteDraftSession's delete, and saveMaxTestPersonalRecords'
-// set_prescriptions lookup — everything else finishWorkout does goes
+// lookup, deleteDraftSession's delete, and saveMaxTestRecords' two lookups
+// (set_prescriptions, then block_exercises for exercise_id) plus its
+// exercise_max_records insert — everything else finishWorkout does goes
 // through the mocked logging/mutations and profile/mutations functions
 // above. maxTestRows defaults to none, so existing tests that don't care
-// about the max-test path see saveMaxTestPersonalRecords return early
-// without ever reaching upsertPersonalRecord.
-function makeSupabase(existing: { id: string } | null, maxTestRows: { id: string; pr_record_type: string | null }[] = []) {
+// about the max-test path see saveMaxTestRecords return early without ever
+// reaching upsertPersonalRecord or the exercise_max_records insert.
+//
+// blockExercises defaults to one row mapping makeDraftSet's default
+// blockExerciseId ("ex-1") to a resolvable exercise_id, since most of this
+// describe block's tests use that default — tests that care about the
+// exercise_max_records path specifically pass their own.
+//
+// exerciseMaxInserts is a plain array (not a vi.fn(), since it needs to
+// collect payloads across however many rows saveMaxTestRecords writes) that
+// tests can inspect after the call to assert what got written.
+function makeSupabase(
+  existing: { id: string } | null,
+  maxTestRows: { id: string; pr_record_type: string | null }[] = [],
+  options: { blockExercises?: { id: string; exercise_id: string | null }[]; exerciseMaxInserts?: Record<string, unknown>[] } = {}
+) {
+  const blockExercises = options.blockExercises ?? [{ id: "ex-1", exercise_id: "exercise-1" }];
+  const exerciseMaxInserts = options.exerciseMaxInserts ?? [];
   return {
     from: vi.fn((table: string) => {
       if (table === "session_logs") {
@@ -56,6 +72,21 @@ function makeSupabase(existing: { id: string } | null, maxTestRows: { id: string
               in: async () => ({ data: maxTestRows, error: null }),
             }),
           }),
+        };
+      }
+      if (table === "block_exercises") {
+        return {
+          select: () => ({
+            in: async () => ({ data: blockExercises, error: null }),
+          }),
+        };
+      }
+      if (table === "exercise_max_records") {
+        return {
+          insert: async (payload: Record<string, unknown>) => {
+            exerciseMaxInserts.push(payload);
+            return { error: null };
+          },
         };
       }
       throw new Error(`unexpected table ${table}`);
@@ -222,6 +253,83 @@ describe("finishWorkout — auto-saving a personal record from a logged max-test
     });
 
     expect(upsertPersonalRecord).not.toHaveBeenCalled();
+  });
+});
+
+describe("finishWorkout — auto-saving to exercise_max_records (migration 0054's per-exercise library)", () => {
+  beforeEach(() => {
+    vi.mocked(createSessionLog).mockReset().mockResolvedValue({ log: { id: "log-1" } as never, error: null });
+    vi.mocked(completeSessionLog).mockReset().mockResolvedValue({ error: null });
+    vi.mocked(createLoggedSet).mockReset().mockResolvedValue({ log: null, error: null });
+    vi.mocked(upsertPersonalRecord).mockReset().mockResolvedValue({ record: null, error: null });
+  });
+
+  it("writes an exercise_max_records row keyed by this set's own exercise_id, even for a main lift with pr_record_type set", async () => {
+    const exerciseMaxInserts: Record<string, unknown>[] = [];
+    const supabase = makeSupabase(null, [{ id: "set-1", pr_record_type: "squat" }], {
+      blockExercises: [{ id: "ex-1", exercise_id: "barbell-back-squat" }],
+      exerciseMaxInserts,
+    }) as never;
+
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [makeDraftSet({ setPrescriptionId: "set-1", blockExerciseId: "ex-1", performedWeight: 100, performedReps: 5, performedRir: 1 })],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: null,
+      readiness: null,
+    });
+
+    expect(exerciseMaxInserts).toHaveLength(1);
+    expect(exerciseMaxInserts[0]).toMatchObject({
+      athlete_id: "athlete-1",
+      exercise_id: "barbell-back-squat",
+      performed_on: "2026-07-27",
+    });
+    expect(typeof exerciseMaxInserts[0]!.estimated_1rm_kg).toBe("number");
+  });
+
+  it("writes an exercise_max_records row for the manual builder's per-exercise 'Test max before' flow, which never sets pr_record_type", async () => {
+    const exerciseMaxInserts: Record<string, unknown>[] = [];
+    // pr_record_type null — exactly what syncTestingWeek's generated sets
+    // carry (see lib/programs/mutations.ts) — no personal_records write
+    // should happen, but the exercise_max_records write still should.
+    const supabase = makeSupabase(null, [{ id: "set-1", pr_record_type: null }], {
+      blockExercises: [{ id: "ex-1", exercise_id: "bulgarian-split-squat" }],
+      exerciseMaxInserts,
+    }) as never;
+
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [makeDraftSet({ setPrescriptionId: "set-1", blockExerciseId: "ex-1", performedWeight: 60, performedReps: 5, performedRir: 1 })],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: null,
+      readiness: null,
+    });
+
+    expect(upsertPersonalRecord).not.toHaveBeenCalled();
+    expect(exerciseMaxInserts).toHaveLength(1);
+    expect(exerciseMaxInserts[0]).toMatchObject({ athlete_id: "athlete-1", exercise_id: "bulgarian-split-squat" });
+  });
+
+  it("never writes to exercise_max_records for an ordinary (non-max-test) logged set", async () => {
+    const exerciseMaxInserts: Record<string, unknown>[] = [];
+    const supabase = makeSupabase(null, [], { exerciseMaxInserts }) as never;
+
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [makeDraftSet({ setPrescriptionId: "set-1", performedWeight: 100, performedReps: 5, performedRir: 1 })],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: null,
+      readiness: null,
+    });
+
+    expect(exerciseMaxInserts).toHaveLength(0);
   });
 });
 

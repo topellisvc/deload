@@ -212,13 +212,26 @@ export async function applyJointLadderStep(
 }
 
 /**
- * The counterpart to load-calculation.ts's testingProtocolPlan — when the
- * athlete actually logs a testing-week max-test set (set_prescriptions.
- * is_max_test), this computes an e1RM from what they performed (e1rm.ts's
- * estimate1RM) and writes it straight to personal_records. No "go to your
- * profile and enter it yourself" step: the athlete just logs the set like
- * any other, and the rest of the program's percent_1rm rows immediately
- * have something real to resolve against.
+ * The counterpart to load-calculation.ts's testingProtocolPlan (and, for
+ * the manual builder, lib/programs/mutations.ts's syncTestingWeek) — when
+ * the athlete actually logs a testing-week max-test set
+ * (set_prescriptions.is_max_test), this computes an e1RM from what they
+ * performed (e1rm.ts's estimate1RM) and writes it:
+ *
+ * 1. To personal_records[pr_record_type], but only when pr_record_type is
+ *    set — true for the generator's own testing weeks (one of the 4 fixed
+ *    main-lift strings), never true for the manual builder's "Test max
+ *    before" flow (syncTestingWeek deliberately leaves pr_record_type
+ *    null, since the weight that resolves against it is this exercise's
+ *    own history, not one of the 4 fixed types).
+ * 2. To exercise_max_records (migration 0054), unconditionally, keyed by
+ *    this set's own exercise_id — the general "library of maxes" that
+ *    covers any exercise. This is what makes the manual builder's
+ *    downstream percent_1rm auto-resolution (getPersonalRecords) work.
+ *
+ * No "go to your profile and enter it yourself" step either way: the
+ * athlete just logs the set like any other, and the rest of the program's
+ * percent_1rm rows immediately have something real to resolve against.
  *
  * Best-effort and doesn't block or undo the workout log that already
  * landed if it fails — same rationale applyJointLadderStep's substitution
@@ -227,22 +240,54 @@ export async function applyJointLadderStep(
  * toPercent1RMPlan already uses when it can't read a usable target from a
  * plan.
  */
-async function saveMaxTestPersonalRecords(supabase: SupabaseClient, athleteId: string, draftSets: DraftSet[], performedOn: string): Promise<void> {
+async function saveMaxTestRecords(supabase: SupabaseClient, athleteId: string, draftSets: DraftSet[], performedOn: string): Promise<void> {
   const candidateIds = draftSets.map((s) => s.setPrescriptionId).filter((id): id is string => id != null);
   if (candidateIds.length === 0) return;
 
   const { data } = await supabase.from("set_prescriptions").select("id, pr_record_type").eq("is_max_test", true).in("id", candidateIds);
-  const recordTypeById = new Map(((data ?? []) as { id: string; pr_record_type: string | null }[]).map((row) => [row.id, row.pr_record_type]));
+  const maxTestRows = (data ?? []) as { id: string; pr_record_type: string | null }[];
+  const recordTypeById = new Map(maxTestRows.map((row) => [row.id, row.pr_record_type]));
   if (recordTypeById.size === 0) return;
+
+  // exercise_max_records is keyed by exercise_id, which lives on
+  // block_exercises, not set_prescriptions — one extra flat query for the
+  // block_exercise_ids actually in play here, same "flat query, stitch in
+  // JS" pattern the rest of this codebase's multi-table reads already use.
+  const maxTestBlockExerciseIds = [
+    ...new Set(draftSets.filter((s) => s.setPrescriptionId && recordTypeById.has(s.setPrescriptionId)).map((s) => s.blockExerciseId)),
+  ];
+  const { data: blockExercisesData } = maxTestBlockExerciseIds.length
+    ? await supabase.from("block_exercises").select("id, exercise_id").in("id", maxTestBlockExerciseIds)
+    : { data: [] };
+  const exerciseIdByBlockExercise = new Map(
+    ((blockExercisesData ?? []) as { id: string; exercise_id: string | null }[]).map((row) => [row.id, row.exercise_id])
+  );
 
   await Promise.all(
     draftSets.map(async (s) => {
-      const recordType = s.setPrescriptionId ? recordTypeById.get(s.setPrescriptionId) : undefined;
-      if (!recordType) return;
+      if (!s.setPrescriptionId || !recordTypeById.has(s.setPrescriptionId)) return;
       if (s.performedWeight == null || s.performedReps == null || s.performedRir == null) return;
       const oneRepMax = estimate1RM({ loadKg: s.performedWeight, reps: s.performedReps, rir: s.performedRir });
       if (oneRepMax == null) return;
-      await upsertPersonalRecord(supabase, athleteId, { recordType, valueNumber: oneRepMax, unit: "kg", achievedOn: performedOn });
+
+      const recordType = recordTypeById.get(s.setPrescriptionId);
+      const exerciseId = exerciseIdByBlockExercise.get(s.blockExerciseId);
+
+      const writes: PromiseLike<unknown>[] = [];
+      if (recordType) {
+        writes.push(upsertPersonalRecord(supabase, athleteId, { recordType, valueNumber: oneRepMax, unit: "kg", achievedOn: performedOn }));
+      }
+      if (exerciseId) {
+        writes.push(
+          supabase.from("exercise_max_records").insert({
+            athlete_id: athleteId,
+            exercise_id: exerciseId,
+            estimated_1rm_kg: oneRepMax,
+            performed_on: performedOn,
+          })
+        );
+      }
+      await Promise.all(writes);
     })
   );
 }
@@ -383,7 +428,7 @@ export async function finishWorkout(
   }
 
   await Promise.all(writes);
-  await saveMaxTestPersonalRecords(supabase, params.athleteId, params.draftSets, performedOn);
+  await saveMaxTestRecords(supabase, params.athleteId, params.draftSets, performedOn);
   await deleteDraftSession(supabase, params.trainingDayId, params.athleteId);
   return { sessionLogId, error: null };
 }

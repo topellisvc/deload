@@ -18,8 +18,9 @@ import {
   reorderBlocks,
   reorderSets,
   saveProgramAsTemplate,
+  syncTestingWeek,
 } from "./mutations";
-import type { BlockExerciseRow, BlockRow, DayRow, DayTemplateRow, ExerciseTemplateRow } from "./types";
+import type { BlockExerciseRow, BlockRow, DayRow, DayTemplateRow, ExerciseTemplateRow, WeekRow } from "./types";
 import { getProgramTree } from "./queries";
 import { STARTER_PROGRAM_TEMPLATES } from "./starter-templates";
 import type { ProgramTemplateRow, ProgramTree } from "./types";
@@ -962,5 +963,226 @@ describe("deleteDay", () => {
     const { error } = await deleteDay(supabase as never, "day-1");
 
     expect(error).toBe("network error");
+  });
+});
+
+/** Extends makeSupabaseMock's insert-only mock with an `.update().eq()`
+ * chain — syncTestingWeek's week-position-shift writes, which the shared
+ * insert-only mock doesn't model. */
+function makeTestingWeekSupabaseMock() {
+  const inserted: Record<string, Record<string, unknown>[]> = {};
+  const updated: { table: string; id: unknown; patch: Record<string, unknown> }[] = [];
+  const supabase = {
+    from: vi.fn((table: string) => ({
+      insert: vi.fn((rows: Record<string, unknown> | Record<string, unknown>[]) => {
+        const list = Array.isArray(rows) ? rows : [rows];
+        inserted[table] = [...(inserted[table] ?? []), ...list];
+        return Promise.resolve({ error: null });
+      }),
+      update: vi.fn((patch: Record<string, unknown>) => ({
+        eq: vi.fn((_column: string, id: unknown) => {
+          updated.push({ table, id, patch });
+          return Promise.resolve({ error: null });
+        }),
+      })),
+    })),
+  };
+  return { supabase, inserted, updated };
+}
+
+function makeTestExercise(overrides: Partial<BlockExerciseRow> = {}): BlockExerciseRow {
+  return {
+    id: "be-1",
+    block_id: "block-1",
+    position: 1,
+    exercise_id: "squat-ex",
+    custom_name: null,
+    notes: null,
+    exercise_category: "strength",
+    test_max_before: false,
+    sets: [],
+    exercise_name: "Back Squat",
+    ...overrides,
+  };
+}
+
+function makeTestBlock(exercises: BlockExerciseRow[], overrides: Partial<BlockRow> = {}): BlockRow {
+  return { id: "block-1", day_id: "day-1", position: 1, block_type: "straight", block_role: "main", rounds: 1, exercises, ...overrides };
+}
+
+function makeTestDay(blocks: BlockRow[], overrides: Partial<DayRow> = {}): DayRow {
+  return { id: "day-1", week_id: "week-1", position: 1, label: "Day 1", is_rest_day: false, blocks, ...overrides };
+}
+
+function makeTestWeek(days: DayRow[], overrides: Partial<WeekRow> = {}): WeekRow {
+  return { id: "week-1", program_id: "prog-1", position: 1, label: "Week 1", based_on_week_id: null, created_at: "2026-01-01T00:00:00.000Z", days, ...overrides };
+}
+
+function makeTestProgram(weeks: WeekRow[]): ProgramTree {
+  return {
+    id: "prog-1",
+    owner_id: "user-1",
+    athlete_id: "user-1",
+    name: "Test Program",
+    discipline: "resistance",
+    is_active: false,
+    removed_by_athlete_at: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    weeks,
+  };
+}
+
+describe("syncTestingWeek", () => {
+  beforeEach(() => {
+    vi.mocked(getProgramTree).mockReset();
+  });
+
+  it("refuses when nothing in the program is flagged test_max_before", async () => {
+    const { supabase } = makeTestingWeekSupabaseMock();
+    const program = makeTestProgram([makeTestWeek([makeTestDay([makeTestBlock([makeTestExercise({ test_max_before: false })])])])]);
+
+    const result = await syncTestingWeek(supabase as never, program);
+
+    expect(result.program).toBeNull();
+    expect(result.error).toMatch(/test max before/i);
+  });
+
+  it("ignores a flagged exercise on a non-strength slot (nothing to test a %1RM of)", async () => {
+    const { supabase } = makeTestingWeekSupabaseMock();
+    const program = makeTestProgram([
+      makeTestWeek([makeTestDay([makeTestBlock([makeTestExercise({ test_max_before: true, exercise_category: "running" })])])]),
+    ]);
+
+    const result = await syncTestingWeek(supabase as never, program);
+
+    expect(result.program).toBeNull();
+    expect(result.error).toMatch(/test max before/i);
+  });
+
+  it("shifts every existing week's position up by one and inserts a new is_testing_week week at position 1", async () => {
+    const { supabase, inserted, updated } = makeTestingWeekSupabaseMock();
+    vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-1" } as unknown as ProgramTree);
+    const program = makeTestProgram([
+      makeTestWeek([makeTestDay([makeTestBlock([makeTestExercise({ test_max_before: true })])])], { id: "week-1", position: 1 }),
+      makeTestWeek([], { id: "week-2", position: 2 }),
+    ]);
+
+    const result = await syncTestingWeek(supabase as never, program);
+
+    expect(result.error).toBeNull();
+    // Staged negative-then-final shift, same two-pass pattern as
+    // reorderBlocks/reorderSets — each existing week gets 2 update calls.
+    const finalPositions = updated.filter((u) => u.table === "program_weeks" && (u.patch.position as number) > 0);
+    expect(finalPositions).toEqual(
+      expect.arrayContaining([
+        { table: "program_weeks", id: "week-1", patch: { position: 2 } },
+        { table: "program_weeks", id: "week-2", patch: { position: 3 } },
+      ])
+    );
+    expect(inserted.program_weeks).toEqual([expect.objectContaining({ position: 1, is_testing_week: true })]);
+    expect(inserted.training_days).toHaveLength(1);
+    expect(getProgramTree).toHaveBeenCalledWith(supabase, "prog-1");
+  });
+
+  it("creates one max-test block/exercise/set per distinct flagged exercise, deduped across multiple usages", async () => {
+    const { supabase, inserted } = makeTestingWeekSupabaseMock();
+    vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-1" } as unknown as ProgramTree);
+    const program = makeTestProgram([
+      makeTestWeek([
+        makeTestDay(
+          [
+            makeTestBlock([makeTestExercise({ id: "be-1", exercise_id: "squat-ex", exercise_name: "Back Squat", test_max_before: true })], {
+              id: "block-1",
+            }),
+          ],
+          { id: "day-1" }
+        ),
+        makeTestDay(
+          [
+            // Same exercise, flagged again in a second day — should only
+            // produce ONE test set, not two.
+            makeTestBlock([makeTestExercise({ id: "be-2", exercise_id: "squat-ex", exercise_name: "Back Squat", test_max_before: true })], {
+              id: "block-2",
+            }),
+          ],
+          { id: "day-2", position: 2 }
+        ),
+      ]),
+    ]);
+
+    await syncTestingWeek(supabase as never, program);
+
+    expect(inserted.exercise_blocks).toHaveLength(1);
+    expect(inserted.block_exercises).toHaveLength(1);
+    expect(inserted.block_exercises![0]).toMatchObject({ exercise_id: "squat-ex", test_max_before: false });
+    expect(inserted.set_prescriptions).toHaveLength(1);
+    expect(inserted.set_prescriptions![0]).toMatchObject({
+      sets: 1,
+      reps: "5",
+      rir_value: 1,
+      rest_seconds: 180,
+      is_max_test: true,
+      pr_record_type: null,
+    });
+    expect((inserted.set_prescriptions![0]!.notes as string)).toContain("Back Squat");
+  });
+
+  it("re-clicking with an existing testing week only adds newly-flagged exercises, leaving what's already there untouched", async () => {
+    const { supabase, inserted } = makeTestingWeekSupabaseMock();
+    vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-1" } as unknown as ProgramTree);
+    const testingWeek = makeTestWeek(
+      [makeTestDay([makeTestBlock([makeTestExercise({ id: "be-existing", exercise_id: "squat-ex", exercise_name: "Back Squat" })])], { id: "testing-day" })],
+      { id: "testing-week", position: 1, is_testing_week: true }
+    );
+    const realWeek = makeTestWeek(
+      [
+        makeTestDay(
+          [
+            makeTestBlock(
+              [
+                makeTestExercise({ id: "be-1", exercise_id: "squat-ex", exercise_name: "Back Squat", test_max_before: true }),
+                makeTestExercise({ id: "be-2", block_id: "block-2", exercise_id: "bench-ex", exercise_name: "Bench Press", test_max_before: true }),
+              ],
+              { id: "block-1" }
+            ),
+          ],
+          { id: "day-1" }
+        ),
+      ],
+      { id: "week-2", position: 2 }
+    );
+    const program = makeTestProgram([testingWeek, realWeek]);
+
+    const result = await syncTestingWeek(supabase as never, program);
+
+    expect(result.error).toBeNull();
+    // squat-ex is already in the testing week — only bench-ex is new.
+    expect(inserted.block_exercises).toHaveLength(1);
+    expect(inserted.block_exercises![0]).toMatchObject({ exercise_id: "bench-ex" });
+    // No week-position shifting on a re-sync — the testing week already
+    // exists at position 1.
+    expect(inserted.program_weeks).toBeUndefined();
+  });
+
+  it("no-ops (no writes, program unchanged) when every flagged exercise is already in the existing testing week", async () => {
+    const { supabase, inserted, updated } = makeTestingWeekSupabaseMock();
+    const testingWeek = makeTestWeek(
+      [makeTestDay([makeTestBlock([makeTestExercise({ id: "be-existing", exercise_id: "squat-ex" })])], { id: "testing-day" })],
+      { id: "testing-week", position: 1, is_testing_week: true }
+    );
+    const realWeek = makeTestWeek(
+      [makeTestDay([makeTestBlock([makeTestExercise({ id: "be-1", exercise_id: "squat-ex", test_max_before: true })])], { id: "day-1" })],
+      { id: "week-2", position: 2 }
+    );
+    const program = makeTestProgram([testingWeek, realWeek]);
+
+    const result = await syncTestingWeek(supabase as never, program);
+
+    expect(result.error).toBeNull();
+    expect(result.program).toBe(program);
+    expect(inserted).toEqual({});
+    expect(updated).toEqual([]);
+    expect(getProgramTree).not.toHaveBeenCalled();
   });
 });

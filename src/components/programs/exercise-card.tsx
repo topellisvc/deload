@@ -40,6 +40,12 @@ interface ExerciseCardProps {
   onExerciseChange: (patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (notes: string | null) => void;
   onCategoryChange: (category: ExerciseCategory) => void;
+  /** "Test max before" checkbox (migration 0054) — only meaningful for a
+   * strength exercise with a real library exercise_id (there's nothing to
+   * test-max a custom_name-only row or a running/cardio exercise against).
+   * See program-builder.tsx's syncTestingWeek call for what flipping this
+   * actually does. */
+  onTestMaxBeforeChange: (testMaxBefore: boolean) => void;
   onPrescriptionTypeChange: (type: PrescriptionType) => void;
   onAddSet: () => void;
   onSetChange: (setId: string, patch: Partial<SetRow>) => void;
@@ -83,6 +89,7 @@ export function ExerciseCard({
   onExerciseChange,
   onNoteChange,
   onCategoryChange,
+  onTestMaxBeforeChange,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
@@ -210,6 +217,18 @@ export function ExerciseCard({
           />
 
           <SegmentedControl aria-label="Exercise category" options={CATEGORY_OPTIONS} value={category} onChange={onCategoryChange} className="w-fit" />
+
+          {category === "strength" && exercise.exercise_id && (
+            <label className="flex w-fit items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={exercise.test_max_before ?? false}
+                onChange={(e) => onTestMaxBeforeChange(e.target.checked)}
+                className="size-4 rounded border-border-strong text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              />
+              Test max before
+            </label>
+          )}
 
           <PrescriptionTypePicker category={category} value={prescriptionType} onChange={onPrescriptionTypeChange} />
 

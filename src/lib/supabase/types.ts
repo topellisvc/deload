@@ -70,6 +70,25 @@ export interface PersonalRecord {
   updated_at: string;
 }
 
+/**
+ * Migration 0054 — an append-only history of estimated 1RMs per athlete
+ * per exercise (any exercise, not just personal_records' 4 fixed lift
+ * strings). See lib/profile/queries.ts's getPersonalRecords, which merges
+ * each exercise's *latest* row here into the same PersonalRecord[] shape
+ * (using exercise_id as record_type — personal_records.record_type is
+ * already free text, per migration 0009's own comment, so this needs no
+ * new lookup path anywhere percent_1rm weight suggestions are resolved).
+ */
+export interface ExerciseMaxRecord {
+  id: string;
+  athlete_id: string;
+  exercise_id: string;
+  estimated_1rm_kg: number;
+  performed_on: string;
+  program_id: string | null;
+  created_at: string;
+}
+
 export type CoachClientStatus = "pending" | "active";
 
 export interface CoachClient {
@@ -161,6 +180,15 @@ export interface ProgramWeek {
   label: string | null;
   based_on_week_id: string | null;
   created_at: string;
+  /** True for the one week (always position 1) the manual builder's "Add
+   * testing week" button generated (migration 0054) — lets the button find
+   * "the" testing week again on a repeat click to sync in newly-flagged
+   * exercises, rather than guessing from position/label text. Optional,
+   * same "undefined and false mean the same thing" convention as
+   * BlockExercise.autoregulation_eligible: defaults to false at the
+   * database level regardless, so the many hand-built WeekRow object
+   * literals across this codebase don't all need updating. */
+  is_testing_week?: boolean;
 }
 
 export interface TrainingDay {
@@ -228,6 +256,12 @@ export interface BlockExercise {
    * duplicateExercise) need to read/preserve it explicitly. Migration
    * 0046. */
   autoregulation_eligible?: boolean;
+  /** Manual program builder's "Test max before" checkbox (migration 0054)
+   * — marks that this exercise usage should get a max-test set generated
+   * into the program's testing week (see program-builder's "Add testing
+   * week" button, lib/programs/mutations.ts's syncTestingWeek). Optional,
+   * same convention as autoregulation_eligible above. */
+  test_max_before?: boolean;
 }
 
 export type StrengthPrescriptionType =
@@ -293,19 +327,24 @@ export interface SetPrescription {
    * that type may not exist yet when the prescription is written. */
   pr_record_type: string | null;
   /** True for a testing-week single graded top set — see migration 0052.
-   * When a set with this flag is actually logged, the logging mutation
-   * (finishWorkout) computes an e1RM from the performed weight/reps/rir and
-   * writes it to personal_records[pr_record_type] automatically, no manual
-   * profile entry involved. False for every other row, including a later
-   * percent_1rm row that reads that same pr_record_type for display.
-   * Optional (not just nullable), same convention as BlockExercise.
-   * autoregulation_eligible (migration 0046): defaults to false at the
-   * database level regardless, so undefined and false mean exactly the same
-   * thing here and the many existing hand-built SetPrescription/SetRow
-   * object literals across this codebase (test fixtures, starter-
-   * templates.ts, text-parse.ts) don't all need updating for it. Only
-   * assemble.ts (the generator's own row-builder) needs to set it
-   * explicitly. */
+   * When a set with this flag is actually logged, finishWorkout
+   * (lib/training/mutations.ts) computes an e1RM from the performed
+   * weight/reps/rir and (a) if pr_record_type is one of the 4 fixed main
+   * lifts, writes it to personal_records[pr_record_type] (unchanged since
+   * migration 0052), and (b) always writes it to exercise_max_records
+   * keyed by this exercise's own exercise_id (migration 0054) — the
+   * general "library of maxes" that covers any exercise, not just the 4
+   * main lifts. No manual profile entry involved either way. False for
+   * every other row, including a later percent_1rm row that reads that
+   * same pr_record_type (or, if null, this exercise's own exercise_max_records
+   * history) for display. Optional (not just nullable), same convention as
+   * BlockExercise.autoregulation_eligible (migration 0046): defaults to
+   * false at the database level regardless, so undefined and false mean
+   * exactly the same thing here and the many existing hand-built
+   * SetPrescription/SetRow object literals across this codebase (test
+   * fixtures, starter-templates.ts, text-parse.ts) don't all need updating
+   * for it. Only assemble.ts and lib/programs/mutations.ts's
+   * syncTestingWeek need to set it explicitly. */
   is_max_test?: boolean;
   /** Strength 'rpe' type AND running/cardio 'rpe' type — same concept, one column. */
   rpe_value: number | null;

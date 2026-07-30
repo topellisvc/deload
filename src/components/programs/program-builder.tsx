@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Check, Loader2, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Plus, Timer, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type {
   BlockExerciseRow,
@@ -324,6 +324,36 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     return null;
   }
 
+  // Whether the "Add testing week" button has anything to do — mirrors
+  // syncTestingWeek's own scan (test_max_before = true, strength, a real
+  // exercise_id, outside the testing week itself) so the button can
+  // disable itself with an accurate hint instead of round-tripping to the
+  // server just to learn there was nothing flagged.
+  const testingWeek = program.weeks.find((w) => w.is_testing_week) ?? null;
+  const hasFlaggedExercise = useMemo(
+    () =>
+      program.weeks.some(
+        (w) =>
+          w.id !== testingWeek?.id &&
+          w.days.some((d) => d.blocks.some((b) => b.exercises.some((ex) => ex.test_max_before && ex.exercise_id && ex.exercise_category === "strength")))
+      ),
+    [program.weeks, testingWeek?.id]
+  );
+  const [syncingTestingWeek, setSyncingTestingWeek] = useState(false);
+
+  async function handleSyncTestingWeek() {
+    setSyncingTestingWeek(true);
+    const { program: updated, error } = await track(m.syncTestingWeek(supabase, program));
+    setSyncingTestingWeek(false);
+    if (error || !updated) {
+      fail(error ?? "Couldn't add the testing week.");
+      return;
+    }
+    setProgram(updated);
+    const newTestingWeek = updated.weeks.find((w) => w.is_testing_week);
+    if (newTestingWeek) setSelectedWeekId(newTestingWeek.id);
+  }
+
   function handleDeleteWeek(weekId: string) {
     if (program.weeks.length <= 1) return;
     const target = program.weeks.find((w) => w.id === weekId);
@@ -631,6 +661,19 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, notes } : ex)),
     }));
     track(m.updateBlockExercise(supabase, blockExerciseId, { notes })).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
+  /** "Test max before" checkbox (migration 0054) — see syncTestingWeek's own
+   * doc comment for what flipping this actually feeds into once the "Add
+   * testing week" button below is pressed. */
+  function handleTestMaxBeforeChange(dayId: string, blockId: string, blockExerciseId: string, testMaxBefore: boolean) {
+    updateBlock(week.id, dayId, blockId, (b) => ({
+      ...b,
+      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, test_max_before: testMaxBefore } : ex)),
+    }));
+    track(m.updateBlockExercise(supabase, blockExerciseId, { test_max_before: testMaxBefore })).then(({ error }) => {
       if (error) fail(error);
     });
   }
@@ -950,6 +993,16 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
           <Plus className="size-4" />
           Add week
         </button>
+        <button
+          type="button"
+          onClick={handleSyncTestingWeek}
+          disabled={!hasFlaggedExercise || syncingTestingWeek}
+          title={hasFlaggedExercise ? undefined : 'Tick "Test max before" on an exercise first'}
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-dashed border-border-strong px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border-strong disabled:hover:text-muted-foreground"
+        >
+          {syncingTestingWeek ? <Loader2 className="size-4 animate-spin" /> : <Timer className="size-4" />}
+          {testingWeek ? "Sync testing week" : "Add testing week"}
+        </button>
       </ScrollFadeX>
 
       {/*
@@ -1008,6 +1061,9 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 onCategoryChange={(blockId, blockExerciseId, category) =>
                   handleCategoryChange(day.id, blockId, blockExerciseId, category)
                 }
+                onTestMaxBeforeChange={(blockId, blockExerciseId, testMaxBefore) =>
+                  handleTestMaxBeforeChange(day.id, blockId, blockExerciseId, testMaxBefore)
+                }
                 onPrescriptionTypeChange={(blockId, blockExerciseId, prescriptionType) =>
                   handlePrescriptionTypeChange(day.id, blockId, blockExerciseId, prescriptionType)
                 }
@@ -1052,6 +1108,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       >
         <Plus className="size-4" />
         Add week
+      </button>
+      <button
+        type="button"
+        onClick={handleSyncTestingWeek}
+        disabled={!hasFlaggedExercise || syncingTestingWeek}
+        className="flex items-center justify-center gap-1 rounded-2xl border border-dashed border-border-strong px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 lg:hidden"
+      >
+        {syncingTestingWeek ? <Loader2 className="size-4 animate-spin" /> : <Timer className="size-4" />}
+        {testingWeek ? "Sync testing week" : "Add testing week"}
       </button>
 
       <AddWeekDialog

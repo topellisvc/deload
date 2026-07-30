@@ -102,6 +102,7 @@ function setRowInsertPayload(set: SetRow) {
     duration_seconds: set.duration_seconds,
     pace_seconds_per_km: set.pace_seconds_per_km,
     advanced_config: set.advanced_config,
+    is_max_test: set.is_max_test ?? false,
   };
 }
 
@@ -700,6 +701,161 @@ export async function deleteWeek(supabase: SupabaseClient, weekId: string): Prom
   return { error: error?.message ?? null };
 }
 
+/**
+ * The manual builder's "Add testing week" button — the hand-built
+ * counterpart to the generator's own test_then_percent_1rm testing week
+ * (lib/programs/generate/load-calculation.ts's testingProtocolPlan), just
+ * driven by which exercises a coach has ticked "Test max before"
+ * (block_exercises.test_max_before, migration 0054) instead of a fixed set
+ * of 4 main lifts — so it works for any exercise in the library.
+ *
+ * First click: shifts every existing week's position up by one (same
+ * staged-negative-position two-pass trick reorderBlocks/reorderSets use,
+ * since program_weeks has a unique(program_id, position) constraint) and
+ * inserts a new week at position 1 (is_testing_week = true) with one block
+ * per flagged exercise, each holding a single max-test set (is_max_test =
+ * true, pr_record_type left null since the weight this resolves against is
+ * this set's own exercise_id in exercise_max_records, not one of
+ * personal_records' 4 fixed lift strings — see getPersonalRecords).
+ *
+ * Later clicks (a testing week already exists): only ADDS a block for any
+ * flagged exercise_id not already present in it — never touches or removes
+ * an exercise already there, so nothing an athlete may have already logged
+ * a real test against gets silently rewritten. Matches this session's own
+ * "re-click to re-sync, additive only" scoping decision.
+ *
+ * Returns the freshly-reloaded ProgramTree rather than hand-assembling one
+ * (same pattern createProgramFromSavedTemplate/createProgramFromParsedProgram
+ * already use) — simpler and less error-prone than reconstructing five
+ * levels of nested arrays by hand for what's a rare, deliberate action, not
+ * a per-keystroke hot path.
+ */
+export async function syncTestingWeek(supabase: SupabaseClient, program: ProgramTree): Promise<{ program: ProgramTree | null; error: string | null }> {
+  const existingTestingWeek = program.weeks.find((w) => w.is_testing_week) ?? null;
+
+  const flagged = new Map<string, string | null>(); // exercise_id -> exercise_name
+  for (const week of program.weeks) {
+    if (existingTestingWeek && week.id === existingTestingWeek.id) continue;
+    for (const day of week.days) {
+      for (const block of day.blocks) {
+        for (const ex of block.exercises) {
+          if (ex.test_max_before && ex.exercise_id && ex.exercise_category === "strength" && !flagged.has(ex.exercise_id)) {
+            flagged.set(ex.exercise_id, ex.exercise_name ?? null);
+          }
+        }
+      }
+    }
+  }
+  if (flagged.size === 0) {
+    return { program: null, error: 'Flag at least one exercise with "Test max before" first.' };
+  }
+
+  async function insertMaxTestBlock(dayId: string, position: number, exerciseId: string, exerciseName: string | null): Promise<{ error: string | null }> {
+    const label = exerciseName ?? "this exercise";
+    const blockId = newId();
+    const blockExerciseId = newId();
+
+    const { error: blockError } = await supabase.from("exercise_blocks").insert({
+      id: blockId,
+      day_id: dayId,
+      position,
+      block_type: "straight",
+      block_role: "main",
+      rounds: 1,
+    });
+    if (blockError) return { error: blockError.message };
+
+    const { error: exerciseError } = await supabase.from("block_exercises").insert({
+      id: blockExerciseId,
+      block_id: blockId,
+      position: 1,
+      exercise_id: exerciseId,
+      custom_name: null,
+      notes: null,
+      exercise_category: "strength",
+      test_max_before: false,
+    });
+    if (exerciseError) return { error: exerciseError.message };
+
+    const set = newSetRow(blockExerciseId, 1, "strength", "rir", {
+      sets: 1,
+      reps: "5",
+      rir_value: 1,
+      rest_seconds: 180,
+      is_max_test: true,
+      pr_record_type: null,
+      notes: `Testing week — warm up gradually, then work up to one hard set of 5 reps on ${label} with about 1 rep left in the tank. Log the weight and reps here — this program's percent-based weights for ${label} are calculated from it automatically.`,
+    });
+    const { error: setError } = await supabase.from("set_prescriptions").insert(setRowInsertPayload(set));
+    if (setError) return { error: setError.message };
+
+    return { error: null };
+  }
+
+  if (existingTestingWeek) {
+    const alreadyTested = new Set(
+      existingTestingWeek.days.flatMap((d) => d.blocks.flatMap((b) => b.exercises.map((ex) => ex.exercise_id).filter((id): id is string => !!id)))
+    );
+    const toAdd = [...flagged.entries()].filter(([exerciseId]) => !alreadyTested.has(exerciseId));
+    if (toAdd.length === 0) {
+      return { program, error: null }; // Already in sync.
+    }
+
+    let day = existingTestingWeek.days[0];
+    if (!day) {
+      const dayId = newId();
+      const { error: dayError } = await supabase.from("training_days").insert({ id: dayId, week_id: existingTestingWeek.id, position: 1, label: "Test your maxes", is_rest_day: false });
+      if (dayError) return { program: null, error: dayError.message };
+      day = { id: dayId, week_id: existingTestingWeek.id, position: 1, label: "Test your maxes", is_rest_day: false, blocks: [] };
+    }
+
+    let nextPosition = Math.max(0, ...day.blocks.map((b) => b.position)) + 1;
+    for (const [exerciseId, exerciseName] of toAdd) {
+      const { error } = await insertMaxTestBlock(day.id, nextPosition, exerciseId, exerciseName);
+      if (error) return { program: null, error };
+      nextPosition += 1;
+    }
+  } else {
+    // Shift every existing week's position up by one, staged through
+    // negative positions first so no intermediate write collides with the
+    // unique(program_id, position) constraint.
+    for (const week of program.weeks) {
+      const tempPosition = -(1 + Math.floor(Math.random() * 1_000_000));
+      const { error } = await supabase.from("program_weeks").update({ position: tempPosition }).eq("id", week.id);
+      if (error) return { program: null, error: error.message };
+    }
+    for (const week of program.weeks) {
+      const { error } = await supabase.from("program_weeks").update({ position: week.position + 1 }).eq("id", week.id);
+      if (error) return { program: null, error: error.message };
+    }
+
+    const weekId = newId();
+    const dayId = newId();
+    const { error: weekError } = await supabase.from("program_weeks").insert({
+      id: weekId,
+      program_id: program.id,
+      position: 1,
+      label: "Testing Week",
+      based_on_week_id: null,
+      is_testing_week: true,
+    });
+    if (weekError) return { program: null, error: weekError.message };
+
+    const { error: dayError } = await supabase.from("training_days").insert({ id: dayId, week_id: weekId, position: 1, label: "Test your maxes", is_rest_day: false });
+    if (dayError) return { program: null, error: dayError.message };
+
+    let position = 1;
+    for (const [exerciseId, exerciseName] of flagged) {
+      const { error } = await insertMaxTestBlock(dayId, position, exerciseId, exerciseName);
+      if (error) return { program: null, error };
+      position += 1;
+    }
+  }
+
+  const refreshed = await getProgramTree(supabase, program.id);
+  return refreshed ? { program: refreshed, error: null } : { program: null, error: "Testing week saved, but couldn't be loaded back." };
+}
+
 // ============================================================
 // Days
 // ============================================================
@@ -1260,7 +1416,7 @@ export async function reorderSets(supabase: SupabaseClient, sets: { id: string; 
 export async function updateBlockExercise(
   supabase: SupabaseClient,
   blockExerciseId: string,
-  patch: { exercise_id?: string | null; custom_name?: string | null; notes?: string | null }
+  patch: { exercise_id?: string | null; custom_name?: string | null; notes?: string | null; test_max_before?: boolean }
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("block_exercises").update(patch).eq("id", blockExerciseId);
   return { error: error?.message ?? null };
@@ -1367,6 +1523,7 @@ export async function updateSetRow(
     duration_seconds: number | null;
     pace_seconds_per_km: number | null;
     advanced_config: Record<string, string> | null;
+    is_max_test: boolean;
   }>
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("set_prescriptions").update(patch).eq("id", setId);

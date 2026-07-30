@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getMyClients, getMyCoaches, getLinkedProfile } from "@/lib/coaching/queries";
 import type { PersonalRecord, Profile } from "@/lib/supabase/types";
 import type { InjuryProfile } from "@/lib/programs/generate/types";
+import { exerciseMaxRecordType } from "@/lib/programs/prescription-types";
+import { getExerciseNamesByIds } from "@/lib/exercises/queries";
 
 const DEFAULT_INJURY_PROFILE: InjuryProfile = { shoulder: false, wrist: false, elbow: false, lowerBack: null, knee: null, hip: null };
 
@@ -325,7 +327,94 @@ export async function getAthleteSummary(supabase: SupabaseClient, userId: string
   };
 }
 
+/**
+ * Merges in the athlete's exercise_max_records history (migration 0054)
+ * alongside personal_records, both callers get for free with no prop
+ * threading anywhere: personal_records.record_type is already free text
+ * (migration 0009's own comment), so an exercise-scoped entry just uses an
+ * `exercise:<id>`-prefixed record_type — every existing lookup site
+ * (exercise-performance-card.tsx, exercise-screen.tsx) already does
+ * `personalRecords.find(r => r.record_type === X)`, and X falls back to
+ * `exercise:${set's own exercise_id}` when pr_record_type is null (the
+ * manual builder's "Test max before" flow never sets pr_record_type — see
+ * syncTestingWeek). The prefix (rather than a bare exercise_id) is a
+ * deliberate guard against an exercise's own slug ever colliding with one
+ * of personal_records' 4 fixed lift strings. Only the *latest* test per
+ * exercise is surfaced here; the full history is exercise_max_records
+ * itself (see getExerciseMaxHistory, used by /profile's library-of-maxes
+ * view).
+ */
+async function getLatestExerciseMaxesAsRecords(supabase: SupabaseClient, userId: string): Promise<PersonalRecord[]> {
+  const { data } = await supabase
+    .from("exercise_max_records")
+    .select("exercise_id, estimated_1rm_kg, performed_on")
+    .eq("athlete_id", userId)
+    .order("performed_on", { ascending: false });
+  const rows = (data ?? []) as { exercise_id: string; estimated_1rm_kg: number; performed_on: string }[];
+
+  const latestByExercise = new Map<string, { estimated_1rm_kg: number; performed_on: string }>();
+  for (const row of rows) {
+    if (!latestByExercise.has(row.exercise_id)) latestByExercise.set(row.exercise_id, row);
+  }
+
+  return [...latestByExercise.entries()].map(([exerciseId, latest]) => ({
+    id: `exercise-max:${exerciseId}`,
+    user_id: userId,
+    record_type: exerciseMaxRecordType(exerciseId),
+    value_number: latest.estimated_1rm_kg,
+    unit: "kg",
+    achieved_on: latest.performed_on,
+    created_at: latest.performed_on,
+    updated_at: latest.performed_on,
+  }));
+}
+
 export async function getPersonalRecords(supabase: SupabaseClient, userId: string): Promise<PersonalRecord[]> {
-  const { data } = await supabase.from("personal_records").select("*").eq("user_id", userId);
-  return (data ?? []) as PersonalRecord[];
+  const [{ data }, exerciseMaxes] = await Promise.all([
+    supabase.from("personal_records").select("*").eq("user_id", userId),
+    getLatestExerciseMaxesAsRecords(supabase, userId),
+  ]);
+  return [...((data ?? []) as PersonalRecord[]), ...exerciseMaxes];
+}
+
+export interface ExerciseMaxHistoryEntry {
+  exerciseId: string;
+  exerciseName: string;
+  estimated1RMKg: number;
+  performedOn: string;
+}
+
+/**
+ * The full exercise_max_records history, one entry per test (not
+ * deduplicated to the latest the way getPersonalRecords' merge is) — "a
+ * library of an athlete's max weights" the /profile page renders so a
+ * coach/athlete can see genuine progression per exercise over time, not
+ * just the current number. Grouped by exercise, each group's own entries
+ * newest-first — the same flat-query-then-stitch-with-getExerciseNamesByIds
+ * pattern getProgramTree already uses for resolving exercise_id -> name.
+ */
+export async function getExerciseMaxHistory(supabase: SupabaseClient, athleteId: string): Promise<Map<string, ExerciseMaxHistoryEntry[]>> {
+  const { data } = await supabase
+    .from("exercise_max_records")
+    .select("exercise_id, estimated_1rm_kg, performed_on")
+    .eq("athlete_id", athleteId)
+    .order("performed_on", { ascending: false });
+  const rows = (data ?? []) as { exercise_id: string; estimated_1rm_kg: number; performed_on: string }[];
+  if (rows.length === 0) return new Map();
+
+  const namesById = await getExerciseNamesByIds(supabase, rows.map((r) => r.exercise_id));
+
+  const byExercise = new Map<string, ExerciseMaxHistoryEntry[]>();
+  for (const row of rows) {
+    const entry: ExerciseMaxHistoryEntry = {
+      exerciseId: row.exercise_id,
+      exerciseName: namesById.get(row.exercise_id) ?? row.exercise_id,
+      estimated1RMKg: row.estimated_1rm_kg,
+      performedOn: row.performed_on,
+    };
+    const existing = byExercise.get(row.exercise_id);
+    if (existing) existing.push(entry);
+    else byExercise.set(row.exercise_id, [entry]);
+  }
+  return byExercise;
 }

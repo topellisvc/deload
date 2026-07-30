@@ -103,6 +103,7 @@ function baseProps() {
     onExerciseChange: vi.fn(),
     onNoteChange: vi.fn(),
     onCategoryChange: vi.fn(),
+    onTestMaxBeforeChange: vi.fn(),
     onPrescriptionTypeChange: vi.fn(),
     onAddSet: vi.fn(),
     onSetChange: vi.fn(),

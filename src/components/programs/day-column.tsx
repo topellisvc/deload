@@ -66,6 +66,7 @@ interface DayColumnProps {
   onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockId: string, blockExerciseId: string, category: ExerciseCategory) => void;
+  onTestMaxBeforeChange: (blockId: string, blockExerciseId: string, testMaxBefore: boolean) => void;
   onPrescriptionTypeChange: (blockId: string, blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockId: string, blockExerciseId: string) => void;
   onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
@@ -118,6 +119,7 @@ export function DayColumn({
   onExerciseChange,
   onNoteChange,
   onCategoryChange,
+  onTestMaxBeforeChange,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
@@ -247,6 +249,7 @@ export function DayColumn({
     onExerciseChange,
     onNoteChange,
     onCategoryChange,
+    onTestMaxBeforeChange,
     onPrescriptionTypeChange,
     onAddSet,
     onSetChange,
@@ -465,6 +468,7 @@ interface BlockSectionProps {
   onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockId: string, blockExerciseId: string, category: ExerciseCategory) => void;
+  onTestMaxBeforeChange: (blockId: string, blockExerciseId: string, testMaxBefore: boolean) => void;
   onPrescriptionTypeChange: (blockId: string, blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockId: string, blockExerciseId: string) => void;
   onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
@@ -504,6 +508,7 @@ function BlockSection({
   onExerciseChange,
   onNoteChange,
   onCategoryChange,
+  onTestMaxBeforeChange,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
@@ -574,6 +579,7 @@ function BlockSection({
                 onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
                 onNoteChange={(blockExerciseId, notes) => onNoteChange(block.id, blockExerciseId, notes)}
                 onCategoryChange={(blockExerciseId, category) => onCategoryChange(block.id, blockExerciseId, category)}
+                onTestMaxBeforeChange={(blockExerciseId, testMaxBefore) => onTestMaxBeforeChange(block.id, blockExerciseId, testMaxBefore)}
                 onPrescriptionTypeChange={(blockExerciseId, prescriptionType) =>
                   onPrescriptionTypeChange(block.id, blockExerciseId, prescriptionType)
                 }

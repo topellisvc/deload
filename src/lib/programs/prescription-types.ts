@@ -320,6 +320,25 @@ export function suggestedWeightFromPercent1RM(percent: number | null, oneRepMax:
   return Math.round(oneRepMax * (percent / 100) * 10) / 10;
 }
 
+/**
+ * The PersonalRecord[]-compatible key an exercise-scoped max (migration
+ * 0054's exercise_max_records, merged into getPersonalRecords) is looked
+ * up under. `personal_records.record_type` is free text (migration 0009),
+ * so this just needs to be a key that can never collide with one of
+ * personal_records' 4 fixed lift strings (bench_press/squat/deadlift/
+ * overhead_press) — the `exercise:` prefix guards that even if an
+ * exercise's own library slug happened to match one of those bare words.
+ * Used both when writing the synthetic record (lib/profile/queries.ts's
+ * getPersonalRecords) and when resolving a percent_1rm set's suggested
+ * weight (exercise-performance-card.tsx, exercise-screen.tsx) for a set
+ * whose pr_record_type is null — the manual builder's "Test max before"
+ * flow (lib/programs/mutations.ts's syncTestingWeek) never sets
+ * pr_record_type, so those sets always fall back to this.
+ */
+export function exerciseMaxRecordType(exerciseId: string): string {
+  return `exercise:${exerciseId}`;
+}
+
 // Referenced for exhaustiveness only — keeps ALL_TYPES from being flagged unused
 // while remaining available for future cross-category lookups (e.g. a search box).
 export { ALL_TYPES };

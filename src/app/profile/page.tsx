@@ -5,6 +5,7 @@ import {
   getAthleteSummary,
   getCoachingSummary,
   getCurrentProgram,
+  getExerciseMaxHistory,
   getMyProfileDetails,
   getMyStats,
   getPersonalRecords,
@@ -14,6 +15,7 @@ import { TrainingSnapshot } from "@/components/profile/training-snapshot";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { StatsPanel } from "@/components/profile/stats-panel";
 import { PersonalRecords } from "@/components/profile/personal-records";
+import { ExerciseMaxLibrary } from "@/components/profile/exercise-max-library";
 import { CoachingSummaryCard } from "@/components/profile/coaching-summary";
 import { AthleteSummaryCard } from "@/components/profile/athlete-summary";
 import { Achievements } from "@/components/profile/achievements";
@@ -53,10 +55,11 @@ export default async function ProfilePage() {
   // above resolves), not any of the other four results — it used to run
   // as an extra sequential round-trip after this Promise.all instead of
   // inside it.
-  const [stats, currentProgram, records, athleteSummary, coachingSummary, contributor] = await Promise.all([
+  const [stats, currentProgram, records, exerciseMaxHistory, athleteSummary, coachingSummary, contributor] = await Promise.all([
     getMyStats(supabase, user.id, profile.role),
     getCurrentProgram(supabase, user.id),
     getPersonalRecords(supabase, user.id),
+    getExerciseMaxHistory(supabase, user.id),
     getAthleteSummary(supabase, user.id),
     profile.role === "coach" ? getCoachingSummary(supabase, user.id) : Promise.resolve(null),
     getMyContributorProfile(supabase, user.id),
@@ -79,6 +82,8 @@ export default async function ProfilePage() {
       <StatsPanel stats={stats} role={profile.role} />
 
       <PersonalRecords userId={user.id} records={records} />
+
+      <ExerciseMaxLibrary history={exerciseMaxHistory} />
 
       {coachingSummary && <CoachingSummaryCard summary={coachingSummary} />}
 
