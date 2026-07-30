@@ -4,6 +4,7 @@ import { listExercises } from "@/lib/exercises/queries";
 import { assembleWeeks } from "@/lib/programs/generate/assemble";
 import { buildCardioTemplate, isCardioGoal } from "@/lib/programs/generate/cardio-templates";
 import { buildHybridTemplate, isHybridGoal } from "@/lib/programs/generate/hybrid-templates";
+import { buildPowerliftingTemplate, isPowerliftingGoal } from "@/lib/programs/generate/powerlifting-templates";
 import { buildResistanceTemplate, isResistanceGoal } from "@/lib/programs/generate/resistance-templates";
 import { buildRunningTemplate, isRunGoal } from "@/lib/programs/generate/running-templates";
 import type { ProgramGenerationInput, TemplateResult, TrainingGoal } from "@/lib/programs/generate/types";
@@ -43,7 +44,7 @@ function isTrainingGoal(value: unknown): value is TrainingGoal {
     isRunGoal(goal) ||
     isCardioGoal(goal) ||
     isHybridGoal(goal) ||
-    goal === "powerlifting_peak" ||
+    isPowerliftingGoal(goal) ||
     goal === "power_athletic" ||
     goal === "sport_specific"
   );
@@ -71,9 +72,10 @@ function buildTemplate(input: ProgramGenerationInput): TemplateResult {
   if (isRunGoal(input.goal)) return buildRunningTemplate(input);
   if (isCardioGoal(input.goal)) return buildCardioTemplate(input);
   if (isHybridGoal(input.goal)) return buildHybridTemplate(input);
-  // powerlifting_peak / power_athletic / sport_specific: accepted by the
-  // questionnaire's type but no template family has been built for them
-  // yet (tasks #21-23) — an honest error, not a silently wrong plan.
+  if (isPowerliftingGoal(input.goal)) return buildPowerliftingTemplate(input);
+  // power_athletic / sport_specific: accepted by the questionnaire's type
+  // but no template family has been built for them yet (tasks #22-23) — an
+  // honest error, not a silently wrong plan.
   return { error: `"${input.goal}" isn't supported by the program generator yet — this template family hasn't been built.` };
 }
 
@@ -116,9 +118,17 @@ export async function POST(request: Request) {
   }
 
   const exercises = await listExercises(supabase);
+  // Every template builder sizes phaseByWeek to exactly the program's real
+  // length — programLengthWeeks itself for resistance/running/cardio/
+  // hybrid, but the meet-date-derived length for powerlifting (which
+  // ignores programLengthWeeks entirely; see powerlifting-templates.ts).
+  // Reading it back off the template rather than trusting the raw
+  // questionnaire field keeps this correct for both cases without a
+  // goal-specific branch here.
+  const totalWeeks = result.template.phaseByWeek.size;
   const assembled = assembleWeeks({
     template: result.template,
-    totalWeeks: input.programLengthWeeks,
+    totalWeeks,
     exercises,
     selection: {
       equipmentAccess: input.equipmentAccess,

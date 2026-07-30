@@ -42,7 +42,7 @@ const GOAL_OPTIONS: { value: TrainingGoal; label: string; comingSoon?: boolean }
   { value: "run_marathon", label: "Run — marathon" },
   { value: "improve_conditioning", label: "Improve conditioning (non-running cardio)" },
   { value: "hybrid", label: "Hybrid — lifting + running" },
-  { value: "powerlifting_peak", label: "Powerlifting meet peak", comingSoon: true },
+  { value: "powerlifting_peak", label: "Powerlifting meet peak" },
   { value: "power_athletic", label: "Power / athletic development", comingSoon: true },
   { value: "sport_specific", label: "Sport-specific", comingSoon: true },
 ];
@@ -203,6 +203,13 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
   const [hybridPrimaryGoal, setHybridPrimaryGoal] = useState<TrainingGoal>("get_stronger");
   const [hybridSecondaryGoal, setHybridSecondaryGoal] = useState<TrainingGoal>("run_general");
 
+  const [meetDate, setMeetDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 12 * 7); // default to a defensible 12-week-out prep
+    return d.toISOString().slice(0, 10);
+  });
+  const [isFirstMeet, setIsFirstMeet] = useState(true);
+
   const [coachedOnOlympicLifts, setCoachedOnOlympicLifts] = useState(false);
 
   const [stage, setStage] = useState<Stage>("idle");
@@ -237,7 +244,7 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
       redFlags,
       globalRefusals,
       programLengthWeeks,
-      powerlifting: null,
+      powerlifting: goal === "powerlifting_peak" ? { meetDateISO: new Date(meetDate).toISOString(), isFirstMeet } : null,
       sport: null,
       hybrid: goal === "hybrid" ? { priority: hybridPriority, primaryGoal: hybridPrimaryGoal, secondaryGoal: hybridSecondaryGoal } : null,
       running: needsRunningHistory ? { currentWeeklyKm, weeksAtCurrentVolume, hasRunContinuouslyThirtyMinutes } : null,
@@ -409,12 +416,26 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
             <Label htmlFor="sessionLength">Session length (minutes)</Label>
             <Input id="sessionLength" type="number" min={15} max={180} value={sessionLengthMinutes} onChange={(e) => setSessionLengthMinutes(Number(e.target.value))} />
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="programLength">Program length (weeks)</Label>
-            <Input id="programLength" type="number" min={1} max={52} value={programLengthWeeks} onChange={(e) => setProgramLengthWeeks(Number(e.target.value))} />
-          </div>
+          {goal !== "powerlifting_peak" && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="programLength">Program length (weeks)</Label>
+              <Input id="programLength" type="number" min={1} max={52} value={programLengthWeeks} onChange={(e) => setProgramLengthWeeks(Number(e.target.value))} />
+            </div>
+          )}
         </div>
       </Section>
+
+      {goal === "powerlifting_peak" && (
+        <Section title="Meet details" description="Everything is timed backwards from this date — program length isn't asked for separately.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="meetDate">Meet date</Label>
+              <Input id="meetDate" type="date" value={meetDate} onChange={(e) => setMeetDate(e.target.value)} />
+            </div>
+          </div>
+          <CheckboxRow id="firstMeet" label="This is my first meet" checked={isFirstMeet} onChange={setIsFirstMeet} />
+        </Section>
+      )}
 
       <Section title="About you">
         <div className="grid gap-4 sm:grid-cols-3">
