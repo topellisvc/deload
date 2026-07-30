@@ -1,10 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { completeSessionLog, createLoggedSet, createSessionLog } from "@/lib/logging/mutations";
 import { todayDateString } from "@/lib/dates";
-import { decideReadinessDownregulation } from "@/lib/training/autoregulation";
-import type { AutoregulationEventKind, ReadinessCheck } from "@/lib/training/autoregulation";
+import { decideReadinessDownregulation, JOINT_PATTERNS, nextRungExerciseId } from "@/lib/training/autoregulation";
+import type { AutoregulationEventKind, JointCheckAnswer, JointKey, ReadinessCheck } from "@/lib/training/autoregulation";
 import type { DraftSet, TrainingModeSession, TrainingModeSessionRow } from "@/lib/training/types";
 import { mapTrainingModeSessionRow } from "@/lib/training/types";
+import { listExercises } from "@/lib/exercises/queries";
+import { getAthleteInjuryProfile } from "@/lib/profile/queries";
+import { activeTags, isSafeForInjuries } from "@/lib/programs/generate/injuries";
+import { resolveSlotPatterns } from "@/lib/programs/generate/patterns";
 
 interface DraftSessionParams {
   trainingDayId: string;
@@ -86,6 +90,123 @@ export async function createAutoregulationEvent(
     detail: params.detail ?? {},
   });
   return { error: error ? "Couldn't record that adjustment. Try again." : null };
+}
+
+/**
+ * Records one raw better/same/worse answer to joint_check_answers
+ * (migration 0047) — unlike Rule 1's isSecondConsecutiveMiss, every answer
+ * gets written here, not just the ones that produce a regress/progress.
+ * decideJointCheck's own doc comment explains why: a single "worse" has no
+ * natural event to record under Rule 1's convention, but Rule 4's
+ * two-in-a-row comparison is symmetric in both directions and needs *every*
+ * answer on hand as tomorrow's "previous," including "same" ones, which
+ * reset the streak.
+ */
+export async function createJointCheckAnswer(
+  supabase: SupabaseClient,
+  params: { athleteId: string; joint: JointKey; answer: JointCheckAnswer }
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("joint_check_answers").insert({ athlete_id: params.athleteId, joint: params.joint, answer: params.answer });
+  return { error: error ? "Couldn't record that answer. Try again." : null };
+}
+
+/**
+ * Walks one joint's substitution ladder one step, for every currently-
+ * assigned exercise (from this week onward — past weeks are left alone,
+ * same "never rewrite history" principle as everything else in this app)
+ * that JOINT_PATTERNS says belongs to this joint. Called after Rule 4's
+ * decideJointCheck returns "regress" or "progress". Writes one
+ * autoregulation_events row (kind 'joint_regress'/'joint_progress') per
+ * exercise actually substituted, same rationale migration 0044 gives for
+ * why this whole layer is an append-only event log rather than a silent
+ * rewrite: a coach should be able to see *why* an exercise changed.
+ *
+ * TWO DELIBERATE SIMPLIFICATIONS
+ * -------------------------------
+ * 1. The candidate pool is filtered by injury safety (activeTags /
+ *    isSafeForInjuries, same as generation time) but *not* by equipment
+ *    access or the lift-coaching gate — neither is persisted anywhere past
+ *    the one-off generation request that used to read them (see
+ *    generate/select-exercises.ts's passesHardFilters, which has all
+ *    three). Persisting a standing equipment/coaching profile the way
+ *    migration 0047 now does for injuries is a further, separate piece of
+ *    work; flagging rather than silently pretending this filter is
+ *    complete.
+ * 2. block_exercises' own RLS ("block exercises follow their program's
+ *    access") restricts writes to the *program owner*, not the athlete —
+ *    the same gap Rule 2's repeat-week control hit. For a self-programmed
+ *    athlete (owner_id === athlete_id) this works today; for a
+ *    coach-assigned program it will silently affect zero rows. This
+ *    function detects that (via `.select()` on the update, so a
+ *    zero-row result is visible) and reports it through `skippedCount`
+ *    rather than claiming success it didn't have.
+ */
+export async function applyJointLadderStep(
+  supabase: SupabaseClient,
+  params: { athleteId: string; programId: string; fromWeekPosition: number; joint: JointKey; direction: "regress" | "progress" }
+): Promise<{ updatedCount: number; skippedCount: number; error: string | null }> {
+  const [injuries, exercises] = await Promise.all([getAthleteInjuryProfile(supabase, params.athleteId), listExercises(supabase)]);
+  const tags = activeTags(injuries);
+  const pool = exercises.filter((e) => !e.is_archived && e.review_status === "approved" && isSafeForInjuries(e, tags));
+  const exerciseById = new Map(exercises.map((e) => [e.id, e]));
+
+  const { data: weeksData } = await supabase.from("program_weeks").select("id").eq("program_id", params.programId).gte("position", params.fromWeekPosition);
+  const weekIds = ((weeksData ?? []) as { id: string }[]).map((w) => w.id);
+  if (weekIds.length === 0) return { updatedCount: 0, skippedCount: 0, error: null };
+
+  const { data: daysData } = await supabase.from("training_days").select("id").in("week_id", weekIds);
+  const dayIds = ((daysData ?? []) as { id: string }[]).map((d) => d.id);
+  if (dayIds.length === 0) return { updatedCount: 0, skippedCount: 0, error: null };
+
+  const { data: blocksData } = await supabase.from("exercise_blocks").select("id").in("day_id", dayIds);
+  const blockIds = ((blocksData ?? []) as { id: string }[]).map((b) => b.id);
+  if (blockIds.length === 0) return { updatedCount: 0, skippedCount: 0, error: null };
+
+  const { data: blockExercisesData } = await supabase
+    .from("block_exercises")
+    .select("id, exercise_id")
+    .in("block_id", blockIds)
+    .not("exercise_id", "is", null);
+  const blockExercises = ((blockExercisesData ?? []) as { id: string; exercise_id: string }[]).filter((be) => exerciseById.has(be.exercise_id));
+
+  const patterns = JOINT_PATTERNS[params.joint];
+  let updatedCount = 0;
+  let skippedCount = 0;
+
+  for (const be of blockExercises) {
+    const currentExercise = exerciseById.get(be.exercise_id)!;
+    const relevantPatterns = resolveSlotPatterns(currentExercise).filter((p) => patterns.includes(p));
+    if (relevantPatterns.length === 0) continue;
+
+    let nextExerciseId: string | null = null;
+    for (const pattern of relevantPatterns) {
+      nextExerciseId = nextRungExerciseId(pool, pattern, be.exercise_id, params.direction);
+      if (nextExerciseId) break;
+    }
+    if (!nextExerciseId || nextExerciseId === be.exercise_id) continue;
+
+    const { data: updated, error } = await supabase.from("block_exercises").update({ exercise_id: nextExerciseId }).eq("id", be.id).select("id");
+    if (error) continue;
+    if (updated && updated.length > 0) {
+      updatedCount += 1;
+      // One event per substituted exercise, not one per joint-check answer —
+      // matches migration 0044's own rationale for why this is a table and
+      // not a silent mutation: a coach reading this exercise's history
+      // should see "why did the exercise change," not just "why did the
+      // load change." Best-effort; a failure here shouldn't undo or block
+      // the substitution that already landed.
+      void createAutoregulationEvent(supabase, {
+        athleteId: params.athleteId,
+        blockExerciseId: be.id,
+        kind: params.direction === "regress" ? "joint_regress" : "joint_progress",
+        detail: { joint: params.joint, fromExerciseId: be.exercise_id, toExerciseId: nextExerciseId },
+      });
+    } else {
+      skippedCount += 1;
+    }
+  }
+
+  return { updatedCount, skippedCount, error: null };
 }
 
 /**

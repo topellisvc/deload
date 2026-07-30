@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { createClient } from "@/lib/supabase/client";
 import { createProgramFromParsedProgram } from "@/lib/programs/mutations";
+import { upsertAthleteInjuryProfile } from "@/lib/profile/mutations";
 import type {
   EquipmentAccess,
   GlobalRefusalScreen,
@@ -356,6 +357,19 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
       setError(createError ?? "The program was generated but couldn't be saved.");
       return;
     }
+
+    // Best-effort: persist this questionnaire's InjuryProfile as the
+    // athlete's standing profile (migration 0047), so Training Mode's Rule
+    // 4 per-joint check has something durable to read later instead of it
+    // evaporating with this form's local state. This form only ever
+    // creates self-programmed programs (userId, no athleteId override —
+    // see createProgramFromParsedProgram's own athleteId ?? userId
+    // fallback), so the acting user is the athlete here. A failure here
+    // shouldn't block navigation to the program that was already saved
+    // successfully, matching how other auxiliary writes in this app (e.g.
+    // training-session.tsx's readiness_downregulated event) are
+    // fire-and-forget rather than user-blocking.
+    void upsertAthleteInjuryProfile(supabase, { athleteId: userId, injuries: buildInput().injuries });
 
     router.push(`/programs/${program.id}/edit`);
   }

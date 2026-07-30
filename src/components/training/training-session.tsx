@@ -9,10 +9,10 @@ import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { buildExerciseList, buildSetTargets, dropLastSet, findResumeExerciseId } from "@/lib/training/sequence";
 import { estimateWorkoutDurationSeconds } from "@/lib/training/estimate-duration";
 import { computeWorkoutTotals } from "@/lib/training/totals";
-import { saveDraftSession, deleteDraftSession, finishWorkout, createAutoregulationEvent } from "@/lib/training/mutations";
-import { isProgramComplete, getRecentAutoregulationEvents } from "@/lib/training/queries";
-import { decideReadinessDownregulation, decideRirGate } from "@/lib/training/autoregulation";
-import type { ReadinessCheck, SleepQuality, SorenessLevel } from "@/lib/training/autoregulation";
+import { saveDraftSession, deleteDraftSession, finishWorkout, createAutoregulationEvent, createJointCheckAnswer, applyJointLadderStep } from "@/lib/training/mutations";
+import { isProgramComplete, getRecentAutoregulationEvents, getPreviousJointCheckAnswer } from "@/lib/training/queries";
+import { decideReadinessDownregulation, decideRirGate, decideJointCheck } from "@/lib/training/autoregulation";
+import type { JointCheckAnswer, JointKey, ReadinessCheck, SleepQuality, SorenessLevel } from "@/lib/training/autoregulation";
 import type { DraftSet, PreviousPerformance, TrainingModeSession } from "@/lib/training/types";
 import type { BlockRow, SetPrescription } from "@/lib/programs/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
@@ -23,12 +23,13 @@ import { RestScreen } from "@/components/training/rest-screen";
 import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-screen";
 import { RirCheckScreen } from "@/components/training/rir-check-screen";
 import { ReadinessCheckScreen } from "@/components/training/readiness-check-screen";
+import { JointCheckScreen } from "@/components/training/joint-check-screen";
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
 import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
 import { EndWorkoutDialog } from "@/components/training/end-workout-dialog";
 import { SkipExerciseDialog } from "@/components/training/skip-exercise-dialog";
 
-type Phase = "overview" | "readiness-check" | "exercises" | "exercise" | "rest" | "exercise-complete" | "rir-check" | "summary" | "program-complete";
+type Phase = "overview" | "readiness-check" | "joint-check" | "exercises" | "exercise" | "rest" | "exercise-complete" | "rir-check" | "summary" | "program-complete";
 
 interface TrainingSessionProps {
   trainingDayId: string;
@@ -44,6 +45,11 @@ interface TrainingSessionProps {
   personalRecords: PersonalRecord[];
   previousPerformance: Record<string, PreviousPerformance>;
   initialDraft: TrainingModeSession | null;
+  /** Rule 4 (coach-answers §10 step 2) — which of the athlete's joints are
+   * currently flagged (athlete_injury_profiles, migration 0047). Fetched
+   * once server-side, same as personalRecords/previousPerformance; empty
+   * means the joint-check screen is skipped entirely. */
+  flaggedJoints: JointKey[];
 }
 
 function draftSetCounts(sets: DraftSet[]): Map<string, number> {
@@ -99,6 +105,7 @@ export function TrainingSession({
   personalRecords,
   previousPerformance,
   initialDraft,
+  flaggedJoints,
 }: TrainingSessionProps) {
   const router = useRouter();
   const exerciseList = useMemo(() => buildExerciseList(blocks), [blocks]);
@@ -242,7 +249,43 @@ export function TrainingSession({
     await persist({ readiness: next });
     setSaving(false);
     // Only ever reached when exerciseList.length > 0 (see handleBegin) —
-    // there's always a real exercise list waiting on the other side.
+    // there's always a real exercise list waiting on the other side. Rule
+    // 4's own question (coach-answers §10 step 2) comes right after Rule
+    // 3's, but only for athletes with at least one joint currently flagged.
+    setPhase(flaggedJoints.length > 0 ? "joint-check" : "exercises");
+  }
+
+  /**
+   * Handles Rule 4's per-joint better/same/worse answers, all collected at
+   * once by JointCheckScreen. For each flagged joint: read what was
+   * answered last time (joint_check_answers, migration 0047 — durable,
+   * unlike training_mode_sessions.joint_check, which is deleted at Finish
+   * Workout), decide via decideJointCheck (autoregulation.ts), always
+   * record today's raw answer (unlike Rule 1, every answer here matters as
+   * tomorrow's "previous" — see createJointCheckAnswer's own doc comment),
+   * and only when two-in-a-row actually fired, walk that joint's
+   * substitution ladder one step from this week onward
+   * (applyJointLadderStep).
+   *
+   * Sequential rather than Promise.all across joints — there are at most a
+   * handful (recommendConsultationReason already steers three-or-more-
+   * flagged athletes toward a human consultation instead), and sequential
+   * keeps this simple to reason about rather than meaningfully faster.
+   */
+  async function handleJointCheckAnswer(answers: Record<JointKey, JointCheckAnswer>) {
+    setSaving(true);
+    const supabase = createClient();
+    for (const joint of flaggedJoints) {
+      const answer = answers[joint];
+      if (!answer) continue;
+      const previous = await getPreviousJointCheckAnswer(supabase, { athleteId, joint });
+      const outcome = decideJointCheck(answer, previous);
+      await createJointCheckAnswer(supabase, { athleteId, joint, answer });
+      if (outcome !== "no_change") {
+        await applyJointLadderStep(supabase, { athleteId, programId, fromWeekPosition: weekPosition, joint, direction: outcome });
+      }
+    }
+    setSaving(false);
     setPhase("exercises");
   }
 
@@ -647,6 +690,8 @@ export function TrainingSession({
       )}
 
       {phase === "readiness-check" && <ReadinessCheckScreen onAnswer={handleReadinessAnswer} busy={saving} />}
+
+      {phase === "joint-check" && <JointCheckScreen joints={flaggedJoints} onAnswer={handleJointCheckAnswer} busy={saving} />}
 
       {phase === "exercises" && (
         <ExerciseListScreen

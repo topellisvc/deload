@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BlockExercise, ExerciseBlock, LoggedSet, Program, SetPrescription, TrainingDay } from "@/lib/supabase/types";
 import type { BlockExerciseRow, BlockRow } from "@/lib/programs/types";
-import type { AutoregulationEventKind } from "@/lib/training/autoregulation";
+import type { AutoregulationEventKind, JointCheckAnswer, JointKey } from "@/lib/training/autoregulation";
 import type { PreviousPerformance, TrainingDayDetail, TrainingModeSession, TrainingModeSessionRow } from "@/lib/training/types";
 import { mapTrainingModeSessionRow } from "@/lib/training/types";
 import { getExerciseNamesByIds } from "@/lib/exercises/queries";
@@ -153,6 +153,30 @@ export async function getRecentAutoregulationEvents(
     .order("created_at", { ascending: false })
     .limit(params.limit ?? 5);
   return (data ?? []) as { kind: AutoregulationEventKind }[];
+}
+
+/**
+ * The single most recent answer this athlete gave for this exact joint —
+ * exactly what decideJointCheck (autoregulation.ts) needs as its `previous`
+ * argument. Reads joint_check_answers (migration 0047), the durable log
+ * that exists specifically because training_mode_sessions.joint_check is
+ * deleted at Finish Workout and can't serve as history — see that
+ * migration's own header comment.
+ */
+export async function getPreviousJointCheckAnswer(
+  supabase: SupabaseClient,
+  params: { athleteId: string; joint: JointKey }
+): Promise<JointCheckAnswer | null> {
+  const { data } = await supabase
+    .from("joint_check_answers")
+    .select("answer")
+    .eq("athlete_id", params.athleteId)
+    .eq("joint", params.joint)
+    .order("occurred_on", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ answer: JointCheckAnswer }>();
+  return data?.answer ?? null;
 }
 
 /**

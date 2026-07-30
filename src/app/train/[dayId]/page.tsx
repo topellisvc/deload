@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCoachEmail } from "@/lib/coaching/queries";
-import { getPersonalRecords } from "@/lib/profile/queries";
+import { getPersonalRecords, getAthleteInjuryProfile } from "@/lib/profile/queries";
 import { getTrainingDayForTraining, getDraftSession, getPreviousPerformanceForExercises } from "@/lib/training/queries";
 import { buildExerciseList } from "@/lib/training/sequence";
+import { flaggedJoints } from "@/lib/training/autoregulation";
 import { TrainingSession } from "@/components/training/training-session";
 
 export const metadata: Metadata = {
@@ -46,7 +47,7 @@ export default async function TrainPage({ params }: TrainPageProps) {
 
   const exerciseList = buildExerciseList(detail.day.blocks);
 
-  const [draft, personalRecords, coachEmail, previousPerformance] = await Promise.all([
+  const [draft, personalRecords, coachEmail, previousPerformance, injuries] = await Promise.all([
     getDraftSession(supabase, dayId, user.id),
     getPersonalRecords(supabase, user.id),
     detail.program.ownerId !== user.id ? getCoachEmail(supabase, { coachId: detail.program.ownerId, clientId: user.id }) : Promise.resolve(null),
@@ -59,6 +60,7 @@ export default async function TrainPage({ params }: TrainPageProps) {
         customName: exercise.custom_name,
       }))
     ),
+    getAthleteInjuryProfile(supabase, user.id),
   ]);
 
   return (
@@ -76,6 +78,7 @@ export default async function TrainPage({ params }: TrainPageProps) {
       personalRecords={personalRecords}
       previousPerformance={previousPerformance}
       initialDraft={draft}
+      flaggedJoints={flaggedJoints(injuries)}
     />
   );
 }

@@ -6,6 +6,27 @@ import type {
   ProfileMassUnit,
   ProfileSex,
 } from "@/lib/supabase/types";
+import type { InjuryProfile } from "@/lib/programs/generate/types";
+
+/**
+ * Saves the athlete's standing injury profile (migration 0047) — called at
+ * the end of program generation with whatever InjuryProfile the
+ * questionnaire just collected, so Training Mode's Rule 4 has something
+ * durable to read later instead of that answer evaporating with the
+ * generate-program form's local state. A plain upsert, same as
+ * upsertPersonalRecord below: this describes the athlete's *current*
+ * standing flags, not a history of past ones, so the latest submission
+ * simply overwrites whatever was there before.
+ */
+export async function upsertAthleteInjuryProfile(
+  supabase: SupabaseClient,
+  params: { athleteId: string; injuries: InjuryProfile }
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("athlete_injury_profiles")
+    .upsert({ athlete_id: params.athleteId, injuries: params.injuries, updated_at: new Date().toISOString() }, { onConflict: "athlete_id" });
+  return { error: error ? "Couldn't save your injury profile. Try again." : null };
+}
 
 export interface ProfileUpdate {
   display_name: string | null;

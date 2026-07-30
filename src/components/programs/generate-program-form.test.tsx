@@ -8,8 +8,10 @@ const { routerMock } = vi.hoisted(() => ({ routerMock: { push: vi.fn() } }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({}) }));
 vi.mock("@/lib/programs/mutations", () => ({ createProgramFromParsedProgram: vi.fn() }));
+vi.mock("@/lib/profile/mutations", () => ({ upsertAthleteInjuryProfile: vi.fn() }));
 
 import { createProgramFromParsedProgram } from "@/lib/programs/mutations";
+import { upsertAthleteInjuryProfile } from "@/lib/profile/mutations";
 
 function mockFetchOnce(response: unknown) {
   vi.stubGlobal(
@@ -24,6 +26,7 @@ describe("GenerateProgramForm", () => {
   beforeEach(() => {
     routerMock.push.mockClear();
     vi.mocked(createProgramFromParsedProgram).mockReset();
+    vi.mocked(upsertAthleteInjuryProfile).mockReset().mockResolvedValue({ error: null });
     vi.unstubAllGlobals();
   });
 
@@ -99,6 +102,13 @@ describe("GenerateProgramForm", () => {
     expect(createProgramFromParsedProgram).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ name: "Get Stronger — Beginner", discipline: "resistance", weeks, userId: "user-1" })
+    );
+    // Best-effort persistence of the questionnaire's InjuryProfile (migration
+    // 0047) — this form only ever self-programs, so the athlete is the
+    // acting user.
+    expect(upsertAthleteInjuryProfile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ athleteId: "user-1", injuries: expect.objectContaining({ shoulder: false }) })
     );
   });
 

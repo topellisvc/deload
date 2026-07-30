@@ -1,3 +1,8 @@
+import type { Exercise } from "@/lib/exercises/types";
+import { ladderFor, SHOULDER_SUBSTITUTABLE_PATTERNS } from "@/lib/programs/generate/patterns";
+import type { SlotPattern } from "@/lib/programs/generate/patterns";
+import type { InjuryProfile } from "@/lib/programs/generate/types";
+
 /**
  * Rule 1 of the runtime autoregulation layer (coach-answers §2 Rule 1,
  * deload-autoregulation-design.md) — the RIR gate. Asked once per
@@ -155,20 +160,17 @@ export function decideReadinessDownregulation(readiness: ReadinessCheck): boolea
  * same "don't overreact to one data point" principle Rule 1's RIR gate
  * already uses for a single miss.
  *
- * This function only decides the *step direction* — walking that step
- * against a specific joint's exercise ladder (finding the athlete's current
- * exercise for that pattern, then substituting the next-lighter or
- * next-heavier candidate from ladderFor's output against the live equipment/
- * injury-filtered pool) is deliberately not implemented here. That's a real,
- * separate piece of work: it needs a live exercise-substitution mutation
- * against an already-persisted program's block_exercises rows (nothing
- * else in this app rewrites a generated program's actual exercise choice
- * after the fact), and it needs to know which joint an athlete has flagged
- * in the first place — which isn't stored anywhere queryable at Training
- * Mode runtime today. The questionnaire's InjuryProfile only ever lived in
- * the generate-program form's local state; nothing persists it as a
- * standing athlete profile. Both are genuine architecture decisions, not
- * "wire the existing pieces together" the way Rules 1-3 all were.
+ * This function only decides the *step direction*. Walking that step
+ * against a specific joint's exercise ladder — finding the athlete's
+ * current exercise for a pattern, then substituting the next-lighter or
+ * next-heavier candidate from ladderFor's output — is nextRungExerciseId,
+ * below. Two pieces of durable state that decision needs (which joints an
+ * athlete has flagged at all, and what they answered last time for this
+ * joint) now live in athlete_injury_profiles and joint_check_answers
+ * (migration 0047) — see flaggedJoints below and lib/training/queries.ts's
+ * getPreviousJointCheckAnswer. The actual database write that moves a
+ * block_exercise's exercise_id to the next rung is
+ * lib/training/mutations.ts's applyJointLadderStep.
  */
 export type JointCheckAnswer = "better" | "same" | "worse";
 export type JointCheckOutcome = "regress" | "progress" | "no_change";
@@ -180,14 +182,98 @@ export type JointCheckOutcome = "regress" | "progress" | "no_change";
  * the very first occurrence (so a second miss can look back and find it),
  * a single "worse" here does nothing and so has no natural event to record
  * — there would be nothing in an event history for a second "worse" to
- * compare against. Whatever eventually calls this needs to have the prior
- * answer on hand some other way (most likely a durable per-athlete,
- * per-joint answer log, which — like the "which joints does this athlete
- * have flagged at all" question — doesn't exist in this schema yet; see
- * this file's header comment above this function's sibling exports).
+ * compare against. The caller (training-session.tsx) instead reads the
+ * prior answer from joint_check_answers, the durable per-athlete,
+ * per-joint answer log migration 0047 added specifically for this.
  */
 export function decideJointCheck(current: JointCheckAnswer, previous: JointCheckAnswer | null): JointCheckOutcome {
   if (current === "worse" && previous === "worse") return "regress";
   if (current === "better" && previous === "better") return "progress";
   return "no_change";
+}
+
+/**
+ * The six joints §10's decision trees cover, using the same field names
+ * InjuryProfile itself uses except lowerBack -> lower_back (matching the DB
+ * identifier in athlete_injury_profiles/joint_check_answers, migration
+ * 0047 — table/column identifiers are snake_case by convention everywhere
+ * else in this schema).
+ */
+export type JointKey = "shoulder" | "wrist" | "elbow" | "lower_back" | "knee" | "hip";
+
+export const ALL_JOINT_KEYS: readonly JointKey[] = ["shoulder", "wrist", "elbow", "lower_back", "knee", "hip"] as const;
+
+/**
+ * Which of the six joints a standing InjuryProfile currently has flagged —
+ * the runtime version of the same "is this joint hot" question activeTags
+ * (generate/injuries.ts) answers at generation time. This is what decides
+ * which joints Training Mode even asks the better/same/worse question
+ * about; it reads athlete_injury_profiles (migration 0047), the standing
+ * store that now persists what InjuryProfile used to only hold as one-off
+ * local state inside the generate-program form.
+ */
+export function flaggedJoints(injuries: InjuryProfile): JointKey[] {
+  const joints: JointKey[] = [];
+  if (injuries.shoulder) joints.push("shoulder");
+  if (injuries.wrist) joints.push("wrist");
+  if (injuries.elbow) joints.push("elbow");
+  if (injuries.lowerBack) joints.push("lower_back");
+  if (injuries.knee) joints.push("knee");
+  if (injuries.hip) joints.push("hip");
+  return joints;
+}
+
+/**
+ * Which SlotPatterns (generate/patterns.ts) each joint's ladder walk
+ * applies to — i.e., which of an athlete's currently-assigned exercises
+ * count as "for this joint" when a regress/progress fires.
+ *
+ * shoulder reuses patterns.ts's own SHOULDER_SUBSTITUTABLE_PATTERNS
+ * verbatim, since that's already the coach-specified set for "the two
+ * patterns the shoulder branch is allowed to substitute away from." The
+ * other five joints aren't defined anywhere else in this codebase, so
+ * these are a reasonable first pass grounded in which patterns load each
+ * joint under axial/lever demand — not a clinically reviewed list. Same
+ * "flagged for a physiotherapist review before shipping" caveat
+ * generate/injuries.ts's header comment already carries for this entire
+ * area; nothing here should be read as clinical sign-off.
+ */
+export const JOINT_PATTERNS: Record<JointKey, readonly SlotPattern[]> = {
+  shoulder: SHOULDER_SUBSTITUTABLE_PATTERNS,
+  elbow: ["horizontal_push", "vertical_push"],
+  wrist: ["horizontal_push", "vertical_push"],
+  lower_back: ["hinge_bilateral", "hinge_unilateral", "anti_extension", "anti_rotation"],
+  knee: ["squat_bilateral", "squat_unilateral", "knee_flexion"],
+  hip: ["hinge_bilateral", "hinge_unilateral", "hip_abduction", "hip_adduction"],
+};
+
+/**
+ * One ladder step for a single already-identified exercise, in the given
+ * direction — the piece this file's decideJointCheck doc comment (above)
+ * flagged as not implemented. This only decides *which exercise id* is
+ * next; it doesn't touch the database (see lib/training/mutations.ts's
+ * applyJointLadderStep for the write side) and it doesn't decide *which*
+ * of an athlete's exercises this applies to — the caller resolves that by
+ * pattern, using JOINT_PATTERNS above.
+ *
+ * `pool` should already be filtered to what's actually usable for this
+ * athlete (equipment access, injury tags for every *other* active joint) —
+ * this function only walks the ladder within whatever pool it's given.
+ * Returns null when the current exercise isn't found on this pattern's
+ * ladder at all (e.g. a custom/untagged exercise), or when it's already at
+ * the ladder's most/least demanding end and there's nowhere further to
+ * step — both cases mean "leave this exercise alone."
+ */
+export function nextRungExerciseId<T extends Pick<Exercise, "id" | "movement_pattern" | "primary_muscle_group" | "metadata">>(
+  pool: readonly T[],
+  pattern: SlotPattern,
+  currentExerciseId: string,
+  direction: "regress" | "progress"
+): string | null {
+  const ladder = ladderFor(pool, pattern);
+  const index = ladder.findIndex((exercise) => exercise.id === currentExerciseId);
+  if (index === -1) return null;
+  const nextIndex = direction === "regress" ? index + 1 : index - 1;
+  if (nextIndex < 0 || nextIndex >= ladder.length) return null;
+  return ladder[nextIndex]!.id;
 }

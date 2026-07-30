@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { finishWorkout } from "./mutations";
+import { applyJointLadderStep, createJointCheckAnswer, finishWorkout } from "./mutations";
 import { createSessionLog, createLoggedSet, completeSessionLog } from "@/lib/logging/mutations";
+import { listExercises } from "@/lib/exercises/queries";
+import { getAthleteInjuryProfile } from "@/lib/profile/queries";
 import type { DraftSet } from "./types";
 
 vi.mock("@/lib/logging/mutations", () => ({
@@ -10,6 +12,9 @@ vi.mock("@/lib/logging/mutations", () => ({
 }));
 
 vi.mock("@/lib/dates", () => ({ todayDateString: () => "2026-07-27" }));
+
+vi.mock("@/lib/exercises/queries", () => ({ listExercises: vi.fn() }));
+vi.mock("@/lib/profile/queries", () => ({ getAthleteInjuryProfile: vi.fn() }));
 
 // Enough of the Supabase client's fluent query builder to satisfy
 // finishWorkout's "does a session_logs row already exist for today"
@@ -198,5 +203,207 @@ describe("finishWorkout — Rule 3's readiness note", () => {
     });
 
     expect(createSessionLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ note: null }));
+  });
+});
+
+describe("createJointCheckAnswer", () => {
+  it("inserts one row onto joint_check_answers", async () => {
+    const insert = vi.fn(async () => ({ error: null }));
+    const supabase = { from: vi.fn(() => ({ insert })) } as never;
+
+    const result = await createJointCheckAnswer(supabase, { athleteId: "athlete-1", joint: "shoulder", answer: "worse" });
+
+    expect(result.error).toBeNull();
+    expect(insert).toHaveBeenCalledWith({ athlete_id: "athlete-1", joint: "shoulder", answer: "worse" });
+  });
+
+  it("surfaces a friendly error rather than the raw Postgres message", async () => {
+    const insert = vi.fn(async () => ({ error: { message: "boom" } }));
+    const supabase = { from: vi.fn(() => ({ insert })) } as never;
+
+    const result = await createJointCheckAnswer(supabase, { athleteId: "athlete-1", joint: "knee", answer: "better" });
+
+    expect(result.error).toBe("Couldn't record that answer. Try again.");
+  });
+});
+
+describe("applyJointLadderStep", () => {
+  function ex(id: string, slotPatterns: string[], demandRank: number, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      is_archived: false,
+      review_status: "approved",
+      movement_pattern: null,
+      primary_muscle_group: "full_body",
+      metadata: { slot_patterns: slotPatterns, demand_rank: Object.fromEntries(slotPatterns.map((p) => [p, demandRank])) },
+      ...overrides,
+    };
+  }
+
+  /** Builds a fake Supabase client wired for applyJointLadderStep's exact
+   * read chain (program_weeks -> training_days -> exercise_blocks ->
+   * block_exercises), plus an update().eq().select() chain for
+   * block_exercises whose result is controlled by `updateResult`, and a
+   * no-op autoregulation_events insert (applyJointLadderStep fires one of
+   * these, best-effort, per successful substitution). */
+  function makeSupabase(blockExercises: { id: string; exercise_id: string }[], updateResult: { data: unknown[] | null; error: unknown } = { data: [{ id: "x" }], error: null }) {
+    const updateCalls: { id: string; exercise_id: string }[] = [];
+    const insertedEvents: Record<string, unknown>[] = [];
+    return {
+      from: vi.fn((table: string) => {
+        if (table === "program_weeks") {
+          return { select: () => ({ eq: () => ({ gte: async () => ({ data: [{ id: "week-1" }] }) }) }) };
+        }
+        if (table === "training_days") {
+          return { select: () => ({ in: async () => ({ data: [{ id: "day-1" }] }) }) };
+        }
+        if (table === "exercise_blocks") {
+          return { select: () => ({ in: async () => ({ data: [{ id: "block-1" }] }) }) };
+        }
+        if (table === "autoregulation_events") {
+          return {
+            insert: async (row: Record<string, unknown>) => {
+              insertedEvents.push(row);
+              return { error: null };
+            },
+          };
+        }
+        if (table === "block_exercises") {
+          return {
+            select: () => ({ in: () => ({ not: async () => ({ data: blockExercises }) }) }),
+            update: (patch: { exercise_id: string }) => ({
+              eq: (_col: string, id: string) => {
+                updateCalls.push({ id, exercise_id: patch.exercise_id });
+                return { select: async () => updateResult };
+              },
+            }),
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      updateCalls,
+      insertedEvents,
+    };
+  }
+
+  const pullLibrary = [
+    ex("lat-pulldown", ["vertical_pull"], 50),
+    ex("pull-up", ["vertical_pull"], 20),
+    ex("assisted-pull-up", ["vertical_pull"], 40),
+  ];
+
+  beforeEach(() => {
+    vi.mocked(getAthleteInjuryProfile).mockReset().mockResolvedValue({
+      shoulder: false,
+      wrist: false,
+      elbow: false,
+      lowerBack: null,
+      knee: null,
+      hip: null,
+    });
+  });
+
+  it("regresses a matching block_exercise one rung down its pattern's ladder", async () => {
+    vi.mocked(listExercises).mockResolvedValue(pullLibrary as never);
+    const { updateCalls, insertedEvents, ...supabase } = makeSupabase([{ id: "be-1", exercise_id: "pull-up" }]);
+
+    const result = await applyJointLadderStep(supabase as never, {
+      athleteId: "athlete-1",
+      programId: "program-1",
+      fromWeekPosition: 1,
+      joint: "shoulder",
+      direction: "regress",
+    });
+
+    expect(result).toEqual({ updatedCount: 1, skippedCount: 0, error: null });
+    expect(updateCalls).toEqual([{ id: "be-1", exercise_id: "assisted-pull-up" }]);
+    // One autoregulation_events row per substitution, so a coach can see why
+    // the exercise itself changed — same rationale as Rule 1's events.
+    expect(insertedEvents).toEqual([
+      {
+        athlete_id: "athlete-1",
+        block_exercise_id: "be-1",
+        kind: "joint_regress",
+        detail: { joint: "shoulder", fromExerciseId: "pull-up", toExerciseId: "assisted-pull-up" },
+      },
+    ]);
+  });
+
+  it("leaves an exercise alone when it isn't tagged for the flagged joint's patterns", async () => {
+    vi.mocked(listExercises).mockResolvedValue([ex("bench-press", ["horizontal_push"], 10)] as never);
+    const { updateCalls, ...supabase } = makeSupabase([{ id: "be-1", exercise_id: "bench-press" }]);
+
+    const result = await applyJointLadderStep(supabase as never, {
+      athleteId: "athlete-1",
+      programId: "program-1",
+      fromWeekPosition: 1,
+      joint: "knee",
+      direction: "regress",
+    });
+
+    expect(result).toEqual({ updatedCount: 0, skippedCount: 0, error: null });
+    expect(updateCalls).toEqual([]);
+  });
+
+  it("leaves an exercise alone when it's already at the bottom of its ladder", async () => {
+    vi.mocked(listExercises).mockResolvedValue(pullLibrary as never);
+    const { updateCalls, ...supabase } = makeSupabase([{ id: "be-1", exercise_id: "lat-pulldown" }]);
+
+    const result = await applyJointLadderStep(supabase as never, {
+      athleteId: "athlete-1",
+      programId: "program-1",
+      fromWeekPosition: 1,
+      joint: "shoulder",
+      direction: "regress",
+    });
+
+    expect(result).toEqual({ updatedCount: 0, skippedCount: 0, error: null });
+    expect(updateCalls).toEqual([]);
+  });
+
+  it("reports a skip rather than a false success when RLS blocks the write (owner-only, coach-assigned program)", async () => {
+    vi.mocked(listExercises).mockResolvedValue(pullLibrary as never);
+    const { updateCalls, ...supabase } = makeSupabase([{ id: "be-1", exercise_id: "pull-up" }], { data: [], error: null });
+
+    const result = await applyJointLadderStep(supabase as never, {
+      athleteId: "athlete-1",
+      programId: "program-1",
+      fromWeekPosition: 1,
+      joint: "shoulder",
+      direction: "regress",
+    });
+
+    expect(result).toEqual({ updatedCount: 0, skippedCount: 1, error: null });
+    expect(updateCalls).toHaveLength(1);
+  });
+
+  it("excludes exercises the athlete's other flagged injuries rule out from the candidate pool", async () => {
+    vi.mocked(listExercises).mockResolvedValue([
+      ex("pull-up", ["vertical_pull"], 20),
+      ex("assisted-pull-up", ["vertical_pull"], 40, { metadata: { slot_patterns: ["vertical_pull"], demand_rank: { vertical_pull: 40 }, injury_contraindications: ["wrist"] } }),
+      ex("lat-pulldown", ["vertical_pull"], 50),
+    ] as never);
+    vi.mocked(getAthleteInjuryProfile).mockResolvedValue({
+      shoulder: false,
+      wrist: true,
+      elbow: false,
+      lowerBack: null,
+      knee: null,
+      hip: null,
+    });
+    const { updateCalls, ...supabase } = makeSupabase([{ id: "be-1", exercise_id: "pull-up" }]);
+
+    const result = await applyJointLadderStep(supabase as never, {
+      athleteId: "athlete-1",
+      programId: "program-1",
+      fromWeekPosition: 1,
+      joint: "shoulder",
+      direction: "regress",
+    });
+
+    // assisted-pull-up is excluded from the pool (wrist-contraindicated), so
+    // the next rung down from pull-up is lat-pulldown, not assisted-pull-up.
+    expect(result.updatedCount).toBe(1);
+    expect(updateCalls).toEqual([{ id: "be-1", exercise_id: "lat-pulldown" }]);
   });
 });

@@ -94,6 +94,26 @@ vi.mock("@/components/training/readiness-check-screen", () => ({
     </div>
   ),
 }));
+vi.mock("@/components/training/joint-check-screen", () => ({
+  JointCheckScreen: ({
+    joints,
+    onAnswer,
+    busy,
+  }: {
+    joints: string[];
+    onAnswer: (answers: Record<string, string>) => void;
+    busy: boolean;
+  }) => (
+    <div>
+      <button type="button" onClick={() => onAnswer(Object.fromEntries(joints.map((j) => [j, "worse"])))} disabled={busy}>
+        Joint check: all worse
+      </button>
+      <button type="button" onClick={() => onAnswer(Object.fromEntries(joints.map((j) => [j, "better"])))} disabled={busy}>
+        Joint check: all better
+      </button>
+    </div>
+  ),
+}));
 vi.mock("@/components/training/workout-summary-screen", () => ({ WorkoutSummaryScreen: () => null }));
 vi.mock("@/components/training/program-complete-screen", () => ({ ProgramCompleteScreen: () => null }));
 
@@ -149,17 +169,20 @@ vi.mock("@/lib/training/totals", () => ({ computeWorkoutTotals: () => ({}) }));
 vi.mock("@/lib/training/queries", () => ({
   isProgramComplete: vi.fn().mockResolvedValue(false),
   getRecentAutoregulationEvents: vi.fn().mockResolvedValue([]),
+  getPreviousJointCheckAnswer: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/lib/training/mutations", () => ({
   saveDraftSession: vi.fn(),
   deleteDraftSession: vi.fn(),
   finishWorkout: vi.fn(),
   createAutoregulationEvent: vi.fn(),
+  createJointCheckAnswer: vi.fn(),
+  applyJointLadderStep: vi.fn(),
 }));
 vi.mock("@/lib/logging/mutations", () => ({ createSessionLog: vi.fn() }));
 
-import { saveDraftSession, deleteDraftSession, createAutoregulationEvent } from "@/lib/training/mutations";
-import { getRecentAutoregulationEvents } from "@/lib/training/queries";
+import { saveDraftSession, deleteDraftSession, createAutoregulationEvent, createJointCheckAnswer, applyJointLadderStep } from "@/lib/training/mutations";
+import { getRecentAutoregulationEvents, getPreviousJointCheckAnswer } from "@/lib/training/queries";
 import { buildExerciseList } from "@/lib/training/sequence";
 import { createSessionLog } from "@/lib/logging/mutations";
 
@@ -176,6 +199,7 @@ const BASE_PROPS = {
   blocks: [],
   personalRecords: [],
   previousPerformance: {},
+  flaggedJoints: [],
 };
 
 function makeDraftSet(overrides: Partial<DraftSet> = {}): DraftSet {
@@ -569,5 +593,94 @@ describe("TrainingSession readiness downregulation suppresses the RIR check (Rul
     );
     expect(screen.queryByRole("button", { name: "RIR 3+" })).not.toBeInTheDocument();
     expect(getRecentAutoregulationEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("TrainingSession joint check (Rule 4)", () => {
+  beforeEach(() => {
+    vi.mocked(saveDraftSession).mockReset().mockResolvedValue({
+      session: {
+        id: "session-1",
+        trainingDayId: "day-1",
+        athleteId: "athlete-1",
+        startedAt: "2026-07-25T09:00:00.000Z",
+        updatedAt: "2026-07-25T09:00:00.000Z",
+        draftSets: [],
+        exerciseNotes: {},
+        skippedExercises: {},
+        workoutNote: null,
+        readiness: null,
+      },
+      error: null,
+    });
+    vi.mocked(buildExerciseList).mockReturnValue([FAKE_EXERCISE]);
+    vi.mocked(getPreviousJointCheckAnswer).mockReset().mockResolvedValue(null);
+    vi.mocked(createJointCheckAnswer).mockReset().mockResolvedValue({ error: null });
+    vi.mocked(applyJointLadderStep).mockReset().mockResolvedValue({ updatedCount: 0, skippedCount: 0, error: null });
+  });
+
+  async function beginAndAnswerReadiness(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "Begin" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Readiness: all good" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Readiness: all good" }));
+  }
+
+  it("skips the joint-check screen entirely when nothing is flagged", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={null} flaggedJoints={[]} />);
+
+    await beginAndAnswerReadiness(user);
+
+    // Goes straight to the (real, unmocked) exercise list.
+    await waitFor(() => expect(screen.getByText("Bench Press")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Joint check: all worse" })).not.toBeInTheDocument();
+  });
+
+  it("asks the joint-check question after readiness when a joint is flagged, then proceeds to the exercise list", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={null} flaggedJoints={["shoulder"]} />);
+
+    await beginAndAnswerReadiness(user);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Joint check: all worse" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Joint check: all worse" }));
+
+    await waitFor(() => expect(screen.getByText("Bench Press")).toBeInTheDocument());
+  });
+
+  it("records a joint_check_answers row for every flagged joint, regardless of outcome", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={null} flaggedJoints={["shoulder", "knee"]} />);
+
+    await beginAndAnswerReadiness(user);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Joint check: all worse" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Joint check: all worse" }));
+
+    await waitFor(() => expect(createJointCheckAnswer).toHaveBeenCalledTimes(2));
+    expect(createJointCheckAnswer).toHaveBeenCalledWith(expect.anything(), { athleteId: "athlete-1", joint: "shoulder", answer: "worse" });
+    expect(createJointCheckAnswer).toHaveBeenCalledWith(expect.anything(), { athleteId: "athlete-1", joint: "knee", answer: "worse" });
+    // A single "worse" with no prior history is no_change (see
+    // decideJointCheck) — nothing to walk yet.
+    expect(applyJointLadderStep).not.toHaveBeenCalled();
+  });
+
+  it("walks the joint's ladder only once two-in-a-row actually fires", async () => {
+    vi.mocked(getPreviousJointCheckAnswer).mockResolvedValue("worse");
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={null} flaggedJoints={["shoulder"]} />);
+
+    await beginAndAnswerReadiness(user);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Joint check: all worse" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Joint check: all worse" }));
+
+    await waitFor(() =>
+      expect(applyJointLadderStep).toHaveBeenCalledWith(expect.anything(), {
+        athleteId: "athlete-1",
+        programId: "prog-1",
+        fromWeekPosition: 1,
+        joint: "shoulder",
+        direction: "regress",
+      })
+    );
   });
 });

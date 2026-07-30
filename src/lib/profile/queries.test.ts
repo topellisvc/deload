@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getAthleteSummary } from "./queries";
+import { getAthleteInjuryProfile, getAthleteSummary } from "./queries";
 import { getMyCoaches, getLinkedProfile } from "@/lib/coaching/queries";
 import type { CoachClient } from "@/lib/supabase/types";
 
@@ -90,5 +90,23 @@ describe("getAthleteSummary", () => {
 
     expect(summary?.currentProgram).toBeNull();
     expect(summary?.completionPercent).toBeNull();
+  });
+});
+
+describe("getAthleteInjuryProfile", () => {
+  it("returns the stored profile, defaulting any missing fields", async () => {
+    const supabase = { from: vi.fn(() => makeBuilder({ data: { injuries: { shoulder: true, knee: { presentation: "unsure" } } } })) };
+
+    const injuries = await getAthleteInjuryProfile(supabase as never, "athlete-1");
+
+    expect(injuries).toEqual({ shoulder: true, wrist: false, elbow: false, lowerBack: null, knee: { presentation: "unsure" }, hip: null });
+  });
+
+  it("defaults to nothing flagged when no row exists yet", async () => {
+    const supabase = { from: vi.fn(() => makeBuilder({ data: null })) };
+
+    const injuries = await getAthleteInjuryProfile(supabase as never, "athlete-1");
+
+    expect(injuries).toEqual({ shoulder: false, wrist: false, elbow: false, lowerBack: null, knee: null, hip: null });
   });
 });

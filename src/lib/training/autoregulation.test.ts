@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { decideJointCheck, decideReadinessDownregulation, decideRirGate } from "@/lib/training/autoregulation";
+import { decideJointCheck, decideReadinessDownregulation, decideRirGate, flaggedJoints, nextRungExerciseId } from "@/lib/training/autoregulation";
 import type { AutoregulationEventKind, ReadinessCheck } from "@/lib/training/autoregulation";
+import type { InjuryProfile } from "@/lib/programs/generate/types";
+import type { Exercise } from "@/lib/exercises/types";
 
 function events(kinds: AutoregulationEventKind[]): { kind: AutoregulationEventKind }[] {
   return kinds.map((kind) => ({ kind }));
@@ -163,5 +165,77 @@ describe("decideJointCheck — Rule 4's per-joint better/same/worse check", () =
     expect(decideJointCheck("same", "better")).toBe("no_change");
     expect(decideJointCheck("same", "same")).toBe("no_change");
     expect(decideJointCheck("same", null)).toBe("no_change");
+  });
+});
+
+function injuries(overrides: Partial<InjuryProfile> = {}): InjuryProfile {
+  return { shoulder: false, wrist: false, elbow: false, lowerBack: null, knee: null, hip: null, ...overrides };
+}
+
+describe("flaggedJoints — which joints a standing InjuryProfile has active", () => {
+  it("returns nothing when no joint is flagged", () => {
+    expect(flaggedJoints(injuries())).toEqual([]);
+  });
+
+  it("includes boolean-flagged joints", () => {
+    expect(flaggedJoints(injuries({ shoulder: true, wrist: true, elbow: true }))).toEqual(["shoulder", "wrist", "elbow"]);
+  });
+
+  it("includes presentation-object joints, renamed to their snake_case DB identifier", () => {
+    expect(flaggedJoints(injuries({ lowerBack: { pattern: "unsure" } }))).toEqual(["lower_back"]);
+    expect(flaggedJoints(injuries({ knee: { presentation: "unsure" } }))).toEqual(["knee"]);
+    expect(flaggedJoints(injuries({ hip: { presentation: "unsure" } }))).toEqual(["hip"]);
+  });
+
+  it("combines every flagged joint at once, in a stable order", () => {
+    expect(flaggedJoints(injuries({ shoulder: true, knee: { presentation: "anterior_patellar" }, hip: { presentation: "lateral_glute" } }))).toEqual([
+      "shoulder",
+      "knee",
+      "hip",
+    ]);
+  });
+});
+
+/** Minimal Exercise-shaped fixture, same convention as patterns.test.ts's own `ex`. */
+function ex(id: string, slotPatterns: string[], demandRankByPattern: Record<string, number> = {}): Pick<
+  Exercise,
+  "id" | "movement_pattern" | "primary_muscle_group" | "metadata"
+> {
+  return {
+    id,
+    movement_pattern: null,
+    primary_muscle_group: "full_body",
+    metadata: { slot_patterns: slotPatterns, demand_rank: demandRankByPattern },
+  };
+}
+
+describe("nextRungExerciseId — walking one step of a pattern's ladder", () => {
+  const pool = [
+    ex("lat-pulldown", ["vertical_pull"], { vertical_pull: 50 }),
+    ex("pull-up", ["vertical_pull"], { vertical_pull: 20 }),
+    ex("assisted-pull-up", ["vertical_pull"], { vertical_pull: 40 }),
+  ];
+  // ladderFor orders this most -> least demanding: pull-up, assisted-pull-up, lat-pulldown.
+
+  it("regresses to the next-less-demanding rung", () => {
+    expect(nextRungExerciseId(pool, "vertical_pull", "pull-up", "regress")).toBe("assisted-pull-up");
+    expect(nextRungExerciseId(pool, "vertical_pull", "assisted-pull-up", "regress")).toBe("lat-pulldown");
+  });
+
+  it("progresses to the next-more-demanding rung", () => {
+    expect(nextRungExerciseId(pool, "vertical_pull", "lat-pulldown", "progress")).toBe("assisted-pull-up");
+    expect(nextRungExerciseId(pool, "vertical_pull", "assisted-pull-up", "progress")).toBe("pull-up");
+  });
+
+  it("returns null at the bottom of the ladder — nowhere further to regress", () => {
+    expect(nextRungExerciseId(pool, "vertical_pull", "lat-pulldown", "regress")).toBeNull();
+  });
+
+  it("returns null at the top of the ladder — nowhere further to progress", () => {
+    expect(nextRungExerciseId(pool, "vertical_pull", "pull-up", "progress")).toBeNull();
+  });
+
+  it("returns null when the current exercise isn't on this pattern's ladder at all", () => {
+    expect(nextRungExerciseId(pool, "vertical_pull", "some-untagged-exercise", "regress")).toBeNull();
   });
 });

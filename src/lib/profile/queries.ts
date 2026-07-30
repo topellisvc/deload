@@ -1,6 +1,41 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getMyClients, getMyCoaches, getLinkedProfile } from "@/lib/coaching/queries";
 import type { PersonalRecord, Profile } from "@/lib/supabase/types";
+import type { InjuryProfile } from "@/lib/programs/generate/types";
+
+const DEFAULT_INJURY_PROFILE: InjuryProfile = { shoulder: false, wrist: false, elbow: false, lowerBack: null, knee: null, hip: null };
+
+/**
+ * The athlete's standing injury profile (migration 0047) — what Training
+ * Mode's Rule 4 per-joint check (lib/training/autoregulation.ts's
+ * flaggedJoints) reads to know which joints to even ask about. Before this
+ * table existed, InjuryProfile only ever lived as local state inside the
+ * generate-program form for the duration of one request.
+ *
+ * Defaults to "nothing flagged" rather than a null/missing case callers
+ * would have to special-case — an athlete who's never run the generator
+ * (or answered before this table existed) is exactly the same as one who
+ * ran it and flagged nothing, from Rule 4's point of view. Same
+ * fall-back-to-default convention as getMyProfileDetails above.
+ */
+export async function getAthleteInjuryProfile(supabase: SupabaseClient, athleteId: string): Promise<InjuryProfile> {
+  const { data } = await supabase
+    .from("athlete_injury_profiles")
+    .select("injuries")
+    .eq("athlete_id", athleteId)
+    .maybeSingle<{ injuries: Partial<InjuryProfile> | null }>();
+
+  const injuries = data?.injuries;
+  if (!injuries) return DEFAULT_INJURY_PROFILE;
+  return {
+    shoulder: injuries.shoulder ?? false,
+    wrist: injuries.wrist ?? false,
+    elbow: injuries.elbow ?? false,
+    lowerBack: injuries.lowerBack ?? null,
+    knee: injuries.knee ?? null,
+    hip: injuries.hip ?? null,
+  };
+}
 
 /** The signed-in user's full profile row, including the personal details
  * shown/edited on /profile. Falls back to a minimal default rather than
