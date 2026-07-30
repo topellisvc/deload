@@ -103,7 +103,7 @@ describe("buildPowerAthleticTemplate — the mandatory hamstring-prep sprint gat
     if (!("template" in result)) throw new Error("expected a template");
     const sprintSlot = result.template.weekStructure.days[0]!.slots[0]!;
     const week1 = sprintSlot.prescription.forWeek({ weekIndex: 1, totalWeeks: 10, phase: "standard", deload: null });
-    expect(week1.prescriptionType).toBe("coach_notes_only");
+    expect(week1.prescriptionType).toBe("coach_notes");
     expect(week1.notes).toContain("hamstring");
   });
 
@@ -115,10 +115,10 @@ describe("buildPowerAthleticTemplate — the mandatory hamstring-prep sprint gat
     const advancedSprint = advanced.template.weekStructure.days[0]!.slots[0]!;
     const beginnerSprint = beginner.template.weekStructure.days[0]!.slots[0]!;
 
-    expect(advancedSprint.prescription.forWeek({ weekIndex: 3, totalWeeks: 10, phase: "standard", deload: null }).prescriptionType).toBe("coach_notes_only");
+    expect(advancedSprint.prescription.forWeek({ weekIndex: 3, totalWeeks: 10, phase: "standard", deload: null }).prescriptionType).toBe("coach_notes");
     expect(advancedSprint.prescription.forWeek({ weekIndex: 4, totalWeeks: 10, phase: "standard", deload: null }).prescriptionType).toBe("distance");
 
-    expect(beginnerSprint.prescription.forWeek({ weekIndex: 4, totalWeeks: 10, phase: "standard", deload: null }).prescriptionType).toBe("coach_notes_only");
+    expect(beginnerSprint.prescription.forWeek({ weekIndex: 4, totalWeeks: 10, phase: "standard", deload: null }).prescriptionType).toBe("coach_notes");
     expect(beginnerSprint.prescription.forWeek({ weekIndex: 5, totalWeeks: 10, phase: "standard", deload: null }).prescriptionType).toBe("distance");
   });
 

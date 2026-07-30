@@ -167,7 +167,12 @@ function sprintPrescription(level: ExperienceLevel): { forWeek: (ctx: WeekContex
       const week = ctx.weekIndex;
       if (week <= prepWeeks) {
         return {
-          prescriptionType: "coach_notes_only",
+          // "coach_notes_only" is strength-only (prescription-types.ts) —
+          // this slot's category is "running" (sprintDaySlot below), whose
+          // notes-only equivalent is "coach_notes". Using the wrong one trips
+          // the set_prescriptions_valid_type DB trigger (migration 0012) and
+          // blocks program creation outright during the prep phase.
+          prescriptionType: "coach_notes",
           sets: 1,
           notes: `Hamstring-prep phase (week ${week} of ${prepWeeks}) — no sprinting yet. This is the mandatory prerequisite, not an optional accessory: it's what protects the hamstrings once sprinting starts. Use the hip-hinge and knee-flexion work below.`,
         };
