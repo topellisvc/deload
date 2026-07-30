@@ -132,6 +132,37 @@ describe("assembleWeeks — per-week prescription resolution", () => {
     // Never a hand-authored absolute load or a stored-PR percent lookup.
     expect(set.weight_value).toBeNull();
     expect(set.pr_record_type).toBeNull();
+    expect(set.is_max_test).toBe(false);
+  });
+
+  it("carries a percent_1rm plan's prRecordType/isMaxTest through onto pr_record_type/is_max_test", () => {
+    const day: DayPlan = {
+      label: "Day 1",
+      isRestDay: false,
+      intensity: "moderate",
+      loadsLowerBody: true,
+      slots: [
+        slot({
+          prescription: {
+            forWeek: (): WeekSetPlan => ({
+              prescriptionType: "rir",
+              sets: 1,
+              reps: "5",
+              rir: 1,
+              restSeconds: 180,
+              notes: "Testing week",
+              prRecordType: "squat",
+              isMaxTest: true,
+            }),
+          },
+        }),
+      ],
+    };
+    const pool = [ex({ id: "barbell-back-squat", metadata: { [METADATA_KEYS.slotPatterns]: ["squat_bilateral"] } })];
+    const result = assembleWeeks({ template: simpleTemplate([day]), totalWeeks: 1, exercises: pool, selection: baseSelection() });
+    const set = result.weeks[0]!.days[0]!.blocks[0]!.exercises[0]!.sets[0]!;
+    expect(set.pr_record_type).toBe("squat");
+    expect(set.is_max_test).toBe(true);
   });
 
   it("persists the slot's autoregulationEligible flag onto the block_exercise row rather than dropping it", () => {

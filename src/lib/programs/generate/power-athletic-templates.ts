@@ -103,8 +103,8 @@ import type { ExperienceLevel } from "@/lib/supabase/types";
  * slot (category "running") is structurally exempt — see that dispatcher's
  * category guard. Jump/throw/weightlifting-derivative slots stay
  * RIR-untouched by the two %1RM methods (their patterns aren't in
- * TRACKABLE_PATTERN_LIFT_LABEL — there's no personal-records type for a
- * jump), but coach_entered/athlete_choice still apply to them like any other
+ * TRACKABLE_PATTERN_LIFT — there's no personal-records type for a jump),
+ * but coach_entered/athlete_choice still apply to them like any other
  * strength-category slot.
  */
 

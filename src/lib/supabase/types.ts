@@ -287,6 +287,21 @@ export interface SetPrescription {
    * (e.g. 'bench_press') — free text, not a foreign key, since a PR for
    * that type may not exist yet when the prescription is written. */
   pr_record_type: string | null;
+  /** True for a testing-week single graded top set — see migration 0052.
+   * When a set with this flag is actually logged, the logging mutation
+   * (finishWorkout) computes an e1RM from the performed weight/reps/rir and
+   * writes it to personal_records[pr_record_type] automatically, no manual
+   * profile entry involved. False for every other row, including a later
+   * percent_1rm row that reads that same pr_record_type for display.
+   * Optional (not just nullable), same convention as BlockExercise.
+   * autoregulation_eligible (migration 0046): defaults to false at the
+   * database level regardless, so undefined and false mean exactly the same
+   * thing here and the many existing hand-built SetPrescription/SetRow
+   * object literals across this codebase (test fixtures, starter-
+   * templates.ts, text-parse.ts) don't all need updating for it. Only
+   * assemble.ts (the generator's own row-builder) needs to set it
+   * explicitly. */
+  is_max_test?: boolean;
   /** Strength 'rpe' type AND running/cardio 'rpe' type — same concept, one column. */
   rpe_value: number | null;
   /** Strength 'rir' type only. */

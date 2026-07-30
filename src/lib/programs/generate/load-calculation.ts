@@ -20,12 +20,15 @@ import type { ExerciseCategory } from "@/lib/programs/types";
  * these; every other slot (accessories, secondary compounds, or a main
  * lift on any other pattern) keeps its normal RIR-based prescription
  * regardless of the chosen method, since there's nothing to compute a
- * percentage of. */
-export const TRACKABLE_PATTERN_LIFT_LABEL: Partial<Record<SlotPattern, string>> = {
-  squat_bilateral: "Squat",
-  horizontal_push: "Bench Press",
-  hinge_bilateral: "Deadlift",
-  vertical_push: "Overhead Press",
+ * percentage of. `recordType` is the exact personal_records.record_type
+ * string (lib/profile/personal-records.ts's RECORD_TYPES) this pattern
+ * writes to and reads from — `label` is just the display name used in the
+ * testing week's own prescription notes. */
+export const TRACKABLE_PATTERN_LIFT: Partial<Record<SlotPattern, { label: string; recordType: string }>> = {
+  squat_bilateral: { label: "Squat", recordType: "squat" },
+  horizontal_push: { label: "Bench Press", recordType: "bench_press" },
+  hinge_bilateral: { label: "Deadlift", recordType: "deadlift" },
+  vertical_push: { label: "Overhead Press", recordType: "overhead_press" },
 };
 
 /** The single integer (reps, RIR) pair a WeekSetPlan actually targets, for
@@ -58,17 +61,24 @@ function repsLabel(plan: WeekSetPlan): string | null {
  * back to returning the plan unchanged (still RIR-based) when a target
  * can't be read from it or falls outside the table's range — fails open to
  * the always-safe default rather than emitting a percent_1rm row with
- * nothing to compute. */
-function toPercent1RMPlan(plan: WeekSetPlan): WeekSetPlan {
+ * nothing to compute.
+ *
+ * `recordType` is carried onto the output plan (prRecordType) purely for
+ * *display* resolution — assemble.ts writes it to pr_record_type so
+ * exercise-screen.tsx/exercise-performance-card.tsx can look up the
+ * athlete's current max for that lift and show a suggested kg figure. It's
+ * never itself written back to personal_records; only a max-test row
+ * (isMaxTest) triggers a write, at log time — see testingProtocolPlan. */
+function toPercent1RMPlan(plan: WeekSetPlan, recordType: string): WeekSetPlan {
   const target = targetRepsAndRir(plan);
   if (!target) return plan;
   const percent = percentOf1RM(target.reps, target.rir);
   if (percent == null) return plan;
-  return { ...plan, prescriptionType: "percent_1rm", percent1RM: percent, rir: undefined, rpe: undefined };
+  return { ...plan, prescriptionType: "percent_1rm", percent1RM: percent, prRecordType: recordType, rir: undefined, rpe: undefined };
 }
 
-function asPercent1RM(base: SlotPrescription): SlotPrescription {
-  return { forWeek: (ctx) => toPercent1RMPlan(base.forWeek(ctx)) };
+function asPercent1RM(base: SlotPrescription, recordType: string): SlotPrescription {
+  return { forWeek: (ctx) => toPercent1RMPlan(base.forWeek(ctx), recordType) };
 }
 
 /** The testing week's own prescription for whichever trackable main lift a
@@ -77,23 +87,32 @@ function asPercent1RM(base: SlotPrescription): SlotPrescription {
  * into the graded set are described in notes rather than modeled as
  * structured data). 5 reps at RIR 1 — not a true 1-3 rep max attempt — is
  * deliberate: further from a true failure event, and still squarely inside
- * e1rm.ts's reliable range. */
-function testingProtocolPlan(liftLabel: string): WeekSetPlan {
+ * e1rm.ts's reliable range.
+ *
+ * isMaxTest: true is what makes this row special versus an ordinary
+ * percent_1rm row that happens to share the same prRecordType — it's the
+ * flag finishWorkout (training/mutations.ts) checks to decide whether
+ * logging this particular set should compute an e1RM (via e1rm.ts's
+ * estimate1RM) and write it to personal_records automatically. No manual
+ * profile step: the athlete just logs the set like any other. */
+function testingProtocolPlan(liftLabel: string, recordType: string): WeekSetPlan {
   return {
     prescriptionType: "rir",
     sets: 1,
     reps: "5",
     rir: 1,
     restSeconds: 180,
-    notes: `Testing week — warm up gradually, then work up to one hard set of 5 reps on the ${liftLabel} with about 1 rep left in the tank. Log the weight and reps here, then save it as your ${liftLabel} max on your profile — that's what the rest of this program's weights are calculated from.`,
+    notes: `Testing week — warm up gradually, then work up to one hard set of 5 reps on the ${liftLabel} with about 1 rep left in the tank. Log the weight and reps here — this program's weights are calculated from it automatically.`,
+    prRecordType: recordType,
+    isMaxTest: true,
   };
 }
 
-function asTestThenPercent1RM(base: SlotPrescription, liftLabel: string): SlotPrescription {
+function asTestThenPercent1RM(base: SlotPrescription, liftLabel: string, recordType: string): SlotPrescription {
   return {
     forWeek(ctx: WeekContext): WeekSetPlan {
-      if (ctx.phase === "testing") return testingProtocolPlan(liftLabel);
-      return toPercent1RMPlan(base.forWeek(ctx));
+      if (ctx.phase === "testing") return testingProtocolPlan(liftLabel, recordType);
+      return toPercent1RMPlan(base.forWeek(ctx), recordType);
     },
   };
 }
@@ -136,7 +155,7 @@ function asAthleteChoice(base: SlotPrescription): SlotPrescription {
  * coach_entered/athlete_choice then apply to every remaining (strength)
  * slot in the day — there's no reason to restrict "let a human pick the
  * number" to just the trackable lifts. The two %1RM methods only ever apply
- * to a primary slot on a trackable pattern (see TRACKABLE_PATTERN_LIFT_LABEL);
+ * to a primary slot on a trackable pattern (see TRACKABLE_PATTERN_LIFT);
  * every other strength slot keeps its normal RIR-based prescription no
  * matter which method was chosen. */
 export function applyLoadCalculationMethod(
@@ -151,11 +170,11 @@ export function applyLoadCalculationMethod(
   if (method === "coach_entered") return asCoachEntered(base);
   if (method === "athlete_choice") return asAthleteChoice(base);
 
-  const liftLabel = isPrimary && pattern ? TRACKABLE_PATTERN_LIFT_LABEL[pattern] : undefined;
-  if (!liftLabel) return base;
+  const trackableLift = isPrimary && pattern ? TRACKABLE_PATTERN_LIFT[pattern] : undefined;
+  if (!trackableLift) return base;
 
-  if (method === "percent_1rm") return asPercent1RM(base);
-  if (method === "test_then_percent_1rm") return asTestThenPercent1RM(base, liftLabel);
+  if (method === "percent_1rm") return asPercent1RM(base, trackableLift.recordType);
+  if (method === "test_then_percent_1rm") return asTestThenPercent1RM(base, trackableLift.label, trackableLift.recordType);
   return base; // autoregulated_rir — unchanged
 }
 

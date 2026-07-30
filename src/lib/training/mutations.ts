@@ -7,8 +7,10 @@ import type { DraftSet, TrainingModeSession, TrainingModeSessionRow } from "@/li
 import { mapTrainingModeSessionRow } from "@/lib/training/types";
 import { listExercises } from "@/lib/exercises/queries";
 import { getAthleteInjuryProfile } from "@/lib/profile/queries";
+import { upsertPersonalRecord } from "@/lib/profile/mutations";
 import { activeTags, isSafeForInjuries } from "@/lib/programs/generate/injuries";
 import { resolveSlotPatterns } from "@/lib/programs/generate/patterns";
+import { estimate1RM } from "@/lib/programs/generate/e1rm";
 
 interface DraftSessionParams {
   trainingDayId: string;
@@ -210,6 +212,42 @@ export async function applyJointLadderStep(
 }
 
 /**
+ * The counterpart to load-calculation.ts's testingProtocolPlan — when the
+ * athlete actually logs a testing-week max-test set (set_prescriptions.
+ * is_max_test), this computes an e1RM from what they performed (e1rm.ts's
+ * estimate1RM) and writes it straight to personal_records. No "go to your
+ * profile and enter it yourself" step: the athlete just logs the set like
+ * any other, and the rest of the program's percent_1rm rows immediately
+ * have something real to resolve against.
+ *
+ * Best-effort and doesn't block or undo the workout log that already
+ * landed if it fails — same rationale applyJointLadderStep's substitution
+ * writes give for the same tradeoff. Skips (rather than guesses at) any
+ * set missing weight/reps/rir, the same fails-open convention
+ * toPercent1RMPlan already uses when it can't read a usable target from a
+ * plan.
+ */
+async function saveMaxTestPersonalRecords(supabase: SupabaseClient, athleteId: string, draftSets: DraftSet[], performedOn: string): Promise<void> {
+  const candidateIds = draftSets.map((s) => s.setPrescriptionId).filter((id): id is string => id != null);
+  if (candidateIds.length === 0) return;
+
+  const { data } = await supabase.from("set_prescriptions").select("id, pr_record_type").eq("is_max_test", true).in("id", candidateIds);
+  const recordTypeById = new Map(((data ?? []) as { id: string; pr_record_type: string | null }[]).map((row) => [row.id, row.pr_record_type]));
+  if (recordTypeById.size === 0) return;
+
+  await Promise.all(
+    draftSets.map(async (s) => {
+      const recordType = s.setPrescriptionId ? recordTypeById.get(s.setPrescriptionId) : undefined;
+      if (!recordType) return;
+      if (s.performedWeight == null || s.performedReps == null || s.performedRir == null) return;
+      const oneRepMax = estimate1RM({ loadKg: s.performedWeight, reps: s.performedReps, rir: s.performedRir });
+      if (oneRepMax == null) return;
+      await upsertPersonalRecord(supabase, athleteId, { recordType, valueNumber: oneRepMax, unit: "kg", achievedOn: performedOn });
+    })
+  );
+}
+
+/**
  * Turns a finished draft into a real workout log — exactly the same
  * createSessionLog + createLoggedSet calls the manual "Log today" flow has
  * always used (spec: "Create the workout log exactly as the current system
@@ -345,6 +383,7 @@ export async function finishWorkout(
   }
 
   await Promise.all(writes);
+  await saveMaxTestPersonalRecords(supabase, params.athleteId, params.draftSets, performedOn);
   await deleteDraftSession(supabase, params.trainingDayId, params.athleteId);
   return { sessionLogId, error: null };
 }

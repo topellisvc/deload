@@ -87,11 +87,15 @@ function toSetRow(plan: WeekSetPlan, position: number): SetRow {
     max_reps: plan.maxReps ?? null,
     // The generator never hand-authors an absolute load for someone it
     // knows nothing about (see types.ts's header comment on why WeekSetPlan
-    // has no such field) and doesn't reference personal_records — RIR/RPE
-    // autoregulation is the mechanism, not a stored-PR percentage lookup.
+    // has no such field) — RIR/RPE autoregulation is the default mechanism,
+    // not a stored-PR percentage lookup. A percent_1rm/test_then_percent_1rm
+    // plan (load-calculation.ts) is the one exception: it does carry a
+    // pr_record_type, so exercise-screen.tsx/exercise-performance-card.tsx
+    // can resolve a suggested kg figure from the athlete's current max.
     weight_value: null,
     percent_1rm_value: plan.percent1RM ?? null,
-    pr_record_type: null,
+    pr_record_type: plan.prRecordType ?? null,
+    is_max_test: plan.isMaxTest ?? false,
     rpe_value: plan.rpe ?? null,
     rir_value: plan.rir ?? null,
     heart_rate_zone: plan.heartRateZone ?? null,

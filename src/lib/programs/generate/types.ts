@@ -418,6 +418,19 @@ export interface WeekSetPlan {
   paceSecondsPerKm?: number | null;
   heartRateZone?: number | null;
   notes?: string | null;
+  /** Which personal_records.record_type this row's percent_1rm suggestion
+   * reads (or, for a max-test row, writes to) — see load-calculation.ts.
+   * Null/undefined for every plan the two %1RM LoadCalculationMethod values
+   * don't touch. */
+  prRecordType?: string | null;
+  /** True only for a test_then_percent_1rm testing-week's single graded top
+   * set (load-calculation.ts's testingProtocolPlan) — the flag that tells
+   * the logging mutation "when this gets logged, compute an e1RM and write
+   * it to personal_records automatically," as opposed to an ordinary
+   * percent_1rm row later in the program, which shares the same
+   * prRecordType purely for display resolution but must never trigger
+   * another write. */
+  isMaxTest?: boolean;
 }
 
 /**

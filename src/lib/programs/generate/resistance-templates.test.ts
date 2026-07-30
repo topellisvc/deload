@@ -327,6 +327,11 @@ describe("buildResistanceTemplate — load calculation method", () => {
     expect(percentPlan.prescriptionType).toBe("percent_1rm");
     expect(percentPlan.percent1RM).toBe(expectedPercent);
     expect(percentPlan.rir).toBeUndefined();
+    // Carries the record type for display resolution (exercise-screen.tsx),
+    // but this is never itself a max test — logging it shouldn't overwrite
+    // a real tested max with a percentage-derived guess.
+    expect(percentPlan.prRecordType).toBe("squat");
+    expect(percentPlan.isMaxTest).toBeFalsy();
   });
 
   it("percent_1rm leaves a secondary slot alone even though its pattern (horizontal_push) is itself trackable — only a primary slot converts", () => {
@@ -381,6 +386,11 @@ describe("buildResistanceTemplate — load calculation method", () => {
     expect(plan.rir).toBe(1);
     expect(plan.notes).toContain("Testing week");
     expect(plan.notes).toContain("Squat");
+    // No more "go save it on your profile" instruction — logging this set
+    // is what triggers the automatic save (training/mutations.ts).
+    expect(plan.notes).not.toContain("profile");
+    expect(plan.isMaxTest).toBe(true);
+    expect(plan.prRecordType).toBe("squat");
   });
 
   it("after the testing week, later weeks resolve to a normal percent_1rm conversion", () => {
