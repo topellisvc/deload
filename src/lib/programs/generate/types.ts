@@ -1,6 +1,6 @@
 import type { ExperienceLevel } from "@/lib/supabase/types";
 import type { BlockRole, ExerciseCategory, PrescriptionType, ProgramDiscipline } from "@/lib/programs/types";
-import type { MovementPattern, MuscleGroup } from "@/lib/exercises/types";
+import type { MuscleGroup } from "@/lib/exercises/types";
 
 /**
  * "Build my program" — a questionnaire-driven program generator, deliberately
@@ -445,6 +445,49 @@ export interface SlotPrescription {
   forWeek: (ctx: WeekContext) => WeekSetPlan;
 }
 
+/**
+ * The generator's own movement-pattern vocabulary — finer than
+ * lib/exercises/types.ts's `MovementPattern` column, which can't
+ * distinguish horizontal from vertical pull, hip hinge from knee flexion, or
+ * bilateral from unilateral squatting/hinging (all real weekly
+ * non-negotiables per §1/§8). See patterns.ts's header comment for the full
+ * reasoning and the per-exercise data model (`exercises.metadata`) that maps
+ * real library rows onto this vocabulary — that reasoning lives there rather
+ * than here because it's about how the tagging/ladder mechanism works, not
+ * about what a day template needs to be able to ask for, which is this type.
+ *
+ * Defined here rather than in patterns.ts so that ExerciseSlot (below) can
+ * use it without patterns.ts and types.ts importing each other in a circle —
+ * patterns.ts already depends on this file for EquipmentAccess, so the
+ * dependency only runs one way. patterns.ts re-exports this type and builds
+ * ALL_SLOT_PATTERNS/isSlotPattern from it.
+ */
+export type SlotPattern =
+  | "squat_bilateral"
+  | "squat_unilateral"
+  | "hinge_bilateral"
+  | "hinge_unilateral"
+  | "knee_flexion"
+  | "horizontal_push"
+  | "vertical_push"
+  | "horizontal_pull"
+  | "vertical_pull"
+  | "carry"
+  | "anti_extension"
+  | "anti_rotation"
+  | "rotational_power"
+  | "hip_abduction"
+  | "hip_adduction"
+  | "calf_gastroc"
+  | "calf_soleus"
+  | "neck"
+  | "jump"
+  | "throw"
+  | "sprint"
+  | "shoulder_external_rotation"
+  | "scapular_control"
+  | "isometric_tendon";
+
 /** One exercise's worth of a training day — not yet a real exercise, just a
  * description of what the day needs at this position (a squat pattern hit
  * for quads, a horizontal pull for back, etc). select-exercises.ts resolves
@@ -456,7 +499,7 @@ export interface SlotPrescription {
 export interface ExerciseSlot {
   role: BlockRole;
   category: ExerciseCategory;
-  movementPattern: MovementPattern | null;
+  movementPattern: SlotPattern | null;
   primaryMuscleGroup: MuscleGroup | null;
   /** Compound/primary-pattern slots get filled before accessory slots when
    * a day must be trimmed to fit sessionLengthMinutes (see trimDayToLength

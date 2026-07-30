@@ -1,5 +1,7 @@
 import type { Exercise, ExerciseDifficulty, ExerciseEquipment, MovementPattern, MuscleGroup } from "@/lib/exercises/types";
-import type { EquipmentAccess } from "@/lib/programs/generate/types";
+import type { EquipmentAccess, SlotPattern } from "@/lib/programs/generate/types";
+
+export type { SlotPattern };
 
 /**
  * The generator's movement-pattern taxonomy and the substitution ladders built
@@ -74,11 +76,11 @@ import type { EquipmentAccess } from "@/lib/programs/generate/types";
  */
 
 /**
- * Appendix C's patterns, plus the few §6 and §10 requirements Appendix C's
- * table doesn't enumerate as ladders but the templates must still be able to
- * ask for. Every value below is traceable to a specific requirement:
+ * SlotPattern itself now lives in types.ts (ExerciseSlot.movementPattern
+ * needs it, and that would otherwise make this file and types.ts import each
+ * other). Every value is still traceable to a specific requirement — Appendix
+ * C's own rows, split where its groupings hide a real distinction:
  *
- * Appendix C's own rows, split where its groupings hide a real distinction:
  * - squat/hinge split bilateral vs unilateral (Appendix C lists them that way)
  * - `hip_abduction` and `hip_adduction` are one Appendix C row but are pulled
  *   apart here, because §10 needs them independently and in opposite
@@ -104,32 +106,6 @@ import type { EquipmentAccess } from "@/lib/programs/generate/types";
  *   named for patellar, gluteal and elbow presentations. Distinct because the
  *   prescription is a hold, not reps.
  */
-export type SlotPattern =
-  | "squat_bilateral"
-  | "squat_unilateral"
-  | "hinge_bilateral"
-  | "hinge_unilateral"
-  | "knee_flexion"
-  | "horizontal_push"
-  | "vertical_push"
-  | "horizontal_pull"
-  | "vertical_pull"
-  | "carry"
-  | "anti_extension"
-  | "anti_rotation"
-  | "rotational_power"
-  | "hip_abduction"
-  | "hip_adduction"
-  | "calf_gastroc"
-  | "calf_soleus"
-  | "neck"
-  | "jump"
-  | "throw"
-  | "sprint"
-  | "shoulder_external_rotation"
-  | "scapular_control"
-  | "isometric_tendon";
-
 export const ALL_SLOT_PATTERNS: readonly SlotPattern[] = [
   "squat_bilateral",
   "squat_unilateral",
