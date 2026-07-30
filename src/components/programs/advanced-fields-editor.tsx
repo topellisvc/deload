@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Chip } from "@/components/programs/preset-fields";
 
@@ -54,6 +54,13 @@ const METHOD_PRESETS: { key: string; value: string }[] = [
  */
 export function AdvancedFieldsEditor({ value, onChange }: AdvancedFieldsEditorProps) {
   const entries = Object.entries(value ?? {});
+  const appliedPresetCount = METHOD_PRESETS.filter((preset) => (value ?? {})[preset.key] === preset.value).length;
+  // A set row has one of these open by default only if a preset from it is
+  // already applied — otherwise collapsed. 14 chips on every single set
+  // row (a program can have dozens) was the actual space complaint this
+  // fixes; a set with, say, Tempo already set still shows it without an
+  // extra tap to find it again.
+  const [expanded, setExpanded] = useState(appliedPresetCount > 0);
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
 
@@ -83,14 +90,24 @@ export function AdvancedFieldsEditor({ value, onChange }: AdvancedFieldsEditorPr
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border-strong p-2.5">
       <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Methods</span>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {METHOD_PRESETS.map((preset) => (
-            <Chip key={preset.key} selected={(value ?? {})[preset.key] === preset.value} onClick={() => togglePreset(preset)}>
-              {preset.key}
-            </Chip>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="flex items-center gap-1 self-start text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {expanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+          Methods{!expanded && appliedPresetCount > 0 ? ` (${appliedPresetCount})` : ""}
+        </button>
+        {expanded && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {METHOD_PRESETS.map((preset) => (
+              <Chip key={preset.key} selected={(value ?? {})[preset.key] === preset.value} onClick={() => togglePreset(preset)}>
+                {preset.key}
+              </Chip>
+            ))}
+          </div>
+        )}
       </div>
 
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Custom Fields</span>

@@ -1037,6 +1037,23 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         )}
       </ScrollFadeX>
 
+      {/* Mobile-only duplicate of the "Add week" trigger above the week
+          tabs. On a phone the day list stacks vertically and can run
+          several screens long (up to 7 days), so reaching for "Add week"
+          meant scrolling all the way back to the top — this puts the same
+          action right after the last day instead. Desktop already shows
+          the week tabs without scrolling past the days (they run in a
+          horizontal row alongside the days, not above a long stack), so
+          this only needs to exist below lg's breakpoint. */}
+      <button
+        type="button"
+        onClick={() => setAddWeekOpen(true)}
+        className="flex items-center justify-center gap-1 rounded-2xl border border-dashed border-border-strong px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:hidden"
+      >
+        <Plus className="size-4" />
+        Add week
+      </button>
+
       <AddWeekDialog
         open={addWeekOpen}
         onClose={() => setAddWeekOpen(false)}

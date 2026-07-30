@@ -45,14 +45,23 @@ describe("AdvancedFieldsEditor", () => {
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
-  it("tapping a Methods preset chip adds its key/value pair", async () => {
+  it("Methods starts collapsed and can be expanded to tap a preset chip", async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
     render(<AdvancedFieldsEditor value={null} onChange={onChange} />);
 
+    expect(screen.queryByRole("button", { name: "Tempo" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Methods$/ }));
     await user.click(screen.getByRole("button", { name: "Tempo" }));
 
     expect(onChange).toHaveBeenCalledWith({ Tempo: "3-1-1-0" });
+  });
+
+  it("Methods starts expanded, with a count, when a preset is already applied", () => {
+    render(<AdvancedFieldsEditor value={{ Tempo: "3-1-1-0" }} onChange={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Tempo" })).toBeInTheDocument();
   });
 
   it("tapping an already-applied preset chip removes it again", async () => {
