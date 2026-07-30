@@ -43,7 +43,7 @@ const GOAL_OPTIONS: { value: TrainingGoal; label: string; comingSoon?: boolean }
   { value: "improve_conditioning", label: "Improve conditioning (non-running cardio)" },
   { value: "hybrid", label: "Hybrid — lifting + running" },
   { value: "powerlifting_peak", label: "Powerlifting meet peak" },
-  { value: "power_athletic", label: "Power / athletic development", comingSoon: true },
+  { value: "power_athletic", label: "Power / athletic development" },
   { value: "sport_specific", label: "Sport-specific", comingSoon: true },
 ];
 

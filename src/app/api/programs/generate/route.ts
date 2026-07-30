@@ -4,6 +4,7 @@ import { listExercises } from "@/lib/exercises/queries";
 import { assembleWeeks } from "@/lib/programs/generate/assemble";
 import { buildCardioTemplate, isCardioGoal } from "@/lib/programs/generate/cardio-templates";
 import { buildHybridTemplate, isHybridGoal } from "@/lib/programs/generate/hybrid-templates";
+import { buildPowerAthleticTemplate, isPowerAthleticGoal } from "@/lib/programs/generate/power-athletic-templates";
 import { buildPowerliftingTemplate, isPowerliftingGoal } from "@/lib/programs/generate/powerlifting-templates";
 import { buildResistanceTemplate, isResistanceGoal } from "@/lib/programs/generate/resistance-templates";
 import { buildRunningTemplate, isRunGoal } from "@/lib/programs/generate/running-templates";
@@ -45,7 +46,7 @@ function isTrainingGoal(value: unknown): value is TrainingGoal {
     isCardioGoal(goal) ||
     isHybridGoal(goal) ||
     isPowerliftingGoal(goal) ||
-    goal === "power_athletic" ||
+    isPowerAthleticGoal(goal) ||
     goal === "sport_specific"
   );
 }
@@ -73,9 +74,10 @@ function buildTemplate(input: ProgramGenerationInput): TemplateResult {
   if (isCardioGoal(input.goal)) return buildCardioTemplate(input);
   if (isHybridGoal(input.goal)) return buildHybridTemplate(input);
   if (isPowerliftingGoal(input.goal)) return buildPowerliftingTemplate(input);
-  // power_athletic / sport_specific: accepted by the questionnaire's type
-  // but no template family has been built for them yet (tasks #22-23) — an
-  // honest error, not a silently wrong plan.
+  if (isPowerAthleticGoal(input.goal)) return buildPowerAthleticTemplate(input);
+  // sport_specific: accepted by the questionnaire's type but no template
+  // family has been built for it yet (task #23) — an honest error, not a
+  // silently wrong plan.
   return { error: `"${input.goal}" isn't supported by the program generator yet — this template family hasn't been built.` };
 }
 
