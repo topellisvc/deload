@@ -9,8 +9,9 @@ import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { buildExerciseList, buildSetTargets, findResumeExerciseId } from "@/lib/training/sequence";
 import { estimateWorkoutDurationSeconds } from "@/lib/training/estimate-duration";
 import { computeWorkoutTotals } from "@/lib/training/totals";
-import { saveDraftSession, deleteDraftSession, finishWorkout } from "@/lib/training/mutations";
-import { isProgramComplete } from "@/lib/training/queries";
+import { saveDraftSession, deleteDraftSession, finishWorkout, createAutoregulationEvent } from "@/lib/training/mutations";
+import { isProgramComplete, getRecentAutoregulationEvents } from "@/lib/training/queries";
+import { decideRirGate } from "@/lib/training/autoregulation";
 import type { DraftSet, PreviousPerformance, TrainingModeSession } from "@/lib/training/types";
 import type { BlockRow } from "@/lib/programs/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
@@ -19,12 +20,13 @@ import { ExerciseListScreen } from "@/components/training/exercise-list-screen";
 import { ExerciseScreen } from "@/components/training/exercise-screen";
 import { RestScreen } from "@/components/training/rest-screen";
 import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-screen";
+import { RirCheckScreen } from "@/components/training/rir-check-screen";
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
 import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
 import { EndWorkoutDialog } from "@/components/training/end-workout-dialog";
 import { SkipExerciseDialog } from "@/components/training/skip-exercise-dialog";
 
-type Phase = "overview" | "exercises" | "exercise" | "rest" | "exercise-complete" | "summary" | "program-complete";
+type Phase = "overview" | "exercises" | "exercise" | "rest" | "exercise-complete" | "rir-check" | "summary" | "program-complete";
 
 interface TrainingSessionProps {
   trainingDayId: string;
@@ -291,6 +293,10 @@ export function TrainingSession({
       // No RPE input in Training Mode's strength logger — weight and reps
       // only, to keep each set to two taps (see StrengthSetLogger).
       performedRpe: null,
+      // Filled in afterwards, once per exercise rather than per set — see
+      // handleRirAnswer, which patches this same DraftSet once the athlete
+      // answers the post-exercise RIR check.
+      performedRir: null,
       performedDistanceMeters: null,
       performedDurationSeconds: null,
       performedPaceSecondsPerKm: null,
@@ -316,6 +322,13 @@ export function TrainingSession({
         setRestSeconds(target.rest_seconds);
         setPhase("rest");
       }
+    } else if (currentExercise.exercise_category === "strength" && currentExercise.autoregulation_eligible) {
+      // Rule 1's own question (coach-answers §2 Rule 1) — asked once per
+      // autoregulation-eligible exercise, right after its last working set,
+      // never per set. Auto-advance is deferred until the athlete answers
+      // (see handleRirAnswer), rather than firing on the usual 1100ms
+      // timer straight into exercise-complete.
+      setPhase("rir-check");
     } else {
       // This exercise is fully logged — celebrate, then auto-advance to
       // whatever's actually still incomplete (which may not be the next
@@ -326,6 +339,62 @@ export function TrainingSession({
         1100
       );
     }
+  }
+
+  /**
+   * Handles the RIR-check answer for the exercise that just finished. Reads
+   * `draftSets`/`currentExercise`/`skippedExercises` straight from render
+   * scope rather than threading extra state through from handleCompleteSet
+   * — by the time this fires the athlete has seen a fresh render of the
+   * "rir-check" phase, so those values already reflect the just-completed
+   * exercise, the same way every other handler in this component reads
+   * current state rather than stashed snapshots.
+   *
+   * Fetches this lift's own recent autoregulation_events, decides the
+   * outcome via decideRirGate (autoregulation.ts), records it (skipping the
+   * write entirely for a "no_change" result — see that module's header
+   * comment on why that's correct), patches the raw RIR answer onto the
+   * exercise's last DraftSet so Finish Workout persists it to
+   * logged_sets.performed_rir, then proceeds into the normal
+   * exercise-complete/auto-advance flow exactly as a non-eligible exercise
+   * would have.
+   */
+  async function handleRirAnswer(performedRir: 0 | 1 | 2 | 3) {
+    if (!currentExercise) return;
+    setSaving(true);
+
+    const exerciseDraftSets = draftSets.filter((s) => s.blockExerciseId === currentExercise.id);
+    const lastDraftSet = exerciseDraftSets[exerciseDraftSets.length - 1] ?? null;
+    const targets = buildSetTargets(currentExercise.sets);
+    const lastTarget = targets[targets.length - 1] ?? null;
+    const expectedReps =
+      lastTarget?.max_reps ?? (lastTarget?.reps && /^\d+$/.test(lastTarget.reps.trim()) ? Number(lastTarget.reps) : null);
+    const repsMissed = expectedReps != null && lastDraftSet?.performedReps != null && lastDraftSet.performedReps < expectedReps;
+
+    const supabase = createClient();
+    const recentEvents = await getRecentAutoregulationEvents(supabase, { athleteId, blockExerciseId: currentExercise.id });
+    const gate = decideRirGate({ performedRir, repsMissed, recentEvents });
+
+    if (gate.outcome !== "no_change") {
+      await createAutoregulationEvent(supabase, {
+        athleteId,
+        blockExerciseId: currentExercise.id,
+        kind: gate.outcome,
+        detail: { reason: gate.reason, multiplier: gate.multiplier, performedRir },
+      });
+    }
+
+    const updated = lastDraftSet ? draftSets.map((s) => (s === lastDraftSet ? { ...s, performedRir } : s)) : draftSets;
+    setDraftSets(updated);
+    await persist({ draftSets: updated });
+    setSaving(false);
+
+    const updatedCounts = draftSetCounts(updated);
+    setPhase("exercise-complete");
+    transitionTimeout.current = setTimeout(
+      () => goToExercise(findResumeExerciseId(exerciseList, updatedCounts, new Set(Object.keys(skippedExercises)))),
+      1100
+    );
   }
 
   async function handleCardioFinish(payload: {
@@ -347,6 +416,10 @@ export function TrainingSession({
       performedWeight: null,
       performedReps: null,
       performedRpe: payload.rpe,
+      // No RIR gate for cardio/running exercises — Rule 1 is scoped to
+      // strength primary lifts (see the autoregulation_eligible check this
+      // file's handleCompleteSet makes before ever entering "rir-check").
+      performedRir: null,
       performedDistanceMeters: payload.distanceMeters,
       performedDurationSeconds: payload.durationSeconds,
       performedPaceSecondsPerKm: payload.paceSecondsPerKm,
@@ -572,6 +645,10 @@ export function TrainingSession({
       )}
 
       {phase === "exercise-complete" && currentExercise && <ExerciseCompleteScreen exerciseName={getExerciseDisplayName(currentExercise)} />}
+
+      {phase === "rir-check" && currentExercise && (
+        <RirCheckScreen exerciseName={getExerciseDisplayName(currentExercise)} onAnswer={handleRirAnswer} busy={saving} />
+      )}
 
       {phase === "summary" && (
         <WorkoutSummaryScreen

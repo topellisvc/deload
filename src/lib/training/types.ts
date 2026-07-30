@@ -13,6 +13,13 @@ export interface DraftSet {
   performedWeight: number | null;
   performedReps: number | null;
   performedRpe: number | null;
+  /** Reps in reserve, as reported after the last working set of an
+   * autoregulation-eligible exercise (see lib/training/autoregulation.ts and
+   * the RIR-check step in training-session.tsx). Null for every other set —
+   * this is only ever asked once per exercise, not per set, so it's set on
+   * the exercise's final DraftSet after the fact rather than collected at
+   * StrengthSetLogger's own two-tap input. */
+  performedRir: number | null;
   performedDistanceMeters: number | null;
   performedDurationSeconds: number | null;
   performedPaceSecondsPerKm: number | null;

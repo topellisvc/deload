@@ -8,6 +8,7 @@ function makeDraftSet(overrides: Partial<DraftSet> & Pick<DraftSet, "blockExerci
     performedWeight: null,
     performedReps: null,
     performedRpe: null,
+    performedRir: null,
     performedDistanceMeters: null,
     performedDurationSeconds: null,
     performedPaceSecondsPerKm: null,

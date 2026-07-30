@@ -1,0 +1,112 @@
+import { describe, expect, it } from "vitest";
+import { decideRirGate } from "@/lib/training/autoregulation";
+import type { AutoregulationEventKind } from "@/lib/training/autoregulation";
+
+function events(kinds: AutoregulationEventKind[]): { kind: AutoregulationEventKind }[] {
+  return kinds.map((kind) => ({ kind }));
+}
+
+describe("decideRirGate — the four reported RIR buckets", () => {
+  it("advances with a bit extra at 3+ RIR", () => {
+    const result = decideRirGate({ performedRir: 3, repsMissed: false, recentEvents: [] });
+    expect(result.outcome).toBe("advance");
+    expect(result.multiplier).toBeGreaterThan(1);
+    expect(result.multiplier).toBeGreaterThanOrEqual(1.03);
+  });
+
+  it("advances (a smaller bump than 3+) at 2 RIR", () => {
+    const result = decideRirGate({ performedRir: 2, repsMissed: false, recentEvents: [] });
+    expect(result.outcome).toBe("advance");
+    const three = decideRirGate({ performedRir: 3, repsMissed: false, recentEvents: [] });
+    expect(result.multiplier).toBeGreaterThan(1);
+    expect(result.multiplier).toBeLessThan(three.multiplier);
+  });
+
+  it("changes nothing at 1 RIR -- proceed exactly as planned", () => {
+    const result = decideRirGate({ performedRir: 1, repsMissed: false, recentEvents: [] });
+    expect(result.outcome).toBe("no_change");
+    expect(result.multiplier).toBe(1);
+  });
+
+  it("holds (does not increase) at 0 RIR even if reps weren't technically missed", () => {
+    const result = decideRirGate({ performedRir: 0, repsMissed: false, recentEvents: [] });
+    expect(result.outcome).toBe("hold");
+    expect(result.multiplier).toBe(1);
+  });
+});
+
+describe("decideRirGate — missed reps hold regardless of reported RIR", () => {
+  it("holds on a missed rep target even if a nonzero RIR was reported", () => {
+    const result = decideRirGate({ performedRir: 2, repsMissed: true, recentEvents: [] });
+    expect(result.outcome).toBe("hold");
+  });
+});
+
+describe("decideRirGate -- null RIR is treated as insufficient information, never a miss or a green light", () => {
+  it("returns no_change rather than guessing when RIR wasn't reported", () => {
+    const result = decideRirGate({ performedRir: null, repsMissed: false, recentEvents: [] });
+    expect(result.outcome).toBe("no_change");
+  });
+
+  it("still returns no_change even if reps were reported missed with no RIR answer", () => {
+    // Defensive: this function should never fabricate a miss-hold escalation
+    // from data it doesn't have.
+    const result = decideRirGate({ performedRir: null, repsMissed: true, recentEvents: [] });
+    expect(result.outcome).toBe("no_change");
+  });
+});
+
+describe("decideRirGate — consecutive-miss escalation to a 10% reset", () => {
+  it("holds (not reset) on the first miss with no prior history", () => {
+    const result = decideRirGate({ performedRir: 0, repsMissed: false, recentEvents: [] });
+    expect(result.outcome).toBe("hold");
+  });
+
+  it("escalates to reset_10pct when the most recent prior event for this lift was also a hold", () => {
+    const result = decideRirGate({ performedRir: 0, repsMissed: false, recentEvents: events(["hold"]) });
+    expect(result.outcome).toBe("reset_10pct");
+    expect(result.multiplier).toBe(0.9);
+  });
+
+  it("does not escalate when the most recent prior event was an advance", () => {
+    const result = decideRirGate({ performedRir: 0, repsMissed: false, recentEvents: events(["advance", "hold"]) });
+    expect(result.outcome).toBe("hold");
+  });
+
+  it("does not immediately re-escalate right after a reset_10pct -- the streak restarts", () => {
+    const result = decideRirGate({ performedRir: 0, repsMissed: false, recentEvents: events(["reset_10pct", "hold"]) });
+    expect(result.outcome).toBe("hold");
+  });
+
+  it("skips over readiness_downregulated events without breaking or extending the streak", () => {
+    // A bad-sleep-and-soreness downregulated session sits between two real
+    // misses -- Rule 3's own requirement is that this must still read as two
+    // misses in a row, not be reset by the readiness event in between.
+    const stillEscalates = decideRirGate({
+      performedRir: 0,
+      repsMissed: false,
+      recentEvents: events(["readiness_downregulated", "hold"]),
+    });
+    expect(stillEscalates.outcome).toBe("reset_10pct");
+
+    // And a readiness-downregulated session right after a clean advance
+    // must not itself look like the start of a miss streak.
+    const stillHoldsFirst = decideRirGate({
+      performedRir: 0,
+      repsMissed: false,
+      recentEvents: events(["readiness_downregulated", "advance"]),
+    });
+    expect(stillHoldsFirst.outcome).toBe("hold");
+  });
+});
+
+describe("decideRirGate — no_change sessions never pollute the miss-streak read", () => {
+  it("a 1-RIR (no_change) session in history behaves like it was never recorded", () => {
+    // no_change results are never written as events at all (see this
+    // module's header comment) -- this test documents that expectation by
+    // confirming a miss right after one still reads as a first miss, not a
+    // second, since a caller correctly never included a no_change entry.
+    const result = decideRirGate({ performedRir: 0, repsMissed: false, recentEvents: [] });
+    expect(result.outcome).toBe("hold");
+  });
+});

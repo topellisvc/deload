@@ -362,6 +362,13 @@ export interface LoggedSet {
   performed_pace_seconds_per_km: number | null;
   performed_heart_rate: number | null;
   performed_calories: number | null;
+  /** Reps in reserve, as reported by the ternary-plus-one question ("how
+   * many more reps could you have done?") — 0/1/2/3, where 3 stands for "3
+   * or more." Kept separate from performed_rpe rather than converted on the
+   * way in; see migration 0044's comment on why. Nullable: only ever
+   * populated for an autoregulation-eligible slot's final working set (see
+   * lib/training/autoregulation.ts). */
+  performed_rir: number | null;
   notes: string | null;
   created_at: string;
 }

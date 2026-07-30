@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { completeSessionLog, createLoggedSet, createSessionLog } from "@/lib/logging/mutations";
 import { todayDateString } from "@/lib/dates";
+import type { AutoregulationEventKind } from "@/lib/training/autoregulation";
 import type { DraftSet, TrainingModeSession, TrainingModeSessionRow } from "@/lib/training/types";
 import { mapTrainingModeSessionRow } from "@/lib/training/types";
 
@@ -47,6 +48,34 @@ export async function saveDraftSession(
 
 export async function deleteDraftSession(supabase: SupabaseClient, trainingDayId: string, athleteId: string): Promise<void> {
   await supabase.from("training_mode_sessions").delete().eq("training_day_id", trainingDayId).eq("athlete_id", athleteId);
+}
+
+/**
+ * Records one autoregulation adjustment — append-only, never mutates
+ * set_prescriptions (see migration 0044's header comment on why: a coach
+ * may have hand-edited the plan, so the authored number stays authored;
+ * the novice-to-intermediate reclassification counts these events directly;
+ * and it matches this app's existing "derived state isn't stored"
+ * convention).
+ *
+ * Deliberately doesn't write for RirGateOutcome === "no_change" — see
+ * autoregulation.ts's header comment on why that's the correct fourth
+ * outcome for this rule despite the DB only modeling three kinds. Callers
+ * should simply not call this for a no_change result rather than passing
+ * one through; there's nothing here that validates that, the same
+ * trust-the-caller convention every other mutation in this file uses.
+ */
+export async function createAutoregulationEvent(
+  supabase: SupabaseClient,
+  params: { athleteId: string; blockExerciseId: string; kind: AutoregulationEventKind; detail?: Record<string, unknown> }
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("autoregulation_events").insert({
+    athlete_id: params.athleteId,
+    block_exercise_id: params.blockExerciseId,
+    kind: params.kind,
+    detail: params.detail ?? {},
+  });
+  return { error: error ? "Couldn't record that adjustment. Try again." : null };
 }
 
 /**
@@ -108,6 +137,7 @@ export async function finishWorkout(
       performedWeight: s.performedWeight,
       performedReps: s.performedReps,
       performedRpe: s.performedRpe,
+      performedRir: s.performedRir,
       performedDistanceMeters: s.performedDistanceMeters,
       performedDurationSeconds: s.performedDurationSeconds,
       performedPaceSecondsPerKm: s.performedPaceSecondsPerKm,

@@ -51,6 +51,7 @@ function makeDraftSet(overrides: Partial<DraftSet> = {}): DraftSet {
     performedWeight: 100,
     performedReps: 8,
     performedRpe: null,
+    performedRir: null,
     performedDistanceMeters: null,
     performedDurationSeconds: null,
     performedPaceSecondsPerKm: null,

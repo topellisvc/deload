@@ -88,6 +88,7 @@ export async function createLoggedSet(
     performedWeight?: number | null;
     performedReps?: number | null;
     performedRpe?: number | null;
+    performedRir?: number | null;
     performedDistanceMeters?: number | null;
     performedDurationSeconds?: number | null;
     performedPaceSecondsPerKm?: number | null;
@@ -106,6 +107,7 @@ export async function createLoggedSet(
       performed_weight: params.performedWeight ?? null,
       performed_reps: params.performedReps ?? null,
       performed_rpe: params.performedRpe ?? null,
+      performed_rir: params.performedRir ?? null,
       performed_distance_meters: params.performedDistanceMeters ?? null,
       performed_duration_seconds: params.performedDurationSeconds ?? null,
       performed_pace_seconds_per_km: params.performedPaceSecondsPerKm ?? null,

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BlockExercise, ExerciseBlock, LoggedSet, Program, SetPrescription, TrainingDay } from "@/lib/supabase/types";
 import type { BlockExerciseRow, BlockRow } from "@/lib/programs/types";
+import type { AutoregulationEventKind } from "@/lib/training/autoregulation";
 import type { PreviousPerformance, TrainingDayDetail, TrainingModeSession, TrainingModeSessionRow } from "@/lib/training/types";
 import { mapTrainingModeSessionRow } from "@/lib/training/types";
 import { getExerciseNamesByIds } from "@/lib/exercises/queries";
@@ -128,6 +129,30 @@ export async function getDraftSessionDayIds(
     .eq("athlete_id", athleteId)
     .in("training_day_id", trainingDayIds);
   return new Set(((data ?? []) as { training_day_id: string }[]).map((r) => r.training_day_id));
+}
+
+/**
+ * This exact lift's own autoregulation history, newest first — exactly what
+ * decideRirGate (autoregulation.ts) needs to answer "was the most recent
+ * relevant event also a miss-hold." Capped small: the decision only ever
+ * looks at the single most recent relevant entry, so a handful of rows is
+ * enough headroom without turning this into an unbounded history read.
+ * Uses the (athlete_id, block_exercise_id, occurred_on desc) index migration
+ * 0044 added specifically for this lookup.
+ */
+export async function getRecentAutoregulationEvents(
+  supabase: SupabaseClient,
+  params: { athleteId: string; blockExerciseId: string; limit?: number }
+): Promise<{ kind: AutoregulationEventKind }[]> {
+  const { data } = await supabase
+    .from("autoregulation_events")
+    .select("kind")
+    .eq("athlete_id", params.athleteId)
+    .eq("block_exercise_id", params.blockExerciseId)
+    .order("occurred_on", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(params.limit ?? 5);
+  return (data ?? []) as { kind: AutoregulationEventKind }[];
 }
 
 /**
