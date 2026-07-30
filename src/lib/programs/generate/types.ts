@@ -21,12 +21,22 @@ import type { MovementPattern, MuscleGroup } from "@/lib/exercises/types";
  * shaped this file directly:
  *
  * 1. "Do not ship a purely calendar-based generator." WeekSetPlan/
- *    SlotPrescription below are still expressed as a pure function of week
- *    index — that's intentional, they're the calendar *skeleton*. The three
- *    feedback rules the coach specified (RPE gate, user-visible repeat/
- *    advance, two-question readiness check) are a runtime layer on top of
- *    that skeleton, not part of it, because they need session-logging data
- *    this module doesn't own. See the tracked task for that layer.
+ *    SlotPrescription below are still expressed as a pure function of a
+ *    WeekContext — that's intentional, they're the calendar *skeleton*. The
+ *    feedback rules the coach specified are a runtime layer on top of that
+ *    skeleton, not part of it, because they need session-logging data this
+ *    module doesn't own. There are *four*, not three: §2 gives the RIR gate,
+ *    the user-visible repeat/advance control, and the two-question readiness
+ *    check; §10 step 2 adds a per-joint "better/same/worse" check, which is
+ *    the same kind of object (a small stateful rule reading session history
+ *    to adjust the next prescription) and needs the same storage and
+ *    precedence handling. See deload-autoregulation-design.md.
+ *
+ *    That design fixes one rule this module must honour: the runtime layer
+ *    never rewrites a set_prescriptions row. Adjustments are stored as
+ *    events and applied at read time, so a coach reviewing a generated
+ *    program always sees the authored number plus an explained adjustment,
+ *    never a number that silently changed underneath them.
  * 2. "Section 10 [injuries] is where software can actually hurt someone."
  *    InjuryProfile/RedFlagScreen below model the coach's three-step gate
  *    (screen for red flags → route out; otherwise substitute-and-modify,
@@ -128,6 +138,18 @@ export interface RedFlagScreen {
   systemicSymptomsAlongsidePain: boolean;
   bladderOrBowelChangeWithBackPain: boolean;
   severeOrWorseningPain: boolean;
+  /** §10's wrist section names two route-outs that no other flag here
+   * catches, both because they present as ordinary "sore wrist" and are
+   * missed for exactly that reason. Kept as their own fields rather than
+   * folded into recentTraumaWith... because neither requires swelling or an
+   * inability to bear weight, which is what that flag asks about.
+   *
+   * Thumb-base pain after a fall is a scaphoid presentation — the coach
+   * calls it "a genuine fracture risk that gets missed," and a missed
+   * scaphoid fracture is a non-union risk, not a wait-and-see. */
+  thumbBasePainAfterFall: boolean;
+  /** Clicking with pain on the pinky side under load — TFCC. */
+  ulnarWristClickingUnderLoad: boolean;
 }
 
 /** Conditions the coach's answers say to route to a human rather than
@@ -205,6 +227,18 @@ export interface SportProfile {
    * normally. The coach's answers refuse to give weight-cut guidance
    * itself; this flag only affects training-load defaults. */
   currentlyCuttingWeight: boolean;
+  /** Throwing/bowling sessions per week — baseball, softball, cricket only;
+   * null for every other sport. §7 gates this group specifically: UCL injury
+   * risk is driven by throwing volume, so a gym program that adds upper-body
+   * load without knowing the throwing workload is "a real hazard."
+   *
+   * null on a throwing sport is not "zero" — it means unknown, and the coach
+   * gives two acceptable responses to unknown, both of which the template
+   * must implement rather than guessing: cap total upper-body load, or state
+   * plainly that the template does not manage the throwing arm. Either way,
+   * no heavy overhead pressing, no high-volume bench, and no lat work to
+   * fatigue on throwing days. */
+  throwingSessionsPerWeek: number | null;
 }
 
 export type HybridPriority = "resistance_primary" | "endurance_primary";
@@ -219,6 +253,47 @@ export interface HybridProfile {
   priority: HybridPriority;
   secondaryGoal: TrainingGoal;
 }
+
+/** Required for every run_* goal, and for "hybrid" when either side is a
+ * run_* goal; null otherwise. §11's minimum-timeline table and its one hard
+ * refusal ("marathon, under 24 weeks, no running history → generate a half
+ * instead and explain why in one sentence") are both unimplementable without
+ * this — the goal enum alone can't distinguish someone with a 40 km/week base
+ * from someone who has never run.
+ *
+ * §11's marathon prerequisite is stated as "already comfortably running 25-30
+ * km/week for at least 6 weeks," which is why this is two fields rather than
+ * one: a single big week doesn't establish a base, and a sustained small one
+ * isn't the same input as a sustained large one. */
+export interface RunningHistory {
+  currentWeeklyKm: number;
+  /** How many consecutive weeks they've held roughly that volume. */
+  weeksAtCurrentVolume: number;
+  /** §11 point 8: beginners get run/walk intervals and a cap of 2
+   * consecutive running days for the first 8 weeks. Distinct from
+   * currentWeeklyKm being 0 — someone can be returning to running with a
+   * real history behind them. */
+  hasRunContinuouslyThirtyMinutes: boolean;
+}
+
+/** Required when goal is "build_muscle_bodybuilding"; null otherwise. §4's
+ * bodybuilding section says the template *should ask* which groups the user
+ * considers lagging, then act on it: put them first in the session, train
+ * them 3x/week, give them 2-4 extra sets, and take them closer to failure.
+ * A general-hypertrophy template deliberately doesn't collect this — that's
+ * the difference between being indexed on muscles and being indexed on
+ * movement patterns. */
+export interface BodybuildingProfile {
+  laggingMuscleGroups: MuscleGroup[];
+}
+
+/** §12's one high-value default: cycling and rowing produce far less muscle
+ * damage than running and incline treadmill work, so someone lifting
+ * seriously should have their conditioning biased toward cycling — the coach
+ * says "this one default choice removes most concurrent-training friction."
+ * Collected as a preference because the interference argument only wins if
+ * they'll actually do it (§14 point 1). */
+export type ConditioningModality = "cycling" | "rowing" | "incline_walking" | "elliptical" | "swimming" | "no_preference";
 
 export interface ProgramGenerationInput {
   goal: TrainingGoal;
@@ -239,6 +314,23 @@ export interface ProgramGenerationInput {
   sport: SportProfile | null;
   /** Required when goal is "hybrid", ignored otherwise. */
   hybrid: HybridProfile | null;
+  /** Required for run_* goals and for a hybrid with a running side. */
+  running: RunningHistory | null;
+  /** Required when goal is "build_muscle_bodybuilding", ignored otherwise. */
+  bodybuilding: BodybuildingProfile | null;
+  conditioningModality: ConditioningModality;
+  /** §6's middle ground. Hang power clean, high pull and power snatch from
+   * blocks are "allowed but not default" — motivated people can learn them,
+   * but the coach wants them behind an explicit "have you been coached on
+   * this lift?" question, with the template defaulting to trap-bar jumps and
+   * DB snatches instead. False must mean "don't prescribe them," never
+   * "prescribe with a video link": §6's do-not-auto-prescribe list exists
+   * because the failure mode is a barbell on the spine or wrists.
+   *
+   * Note this never unlocks the full snatch or clean & jerk, which §6 and
+   * §7's refusal list put outside the automated path regardless of what the
+   * user claims about their coaching history. */
+  coachedOnOlympicLifts: boolean;
 }
 
 /** The fully-resolved prescription for one exercise slot in one specific
@@ -269,8 +361,88 @@ export interface WeekSetPlan {
   notes?: string | null;
 }
 
+/**
+ * §3 branches deloads into two kinds that need *opposite* treatment, which is
+ * why this isn't a boolean:
+ *
+ * - `volume_cut` — the default. Cut sets 40-50%, hold load at 85-90% of last
+ *   week, same reps, every set stops at RPE <= 6. The point is to dissipate
+ *   fatigue while preserving the skill and neural adaptations already built,
+ *   which dropping to 50% load and high reps preserves neither of.
+ * - `joint_connective` — achy elbows/knees/shoulders, "everything is creaky."
+ *   Load is the irritant, so cut *intensity* harder (65-70%) and reduce volume
+ *   only modestly. Applying the default here keeps hammering the thing that
+ *   hurts.
+ * - `systemic` — bad sleep, low appetite, flat mood, resting HR up. Cut volume
+ *   and frequency, drop a session, but keep a couple of heavy-ish singles at
+ *   RPE 7 purely to hold the skill.
+ *
+ * The two-question readiness check (§2 Rule 3) is what distinguishes the last
+ * two at runtime; a template picks a kind for a *scheduled* deload.
+ */
+export type DeloadKind = "volume_cut" | "joint_connective" | "systemic";
+
+/**
+ * Where in its own structure a week sits. A single union across every
+ * discipline rather than a per-discipline generic: each template family only
+ * ever emits its own values, and keeping forWeek's signature monomorphic is
+ * worth more than preventing a running template from theoretically returning
+ * "peaking".
+ *
+ * `calibration` is deliberately not "week 1" — §4's calibration rules (cap
+ * everything at RPE 7 including accessories, prescribe reps and an effort
+ * ceiling rather than a load, 2 sets not 4 on any exercise the athlete has
+ * never done) also apply to a returner's ramp-in weeks per §14 point 12, and
+ * to the first week after a reactive light week. Phase, not position.
+ */
+export type ProgramPhase =
+  // Universal
+  | "calibration"
+  | "standard"
+  | "deload"
+  // Resistance blocks — §2's advanced 4- and 8-week structures
+  | "accumulation"
+  | "transition"
+  | "intensification"
+  | "realization"
+  // Powerlifting peak — §5's weeks-out table
+  | "gpp"
+  | "strength"
+  | "peaking"
+  | "taper"
+  | "meet_week"
+  // Running — §11's base -> quality -> taper architecture
+  | "base"
+  | "quality"
+  | "down_week";
+
+/**
+ * Everything a SlotPrescription needs to resolve one week's numbers.
+ *
+ * An object rather than positional arguments on purpose: this replaced
+ * `(weekIndex, totalWeeks, isDeloadWeek)`, and the reason it had to change is
+ * that a boolean couldn't carry DeloadKind and nothing carried phase identity
+ * at all — leaving every template to re-derive its phase from arithmetic on
+ * weekIndex, duplicated and untestable in isolation. An object means the next
+ * addition (a returner ramp factor, a fat-loss volume discount) doesn't break
+ * every template's signature again.
+ *
+ * Note what is deliberately *not* here: anything about a specific athlete's
+ * logged performance. This is the calendar skeleton. The runtime feedback
+ * layer adjusts a resolved WeekSetPlan at training time and stores its
+ * adjustments separately — see this file's header comment.
+ */
+export interface WeekContext {
+  /** 1-based, matching ProgramWeek.position. */
+  weekIndex: number;
+  totalWeeks: number;
+  phase: ProgramPhase;
+  /** null when this isn't a deload week. */
+  deload: { kind: DeloadKind } | null;
+}
+
 export interface SlotPrescription {
-  forWeek: (weekIndex: number, totalWeeks: number, isDeloadWeek: boolean) => WeekSetPlan;
+  forWeek: (ctx: WeekContext) => WeekSetPlan;
 }
 
 /** One exercise's worth of a training day — not yet a real exercise, just a
@@ -302,9 +474,26 @@ export interface ExerciseSlot {
   prescription: SlotPrescription;
 }
 
+/** §13 point 6: "Count hard sessions across modalities, not within them." For
+ * most people 3 genuinely hard sessions a week is the sustainable ceiling, and
+ * a week containing heavy squats, heavy deadlifts, an interval session and a
+ * long run is four — "it will fail." The coach calls this the single most
+ * useful hybrid guardrail and notes it's easy to code, but only if each day
+ * carries a tag to count. Also gates §13's sequencing rules (no heavy
+ * lower-body within 24 h of a long run) and §6's 48 h between high-CNS
+ * sessions. */
+export type SessionIntensity = "easy" | "moderate" | "hard";
+
 export interface DayPlan {
   label: string;
   isRestDay: boolean;
+  /** Ignored when isRestDay. */
+  intensity: SessionIntensity;
+  /** True for a day whose lower body is meaningfully loaded — the specific
+   * thing §13's spacing rules and §6's sprint/plyo spacing are about. A hard
+   * upper-body day doesn't conflict with a long run; a moderate lower-body
+   * one can. */
+  loadsLowerBody: boolean;
   slots: ExerciseSlot[];
 }
 
@@ -327,12 +516,24 @@ export interface ProgramTemplate {
   name: string;
   discipline: ProgramDiscipline;
   weekStructure: WeekStructure;
-  /** 1-based week indices that should apply a deload (reduced volume/
-   * intensity) — read by each slot's own forWeek, since only the template
-   * that built a slot's prescription knows how "reduced" should look for
-   * that slot (e.g. a strength slot drops sets, a running slot drops
-   * mileage). */
-  deloadWeeks: number[];
+  /** 1-based week index -> the kind of deload that week applies. Read by each
+   * slot's own forWeek (via WeekContext.deload), since only the template that
+   * built a slot's prescription knows how "reduced" should look for that slot
+   * — a strength slot drops sets, a running slot drops mileage.
+   *
+   * A Map rather than the number[] this replaced, because §3's two deload
+   * kinds need opposite treatment and a bare index list can't say which one a
+   * given week is. Empty for a novice's first ~3 months: §3 is explicit that
+   * a true novice isn't generating enough absolute training stress to
+   * accumulate meaningful fatigue, that what stalls them is technique, food
+   * or sleep rather than fatigue, and that forcing a deload in month 2 mostly
+   * interrupts the momentum you're trying to protect. Reactive resets and the
+   * runtime light-week triggers cover that case instead. */
+  deloadWeeks: Map<number, DeloadKind>;
+  /** 1-based week index -> phase, for every week in the program. Built by the
+   * template because only it knows its own structure; consumed by
+   * assemble.ts to construct each week's WeekContext. */
+  phaseByWeek: Map<number, ProgramPhase>;
 }
 
 /**
@@ -357,6 +558,76 @@ export interface ProgramTemplate {
  * the same "don't quietly produce something unsound" principle as keeping
  * AI off the critical path.
  */
-export type TemplateResult = { template: ProgramTemplate } | { error: string } | { needsHumanReason: string };
+/**
+ * A successfully generated template, plus the things the coach's answers
+ * insist be *said* rather than silently applied.
+ *
+ * `warnings` exists because "say so in the UI" appears throughout the source
+ * document and a success case that can't carry text means none of it ships:
+ * that 2 days/week is maintenance for an advanced lifter (§1), that a novice's
+ * week was capped at 4 days and why (§1), that 6 days with 75+ min sessions is
+ * a completion risk (§1), that a meet prep is short (§5), that load is
+ * expected to plateau in a deficit so the success metric is maintained load
+ * and reps rather than weekly increases (§4), that this is general athletic
+ * development with a sport emphasis and not a sport-specific program (§7),
+ * that a marathon request became a half-marathon plan (§11), that a hybrid's
+ * secondary goal is maintained and not developed (§13), and that hybrid
+ * training raises energy requirements enough that under-fuelling is the usual
+ * reason these plans fail (§13).
+ *
+ * These are not errors. The plan is sound; the user needs to know something
+ * about it.
+ */
+export interface GeneratedTemplate {
+  template: ProgramTemplate;
+  warnings: string[];
+  /**
+   * Non-null when §10 point 7 fired: shoulder + lower back flagged together,
+   * or three or more flags at once. The coach's instruction is specific — do
+   * not intersect six exclusion lists and emit "a program of leg curls and
+   * lateral raises." Generate a deliberately conservative full-body program
+   * *and* recommend a consultation.
+   *
+   * Deliberately a field on the success case rather than a fourth variant of
+   * TemplateResult: a plan really was produced and is safe to train on, which
+   * is categorically different from needsHumanReason (no plan at all, and no
+   * adjustment to the questionnaire should be offered as a workaround). The
+   * UI must surface it prominently rather than treating it as another
+   * warning string.
+   */
+  recommendConsultation: { reason: string } | null;
+}
+
+export type TemplateResult = GeneratedTemplate | { error: string } | { needsHumanReason: string };
 
 export type TemplateBuilder = (input: ProgramGenerationInput) => TemplateResult;
+
+/** Narrows Exercise.secondary_muscle_groups, which the Exercise Library types
+ * as a bare string[] (it mirrors a text[] column). §8's set-counting rule
+ * credits indirect work at 0.5 — a bench press counting 1.0 chest, 0.5 front
+ * delt, 0.5 triceps — so per-muscle volume totals are computed *from* this
+ * array, and an unrecognised string silently vanishing from a total is the
+ * kind of bug that makes the whole volume-landmark check meaningless.
+ *
+ * Narrowing here rather than changing the shared Exercise type on purpose:
+ * that type mirrors the database column and is consumed across the Exercise
+ * Library UI, the picker and the detail page, none of which need the
+ * guarantee. Keeping the boundary check inside generate/ means this feature
+ * can be removed by deleting this directory. */
+export function toMuscleGroups(values: readonly string[]): MuscleGroup[] {
+  const valid = new Set<string>([
+    "chest",
+    "back",
+    "shoulders",
+    "quadriceps",
+    "hamstrings",
+    "glutes",
+    "calves",
+    "core",
+    "biceps",
+    "triceps",
+    "forearms",
+    "full_body",
+  ] satisfies readonly MuscleGroup[]);
+  return values.filter((value): value is MuscleGroup => valid.has(value));
+}
