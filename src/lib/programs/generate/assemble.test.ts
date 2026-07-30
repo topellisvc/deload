@@ -256,6 +256,34 @@ describe("assembleWeeks — a slot with neither a pattern nor a muscle group", (
     expect(result.warnings).toEqual([]);
     expect(result.weeks[0]!.days[0]!.blocks[0]!.exercises[0]!.custom_name).toBe("Easy Run");
   });
+
+  it("prefers the slot's own placeholderLabel over the day's label when the day has more than one slot", () => {
+    // power-athletic-templates.ts's sprint day is the real-world case: a
+    // multi-slot day ("Speed & Power A") where the pattern-less sprint slot
+    // would otherwise get named after the whole session instead of itself.
+    const day: DayPlan = {
+      label: "Speed & Power A",
+      isRestDay: false,
+      intensity: "hard",
+      loadsLowerBody: true,
+      slots: [
+        slot({ category: "running", movementPattern: null, primaryMuscleGroup: null, placeholderLabel: "Sprints" }),
+        slot({ category: "strength", movementPattern: "squat_bilateral", primaryMuscleGroup: "quadriceps" }),
+      ],
+    };
+    const exercises: Exercise[] = [
+      ex({
+        id: "goblet-squat",
+        movement_pattern: "squat",
+        primary_muscle_group: "quadriceps",
+        metadata: { [METADATA_KEYS.slotPatterns]: ["squat_bilateral"] },
+      }),
+    ];
+    const result = assembleWeeks({ template: simpleTemplate([day]), totalWeeks: 1, exercises, selection: baseSelection() });
+    const blocks = result.weeks[0]!.days[0]!.blocks;
+    expect(blocks[0]!.exercises[0]!.custom_name).toBe("Sprints");
+    expect(blocks[0]!.exercises[0]!.custom_name).not.toBe("Speed & Power A");
+  });
 });
 
 describe("assembleWeeks — respects injury/equipment/coaching constraints per athlete", () => {

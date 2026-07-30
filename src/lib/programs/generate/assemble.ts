@@ -141,16 +141,22 @@ function slotDescription(slot: Pick<ExerciseSlot, "movementPattern" | "primaryMu
  * has nothing to match against and reports "unresolved," which used to
  * surface as a spurious "no exercise available for main slot (unspecified)"
  * warning on every running/cardio/hybrid/sprint day, every single week.
- * The day's own label ("Easy Run," "Threshold," "Zone 2," ...) already
- * says everything the athlete needs, so it becomes the block's custom_name
- * directly — no catalog lookup, no warning, nothing to fix in the data. */
+ *
+ * The placeholder name is the slot's own placeholderLabel when it has one;
+ * otherwise it falls back to the day's own label ("Easy Run," "Threshold,"
+ * "Zone 2," ...). The fallback is only correct when the slot has its day to
+ * itself — see placeholderLabel's own doc comment (types.ts) for why a
+ * multi-slot day (power-athletic-templates.ts's sprint day, which shares
+ * "Speed & Power A" with a jump slot, hamstring-prep accessories and a
+ * squat) needs the override instead of silently naming the sprint block
+ * after the whole session. */
 function resolveDaySlots(day: DayPlan, exercises: readonly Exercise[], selection: SelectionContext, warnings: string[], dayLabel: string): ResolvedSlot[] {
   const usedToday = new Set<string>();
   const resolved: ResolvedSlot[] = [];
 
   for (const slot of day.slots) {
     if (!slot.movementPattern && !slot.primaryMuscleGroup) {
-      resolved.push({ slot, exercise: null, placeholderName: dayLabel });
+      resolved.push({ slot, exercise: null, placeholderName: slot.placeholderLabel ?? dayLabel });
       continue;
     }
 

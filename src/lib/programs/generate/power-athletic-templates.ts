@@ -231,6 +231,13 @@ function sprintDaySlot(level: ExperienceLevel): ExerciseSlot {
     isPrimary: true,
     autoregulationEligible: false,
     prescription: sprintPrescription(level),
+    // This slot shares its day ("Speed & Power A") with a jump slot,
+    // hamstring-prep accessories and a squat — unlike running-templates.ts/
+    // cardio-templates.ts's pattern-less slots, which always have a day to
+    // themselves, so assemble.ts can't fall back to the day's own label
+    // here without naming this specific exercise after the whole session.
+    // See placeholderLabel's doc comment (types.ts).
+    placeholderLabel: "Sprints",
   };
 }
 

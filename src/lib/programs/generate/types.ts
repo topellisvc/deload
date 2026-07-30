@@ -534,6 +534,19 @@ export interface ExerciseSlot {
    * progression lifts versus opportunistic accessories. */
   autoregulationEligible: boolean;
   prescription: SlotPrescription;
+  /** Only meaningful for a pattern-less, muscle-group-less slot (see
+   * assemble.ts's resolveDaySlots) — the placeholder exercise name to use
+   * for it instead of falling back to the containing day's own label.
+   * Every existing pattern-less slot from running-templates.ts and
+   * cardio-templates.ts lives alone on a single-slot day, where the day
+   * label ("Easy Run," "Zone 2," ...) already *is* a correct description
+   * of that one exercise — no override needed. power-athletic-templates.ts's
+   * sprint slot is different: it shares "Speed & Power A" with a jump slot,
+   * hamstring-prep accessories, and a squat, so falling back to the day
+   * label would name the sprint block after the whole session instead of
+   * the sprint itself. Set this whenever a pattern-less slot doesn't have
+   * a single-slot day to inherit a name from. */
+  placeholderLabel?: string;
 }
 
 /** §13 point 6: "Count hard sessions across modalities, not within them." For

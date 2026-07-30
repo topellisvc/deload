@@ -108,6 +108,21 @@ describe("buildPowerAthleticTemplate — the mandatory hamstring-prep sprint gat
     expect(week1.notes).toContain("hamstring");
   });
 
+  it("gives the sprint slot its own placeholderLabel instead of inheriting the day's session-level label", () => {
+    // The sprint day ("Speed & Power A") also contains a jump slot,
+    // hamstring-prep accessories and a squat — assemble.ts falls back to
+    // the day label for a pattern-less slot only when it has no override,
+    // so without this the sprint block would be named after the whole
+    // session rather than "sprints."
+    const result = buildPowerAthleticTemplate(baseInput({ experienceLevel: "advanced" }));
+    if (!("template" in result)) throw new Error("expected a template");
+    const day = result.template.weekStructure.days[0]!;
+    expect(day.label).toBe("Speed & Power A");
+    const sprintSlot = day.slots[0]!;
+    expect(sprintSlot.placeholderLabel).toBe("Sprints");
+    expect(sprintSlot.placeholderLabel).not.toBe(day.label);
+  });
+
   it("uses a 3-week prep for advanced and a 4-week prep for beginner/intermediate", () => {
     const advanced = buildPowerAthleticTemplate(baseInput({ experienceLevel: "advanced" }));
     const beginner = buildPowerAthleticTemplate(baseInput({ experienceLevel: "beginner" }));
