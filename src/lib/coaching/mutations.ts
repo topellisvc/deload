@@ -1,11 +1,36 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/supabase/types";
-import { notifyInviteAccepted } from "@/lib/notifications/mutations";
+import { notifyInviteAccepted, notifyInviteReceived } from "@/lib/notifications/mutations";
 
 function authCallbackUrl(redirectTo: string): string {
   const url = new URL("/auth/callback", window.location.origin);
   url.searchParams.set("redirect_to", redirectTo);
   return url.toString();
+}
+
+/**
+ * Looks up whether the just-invited email already has a Deload account,
+ * via the authenticated-only /api/coaching/resolve-invitee (needs the
+ * service-role admin client, which can't run in this browser-side
+ * module — see that route). Used only to decide whether to also fire an
+ * in-app notification; failing this (network error, etc.) just means the
+ * invitee doesn't get the in-app notification, not that the invite itself
+ * fails — inviteClient's roster row and OTP email are already done by the
+ * time this runs.
+ */
+async function resolveInviteeId(email: string): Promise<string | null> {
+  try {
+    const res = await fetch("/api/coaching/resolve-invitee", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { userId?: string | null };
+    return data.userId ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -64,6 +89,22 @@ export async function inviteClient(
   });
   if (otpError) {
     return { error: `Added to your roster, but the invite email couldn't be sent: ${otpError.message}` };
+  }
+
+  // If this email already belongs to a real Deload account, they also get
+  // an in-app notification — the OTP email above looks like any other
+  // sign-in email, so without this they'd have no way to know they'd been
+  // invited short of stumbling onto /coaching themselves. A brand-new
+  // signup has no id to resolve yet, so this silently no-ops for them
+  // (see notifyInviteReceived's doc comment for why that's fine).
+  const recipientId = await resolveInviteeId(email);
+  if (recipientId) {
+    await notifyInviteReceived(supabase, {
+      coachId: params.coachId,
+      coachEmail: params.coachEmail,
+      recipientId,
+      message,
+    });
   }
 
   return { error: null };

@@ -30,9 +30,10 @@ function formatRelativeTime(iso: string): string {
  * not just on next page load — same pattern as MessageThread's channel
  * subscription.
  *
- * Only two things ever create a row here today (see that migration's
- * comment): a coach assigning/sending a program, and a coaching invite
- * being accepted — so this stays a lightweight dropdown, not a full
+ * Three things create a row here today (see lib/notifications/mutations.ts):
+ * a coach assigning/sending a program, a coaching invite being accepted,
+ * and a coaching invite being sent to an email that already has an
+ * account — so this stays a lightweight dropdown, not a full
  * notifications page.
  */
 export function NotificationBell() {

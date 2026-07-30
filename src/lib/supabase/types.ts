@@ -99,7 +99,7 @@ export interface Message {
   created_at: string;
 }
 
-export type NotificationType = "program_assigned" | "invite_accepted";
+export type NotificationType = "program_assigned" | "invite_accepted" | "invite_received";
 
 /**
  * One in-app notification (migration 0019). `link` is an app-relative path

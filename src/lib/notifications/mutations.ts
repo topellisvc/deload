@@ -131,6 +131,33 @@ export async function notifyInviteAccepted(
   });
 }
 
+/**
+ * Trigger 3: a coaching invite is sent to an email that already has a
+ * Deload account. Migration 0019 originally skipped any in-app row for
+ * "invite sent" on the assumption the invitee usually has no account yet
+ * (they get Supabase's own magic-link/OTP email for that leg instead) —
+ * true for a new signup, but not for this case, where the recipient is a
+ * real existing user who'd otherwise have no way to discover the invite
+ * short of stumbling onto /coaching. No separate email leg here: the OTP
+ * sign-in email inviteClient already sends covers that, this only adds
+ * the missing in-app half. Gated by migration 0042's narrow insert
+ * policy (only fires for a genuine matching pending invite), not the
+ * general "active relationship" policy that the other two triggers use.
+ */
+export async function notifyInviteReceived(
+  supabase: SupabaseClient,
+  params: { coachId: string; coachEmail: string; recipientId: string; message?: string }
+): Promise<void> {
+  await notify(supabase, {
+    recipientId: params.recipientId,
+    actorId: params.coachId,
+    type: "invite_received",
+    title: "Coaching invite",
+    body: params.message ? `${params.coachEmail}: "${params.message}"` : `${params.coachEmail} invited you to train with them.`,
+    link: "/coaching",
+  });
+}
+
 /** Marks one notification read — used when the bell dropdown's item is
  * clicked. `.is("read_at", null)` keeps this idempotent rather than an
  * error if it's somehow clicked twice. */
