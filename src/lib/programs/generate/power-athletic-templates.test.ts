@@ -183,6 +183,23 @@ describe("buildPowerAthleticTemplate — output-quality prescriptions", () => {
     expect(jumpSlot.autoregulationEligible).toBe(false);
   });
 
+  it("sets minReps/maxReps (not a free-text reps string) on every rep_range slot — the display layer for this type reads min_reps/max_reps only and renders '?' otherwise", () => {
+    const result = buildPowerAthleticTemplate(baseInput({ daysPerWeek: 4 }));
+    if (!("template" in result)) throw new Error("expected a template");
+    const ctx = { weekIndex: 1, totalWeeks: 10, phase: "standard" as const, deload: null };
+    const rangeSlots = result.template.weekStructure.days
+      .flatMap((d) => d.slots)
+      .filter((s) => s.prescription.forWeek(ctx).prescriptionType === "rep_range");
+    expect(rangeSlots.length).toBeGreaterThan(0);
+    for (const s of rangeSlots) {
+      const plan = s.prescription.forWeek(ctx);
+      expect(plan.minReps).not.toBeNull();
+      expect(plan.maxReps).not.toBeNull();
+      expect(typeof plan.minReps).toBe("number");
+      expect(typeof plan.maxReps).toBe("number");
+    }
+  });
+
   it("gives the maximal-strength slots a real RIR-based target, and marks them autoregulation-eligible", () => {
     const result = buildPowerAthleticTemplate(baseInput({ daysPerWeek: 2 }));
     if (!("template" in result)) throw new Error("expected a template");

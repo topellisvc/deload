@@ -125,7 +125,12 @@ function jumpPrescription(): { forWeek: (ctx: WeekContext) => WeekSetPlan } {
     forWeek: (): WeekSetPlan => ({
       prescriptionType: "rep_range",
       sets: 4,
-      reps: "3-5",
+      // "rep_range"'s display/editor contract (prescription-types.ts) reads
+      // min_reps/max_reps, not reps — a plain reps string here renders as
+      // "?" everywhere this prescription is shown (set-details.tsx,
+      // prescription-summary.ts both check min_reps/max_reps only).
+      minReps: 3,
+      maxReps: 5,
       restSeconds: 150,
       notes: "Every rep should look like your best rep. Stop this exercise once a jump clearly falls short of today's best — that's the real stopping rule, not the rep count.",
     }),
@@ -137,7 +142,8 @@ function throwPrescription(): { forWeek: (ctx: WeekContext) => WeekSetPlan } {
     forWeek: (): WeekSetPlan => ({
       prescriptionType: "rep_range",
       sets: 3,
-      reps: "3-5",
+      minReps: 3,
+      maxReps: 5,
       restSeconds: 150,
       notes: "Full recovery between throws — this is about throwing far, not conditioning. Stop once throw distance drops off from today's best.",
     }),
@@ -149,7 +155,8 @@ function weightliftingDerivativePrescription(): { forWeek: (ctx: WeekContext) =>
     forWeek: (): WeekSetPlan => ({
       prescriptionType: "rep_range",
       sets: 4,
-      reps: "3",
+      minReps: 3,
+      maxReps: 3,
       restSeconds: 150,
       notes: "Light load, moved as fast as possible — speed is the point, not the weight on the bar. Stop the set the moment it stops feeling snappy.",
     }),
