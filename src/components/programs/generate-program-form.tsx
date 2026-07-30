@@ -20,7 +20,9 @@ import type {
   LowerBackPattern,
   ProgramGenerationInput,
   RedFlagScreen,
+  SeasonPhase,
   Sex,
+  SportGroup,
   TrainingGoal,
 } from "@/lib/programs/generate/types";
 import type { MuscleGroup } from "@/lib/exercises/types";
@@ -44,7 +46,30 @@ const GOAL_OPTIONS: { value: TrainingGoal; label: string; comingSoon?: boolean }
   { value: "hybrid", label: "Hybrid — lifting + running" },
   { value: "powerlifting_peak", label: "Powerlifting meet peak" },
   { value: "power_athletic", label: "Power / athletic development" },
-  { value: "sport_specific", label: "Sport-specific", comingSoon: true },
+  { value: "sport_specific", label: "Sport-specific" },
+];
+
+const SPORT_GROUP_OPTIONS: { value: SportGroup; label: string }[] = [
+  { value: "field_court_invasion", label: "Field/court invasion (soccer, basketball, hockey, rugby...)" },
+  { value: "rotational_overhead", label: "Racquet / throwing (tennis, baseball, cricket, golf-adjacent)" },
+  { value: "combat_striking", label: "Combat — striking (boxing, kickboxing, MMA)" },
+  { value: "combat_grappling", label: "Combat — grappling (wrestling, BJJ, judo)" },
+  { value: "swimming", label: "Swimming" },
+  { value: "track_sprint_jump", label: "Track — sprints / jumps" },
+  { value: "track_throws", label: "Track — throws" },
+  { value: "endurance_other", label: "Endurance (cycling, rowing, triathlon...)" },
+  { value: "golf", label: "Golf" },
+  { value: "climbing", label: "Climbing" },
+  { value: "skiing_snowboarding", label: "Skiing / snowboarding" },
+  { value: "dance", label: "Dance" },
+  { value: "hiking_hyrox", label: "Hiking / Hyrox" },
+];
+
+const SEASON_PHASE_OPTIONS: { value: SeasonPhase; label: string }[] = [
+  { value: "off_season", label: "Off-season" },
+  { value: "pre_season", label: "Pre-season" },
+  { value: "in_season", label: "In-season" },
+  { value: "post_season", label: "Post-season" },
 ];
 
 const MAINTAINABLE_GOAL_OPTIONS = GOAL_OPTIONS.filter((g) =>
@@ -212,6 +237,17 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
 
   const [coachedOnOlympicLifts, setCoachedOnOlympicLifts] = useState(false);
 
+  const [sportGroup, setSportGroup] = useState<SportGroup>("field_court_invasion");
+  const [seasonPhase, setSeasonPhase] = useState<SeasonPhase>("off_season");
+  const [practicesOrGamesPerWeek, setPracticesOrGamesPerWeek] = useState(3);
+  const [position, setPosition] = useState("");
+  const [sportInjuryInLast12Months, setSportInjuryInLast12Months] = useState(false);
+  const [sportCurrentPain, setSportCurrentPain] = useState(false);
+  const [canSquatToDepthPainFree, setCanSquatToDepthPainFree] = useState(true);
+  const [canReachArmsOverheadAgainstWall, setCanReachArmsOverheadAgainstWall] = useState(true);
+  const [currentlyCuttingWeight, setCurrentlyCuttingWeight] = useState(false);
+  const [throwingSessionsPerWeek, setThrowingSessionsPerWeek] = useState("");
+
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
   const [needsHumanReason, setNeedsHumanReason] = useState<string | null>(null);
@@ -245,7 +281,21 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
       globalRefusals,
       programLengthWeeks,
       powerlifting: goal === "powerlifting_peak" ? { meetDateISO: new Date(meetDate).toISOString(), isFirstMeet } : null,
-      sport: null,
+      sport:
+        goal === "sport_specific"
+          ? {
+              sportGroup,
+              seasonPhase,
+              practicesOrGamesPerWeek,
+              position: position.trim() ? position.trim() : null,
+              injuryInLast12Months: sportInjuryInLast12Months,
+              currentPain: sportCurrentPain,
+              canSquatToDepthPainFree,
+              canReachArmsOverheadAgainstWall,
+              currentlyCuttingWeight,
+              throwingSessionsPerWeek: throwingSessionsPerWeek.trim() ? Number(throwingSessionsPerWeek) : null,
+            }
+          : null,
       hybrid: goal === "hybrid" ? { priority: hybridPriority, primaryGoal: hybridPrimaryGoal, secondaryGoal: hybridSecondaryGoal } : null,
       running: needsRunningHistory ? { currentWeeklyKm, weeksAtCurrentVolume, hasRunContinuouslyThirtyMinutes } : null,
       bodybuilding: goal === "build_muscle_bodybuilding" ? { laggingMuscleGroups } : null,
@@ -516,6 +566,90 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
               </Select>
             </div>
           </div>
+        </Section>
+      )}
+
+      {goal === "sport_specific" && (
+        <Section
+          title="Sport profile"
+          description="This builds general athletic development with a sport emphasis, not a program specific to your sport — season phase matters more than the sport itself."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="sportGroup">Sport</Label>
+              <Select id="sportGroup" value={sportGroup} onChange={(e) => setSportGroup(e.target.value as SportGroup)}>
+                {SPORT_GROUP_OPTIONS.map((g) => (
+                  <option key={g.value} value={g.value}>
+                    {g.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="seasonPhase">Season phase</Label>
+              <Select id="seasonPhase" value={seasonPhase} onChange={(e) => setSeasonPhase(e.target.value as SeasonPhase)}>
+                {SEASON_PHASE_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="practicesPerWeek">Practices / games per week</Label>
+              <Input
+                id="practicesPerWeek"
+                type="number"
+                min={0}
+                max={14}
+                value={practicesOrGamesPerWeek}
+                onChange={(e) => setPracticesOrGamesPerWeek(Number(e.target.value))}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="position">Position / role (optional)</Label>
+              <Input id="position" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="e.g. forward, pitcher" />
+            </div>
+          </div>
+
+          <CheckboxRow id="sportInjury12mo" label="Injury in the last 12 months" checked={sportInjuryInLast12Months} onChange={setSportInjuryInLast12Months} />
+          <CheckboxRow id="sportCurrentPain" label="Current pain" checked={sportCurrentPain} onChange={setSportCurrentPain} />
+          <CheckboxRow
+            id="squatDepth"
+            label="I can squat to depth pain-free"
+            checked={canSquatToDepthPainFree}
+            onChange={setCanSquatToDepthPainFree}
+          />
+          <CheckboxRow
+            id="overheadWall"
+            label="I can reach my arms overhead against a wall pain-free"
+            checked={canReachArmsOverheadAgainstWall}
+            onChange={setCanReachArmsOverheadAgainstWall}
+          />
+          <CheckboxRow
+            id="cuttingWeight"
+            label="I'm currently cutting weight for competition"
+            checked={currentlyCuttingWeight}
+            onChange={setCurrentlyCuttingWeight}
+          />
+
+          {sportGroup === "rotational_overhead" && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="throwingSessions">Throwing/bowling sessions per week (baseball, softball, cricket only — leave blank otherwise)</Label>
+              <Input
+                id="throwingSessions"
+                type="number"
+                min={0}
+                max={14}
+                value={throwingSessionsPerWeek}
+                onChange={(e) => setThrowingSessionsPerWeek(e.target.value)}
+                placeholder="Leave blank if not applicable"
+              />
+            </div>
+          )}
         </Section>
       )}
 

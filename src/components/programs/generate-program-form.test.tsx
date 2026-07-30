@@ -130,4 +130,17 @@ describe("GenerateProgramForm", () => {
     await user.click(screen.getByLabelText("Lower back"));
     expect(screen.getAllByText("Not sure").length).toBeGreaterThan(0);
   });
+
+  it("reveals the sport profile section only for sport_specific, and only shows throwing volume for rotational_overhead", async () => {
+    const user = userEvent.setup();
+    render(<GenerateProgramForm userId="user-1" />);
+    expect(screen.queryByText("Sport profile")).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Goal"), "sport_specific");
+    expect(screen.getByText("Sport profile")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Throwing\/bowling sessions/)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Sport"), "rotational_overhead");
+    expect(screen.getByLabelText(/Throwing\/bowling sessions/)).toBeInTheDocument();
+  });
 });

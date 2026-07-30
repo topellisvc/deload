@@ -8,6 +8,7 @@ import { buildPowerAthleticTemplate, isPowerAthleticGoal } from "@/lib/programs/
 import { buildPowerliftingTemplate, isPowerliftingGoal } from "@/lib/programs/generate/powerlifting-templates";
 import { buildResistanceTemplate, isResistanceGoal } from "@/lib/programs/generate/resistance-templates";
 import { buildRunningTemplate, isRunGoal } from "@/lib/programs/generate/running-templates";
+import { buildSportSpecificTemplate, isSportSpecificGoal } from "@/lib/programs/generate/sport-specific-templates";
 import type { ProgramGenerationInput, TemplateResult, TrainingGoal } from "@/lib/programs/generate/types";
 
 /**
@@ -47,7 +48,7 @@ function isTrainingGoal(value: unknown): value is TrainingGoal {
     isHybridGoal(goal) ||
     isPowerliftingGoal(goal) ||
     isPowerAthleticGoal(goal) ||
-    goal === "sport_specific"
+    isSportSpecificGoal(goal)
   );
 }
 
@@ -75,9 +76,7 @@ function buildTemplate(input: ProgramGenerationInput): TemplateResult {
   if (isHybridGoal(input.goal)) return buildHybridTemplate(input);
   if (isPowerliftingGoal(input.goal)) return buildPowerliftingTemplate(input);
   if (isPowerAthleticGoal(input.goal)) return buildPowerAthleticTemplate(input);
-  // sport_specific: accepted by the questionnaire's type but no template
-  // family has been built for it yet (task #23) — an honest error, not a
-  // silently wrong plan.
+  if (isSportSpecificGoal(input.goal)) return buildSportSpecificTemplate(input);
   return { error: `"${input.goal}" isn't supported by the program generator yet — this template family hasn't been built.` };
 }
 
