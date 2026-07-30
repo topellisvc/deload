@@ -128,12 +128,32 @@ function slotDescription(slot: Pick<ExerciseSlot, "movementPattern" | "primaryMu
  * Slots are resolved in their declared order, each excluding exercises
  * already placed earlier in the same day; if that exclusion empties the
  * pool for a slot, it's retried without the exclusion rather than left
- * unresolved (see header comment). */
+ * unresolved (see header comment).
+ *
+ * A slot with neither a movementPattern nor a primaryMuscleGroup is never
+ * sent to selectExerciseForSlot at all — running-templates.ts,
+ * cardio-templates.ts, hybrid-templates.ts's maintenance-running days and
+ * power-athletic-templates.ts's sprint day all build slots this way on
+ * purpose (WeekSetPlan.forWeek already synthesizes the real distance/pace/
+ * interval prescription with no Exercise Library row involved at all — see
+ * migration 0045's header comment on why). Routing that combination
+ * through the Appendix C ladder mechanism was never the intent; it just
+ * has nothing to match against and reports "unresolved," which used to
+ * surface as a spurious "no exercise available for main slot (unspecified)"
+ * warning on every running/cardio/hybrid/sprint day, every single week.
+ * The day's own label ("Easy Run," "Threshold," "Zone 2," ...) already
+ * says everything the athlete needs, so it becomes the block's custom_name
+ * directly — no catalog lookup, no warning, nothing to fix in the data. */
 function resolveDaySlots(day: DayPlan, exercises: readonly Exercise[], selection: SelectionContext, warnings: string[], dayLabel: string): ResolvedSlot[] {
   const usedToday = new Set<string>();
   const resolved: ResolvedSlot[] = [];
 
   for (const slot of day.slots) {
+    if (!slot.movementPattern && !slot.primaryMuscleGroup) {
+      resolved.push({ slot, exercise: null, placeholderName: dayLabel });
+      continue;
+    }
+
     const available = exercises.filter((e) => !usedToday.has(e.id));
     let result = selectExerciseForSlot(slot, available, selection);
     if ("unresolved" in result) {

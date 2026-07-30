@@ -219,6 +219,45 @@ describe("assembleWeeks — unresolved slots", () => {
   });
 });
 
+describe("assembleWeeks — a slot with neither a pattern nor a muscle group", () => {
+  // running-templates.ts, cardio-templates.ts, hybrid-templates.ts's
+  // maintenance-running days and power-athletic-templates.ts's sprint day
+  // all build slots exactly this way on purpose — WeekSetPlan.forWeek
+  // synthesizes the real distance/pace/interval prescription without ever
+  // touching the Exercise Library. This used to still get sent through
+  // selectExerciseForSlot and come back "unresolved," producing a spurious
+  // "no exercise available for main slot (unspecified)" warning on every
+  // running/cardio/hybrid/sprint day, every week — regression coverage for
+  // that fix.
+  it("uses the day's own label as the exercise name, with no catalog lookup and no warning", () => {
+    const day: DayPlan = {
+      label: "Threshold",
+      isRestDay: false,
+      intensity: "hard",
+      loadsLowerBody: true,
+      slots: [slot({ category: "running", movementPattern: null, primaryMuscleGroup: null })],
+    };
+    const result = assembleWeeks({ template: simpleTemplate([day]), totalWeeks: 1, exercises: [], selection: baseSelection() });
+    const blockExercise = result.weeks[0]!.days[0]!.blocks[0]!.exercises[0]!;
+    expect(blockExercise.exercise_id).toBeNull();
+    expect(blockExercise.custom_name).toBe("Threshold");
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("never calls into exercise selection at all — an empty library still resolves cleanly", () => {
+    const day: DayPlan = {
+      label: "Easy Run",
+      isRestDay: false,
+      intensity: "easy",
+      loadsLowerBody: true,
+      slots: [slot({ category: "running", movementPattern: null, primaryMuscleGroup: null })],
+    };
+    const result = assembleWeeks({ template: simpleTemplate([day]), totalWeeks: 1, exercises: [], selection: baseSelection() });
+    expect(result.warnings).toEqual([]);
+    expect(result.weeks[0]!.days[0]!.blocks[0]!.exercises[0]!.custom_name).toBe("Easy Run");
+  });
+});
+
 describe("assembleWeeks — respects injury/equipment/coaching constraints per athlete", () => {
   it("regresses away from a contraindicated exercise the same way select-exercises.ts does on its own", () => {
     const day: DayPlan = { label: "Day 1", isRestDay: false, intensity: "moderate", loadsLowerBody: false, slots: [slot({ movementPattern: "vertical_push", primaryMuscleGroup: "shoulders" })] };
