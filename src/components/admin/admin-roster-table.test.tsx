@@ -4,11 +4,14 @@ import { render, screen } from "@testing-library/react";
 import { AdminRosterTable } from "./admin-roster-table";
 import type { AdminRosterRow } from "@/lib/admin/queries";
 
-// DeleteAccountButton (rendered per-row) needs a router and toast context —
-// out of scope for these tests, which are only about what the table itself
-// renders, not what the button does when clicked.
+// DeleteAccountButton and BetaAccessToggle (both rendered per-row) need a
+// router and toast context — out of scope for these tests, which are only
+// about what the table itself renders, not what either button does when
+// clicked (BetaAccessToggle's own behavior is covered in
+// beta-access-toggle.test.tsx).
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("@/components/ui/toast", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock("@/lib/admin/mutations", () => ({ deleteUserAccount: vi.fn(), setBetaAccess: vi.fn() }));
 
 function makeRow(overrides: Partial<AdminRosterRow> = {}): AdminRosterRow {
   return {
@@ -17,6 +20,7 @@ function makeRow(overrides: Partial<AdminRosterRow> = {}): AdminRosterRow {
     displayName: null,
     role: "athlete",
     isAdmin: false,
+    betaBuildForMe: false,
     signedUpAt: "2026-01-01T00:00:00.000Z",
     lastActiveOn: null,
     programsCreated: 0,
@@ -67,5 +71,15 @@ describe("AdminRosterTable", () => {
   it("shows a Delete button for another account, but not for the signed-in admin's own row", () => {
     render(<AdminRosterTable roster={[makeRow({ id: "user-1" }), makeRow({ id: "viewer-id", email: "me@example.com" })]} currentUserId="viewer-id" />);
     expect(screen.getAllByRole("button", { name: /delete/i })).toHaveLength(1);
+  });
+
+  it("shows 'Beta off' for an account without beta_build_for_me", () => {
+    render(<AdminRosterTable roster={[makeRow({ betaBuildForMe: false })]} currentUserId="viewer-id" />);
+    expect(screen.getByRole("button", { name: "Beta off" })).toBeInTheDocument();
+  });
+
+  it("shows 'Beta on' for an account already granted beta_build_for_me", () => {
+    render(<AdminRosterTable roster={[makeRow({ betaBuildForMe: true })]} currentUserId="viewer-id" />);
+    expect(screen.getByRole("button", { name: "Beta on" })).toBeInTheDocument();
   });
 });

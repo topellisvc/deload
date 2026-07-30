@@ -6,6 +6,10 @@ export interface AdminRosterRow {
   displayName: string | null;
   role: "athlete" | "coach";
   isAdmin: boolean;
+  /** profiles.beta_build_for_me (migration 0053) — whether this account can
+   * currently see/use the questionnaire-driven "Build my program" generator
+   * while it's in beta. Admin-toggleable from this same roster. */
+  betaBuildForMe: boolean;
   signedUpAt: string;
   /** Most recent non-skipped session_logs.performed_on across every
    * program this person owns as an athlete — null if they've never
@@ -39,7 +43,7 @@ export async function getAdminRoster(supabase: SupabaseClient): Promise<AdminRos
   const [profilesResult, programsResult, logsResult] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, email, display_name, role, is_admin, created_at")
+      .select("id, email, display_name, role, is_admin, beta_build_for_me, created_at")
       .order("created_at", { ascending: false }),
     supabase.from("programs").select("owner_id"),
     supabase.from("session_logs").select("athlete_id, performed_on, skipped"),
@@ -51,6 +55,7 @@ export async function getAdminRoster(supabase: SupabaseClient): Promise<AdminRos
     display_name: string | null;
     role: "athlete" | "coach";
     is_admin: boolean;
+    beta_build_for_me: boolean;
     created_at: string;
   }[];
   const programs = (programsResult.data ?? []) as { owner_id: string }[];
@@ -76,6 +81,7 @@ export async function getAdminRoster(supabase: SupabaseClient): Promise<AdminRos
     displayName: p.display_name,
     role: p.role,
     isAdmin: p.is_admin,
+    betaBuildForMe: p.beta_build_for_me,
     signedUpAt: p.created_at,
     lastActiveOn: lastActiveByAthlete.get(p.id) ?? null,
     programsCreated: programCountByOwner.get(p.id) ?? 0,

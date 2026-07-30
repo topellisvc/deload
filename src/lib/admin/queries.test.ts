@@ -1,7 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { getAdminRoster } from "./queries";
 
-type ProfileRow = { id: string; email: string | null; display_name: string | null; role: "athlete" | "coach"; is_admin: boolean; created_at: string };
+type ProfileRow = {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  role: "athlete" | "coach";
+  is_admin: boolean;
+  beta_build_for_me: boolean;
+  created_at: string;
+};
 type ProgramRow = { owner_id: string };
 type LogRow = { athlete_id: string; performed_on: string; skipped: boolean };
 
@@ -40,6 +48,7 @@ function makeProfile(overrides: Partial<ProfileRow> = {}): ProfileRow {
     display_name: null,
     role: "athlete",
     is_admin: false,
+    beta_build_for_me: false,
     created_at: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };
@@ -58,6 +67,7 @@ describe("getAdminRoster", () => {
         displayName: null,
         role: "athlete",
         isAdmin: false,
+        betaBuildForMe: false,
         signedUpAt: "2026-01-01T00:00:00.000Z",
         lastActiveOn: null,
         programsCreated: 0,
@@ -114,5 +124,17 @@ describe("getAdminRoster", () => {
     const roster = await getAdminRoster(supabase as never);
 
     expect(roster[0]!.isAdmin).toBe(true);
+  });
+
+  it("surfaces the beta_build_for_me flag as betaBuildForMe", async () => {
+    const supabase = makeSupabaseMock({
+      profiles: [makeProfile({ id: "beta-1", beta_build_for_me: true })],
+      programs: [],
+      logs: [],
+    });
+
+    const roster = await getAdminRoster(supabase as never);
+
+    expect(roster[0]!.betaBuildForMe).toBe(true);
   });
 });

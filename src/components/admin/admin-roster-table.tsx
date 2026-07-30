@@ -4,6 +4,7 @@ import { cn, getInitials } from "@/lib/utils";
 import type { AdminRosterRow } from "@/lib/admin/queries";
 import { Button } from "@/components/ui/button";
 import { DeleteAccountButton } from "@/components/admin/delete-account-button";
+import { BetaAccessToggle } from "@/components/admin/beta-access-toggle";
 
 const ROLE_BADGE_CLASS: Record<AdminRosterRow["role"], string> = {
   athlete: "bg-muted text-muted-foreground",
@@ -52,6 +53,9 @@ export function AdminRosterTable({ roster, currentUserId }: { roster: AdminRoste
             <th scope="col" className="px-6 py-3 text-right font-medium">
               Sessions
             </th>
+            <th scope="col" className="px-6 py-3 font-medium">
+              Build my program (beta)
+            </th>
             <th scope="col" className="px-6 py-3" />
           </tr>
         </thead>
@@ -90,6 +94,9 @@ export function AdminRosterTable({ roster, currentUserId }: { roster: AdminRoste
               <td className="px-6 py-3 text-muted-foreground">{row.lastActiveOn ? formatDate(row.lastActiveOn) : "Never"}</td>
               <td className="px-6 py-3 text-right tabular-nums text-foreground">{row.programsCreated}</td>
               <td className="px-6 py-3 text-right tabular-nums text-foreground">{row.sessionCount}</td>
+              <td className="px-6 py-3">
+                <BetaAccessToggle userId={row.id} initialEnabled={row.betaBuildForMe} />
+              </td>
               <td className="px-6 py-3 text-right">
                 <div className="flex items-center justify-end gap-2">
                   <Link href={`/admin/users/${row.id}`}>

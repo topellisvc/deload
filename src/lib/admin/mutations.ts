@@ -22,3 +22,25 @@ export async function deleteUserAccount(userId: string): Promise<{ error: string
     return { error: "Couldn't delete that account." };
   }
 }
+
+/**
+ * Fire-to-completion request to /api/admin/set-beta-access — same "the
+ * actual write needs the service-role client" reason as deleteUserAccount
+ * above, just for a reversible column flip instead of a permanent delete.
+ * Awaited by BetaAccessToggle so it can roll back its optimistic UI state
+ * if the request fails.
+ */
+export async function setBetaAccess(userId: string, enabled: boolean): Promise<{ error: string | null }> {
+  try {
+    const res = await fetch("/api/admin/set-beta-access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, enabled }),
+    });
+    if (res.ok) return { error: null };
+    const data = (await res.json().catch(() => null)) as { error?: string } | null;
+    return { error: data?.error ?? "Couldn't update beta access." };
+  } catch {
+    return { error: "Couldn't update beta access." };
+  }
+}
