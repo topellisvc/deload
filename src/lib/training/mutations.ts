@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { completeSessionLog, createLoggedSet, createSessionLog } from "@/lib/logging/mutations";
 import { todayDateString } from "@/lib/dates";
-import type { AutoregulationEventKind } from "@/lib/training/autoregulation";
+import { decideReadinessDownregulation } from "@/lib/training/autoregulation";
+import type { AutoregulationEventKind, ReadinessCheck } from "@/lib/training/autoregulation";
 import type { DraftSet, TrainingModeSession, TrainingModeSessionRow } from "@/lib/training/types";
 import { mapTrainingModeSessionRow } from "@/lib/training/types";
 
@@ -13,6 +14,14 @@ interface DraftSessionParams {
   /** block_exercise_id -> optional reason, or null if none given. */
   skippedExercises: Record<string, string | null>;
   workoutNote: string | null;
+  /** Rule 3's readiness answer (autoregulation.ts) — null until the
+   * athlete answers it. Required, not optional, matching every other field
+   * on this type: training-session.tsx's persist() always resolves every
+   * field from current component state before calling saveDraftSession, the
+   * same "always pass the full current draft" convention the other fields
+   * already use, rather than a partial-update semantic this upsert doesn't
+   * actually implement. */
+  readiness: ReadinessCheck | null;
 }
 
 /**
@@ -35,6 +44,7 @@ export async function saveDraftSession(
         exercise_notes: params.exerciseNotes,
         skipped_exercises: params.skippedExercises,
         workout_note: params.workoutNote,
+        readiness: params.readiness ?? {},
         updated_at: new Date().toISOString(),
       },
       { onConflict: "training_day_id,athlete_id" }
@@ -99,6 +109,20 @@ export async function finishWorkout(
 ): Promise<{ sessionLogId: string | null; error: string | null }> {
   const performedOn = todayDateString();
 
+  // Rule 3 (coach-answers §2 Rule 3): "folded into the session log at
+  // Finish Workout" — the raw sleep/soreness answers themselves don't need
+  // their own permanent column (the consequence that actually matters,
+  // excluding this session from Rule 1's miss-streak count, is captured per
+  // exercise via createAutoregulationEvent's 'readiness_downregulated' kind
+  // instead — see training-session.tsx's handleRirAnswer), but a coach
+  // reading this session later should still see plainly why less was asked
+  // of the athlete today, not silently reduced sets with no explanation.
+  const readinessNote =
+    params.readiness && decideReadinessDownregulation(params.readiness)
+      ? "Reduced load today — reported a rough night's sleep and high soreness."
+      : null;
+  const note = readinessNote ? [readinessNote, params.workoutNote].filter(Boolean).join("\n\n") || null : params.workoutNote;
+
   const { data: existing } = await supabase
     .from("session_logs")
     .select("id")
@@ -109,7 +133,7 @@ export async function finishWorkout(
 
   let sessionLogId: string;
   if (existing) {
-    const { error: completeError } = await completeSessionLog(supabase, existing.id, params.workoutNote);
+    const { error: completeError } = await completeSessionLog(supabase, existing.id, note);
     if (completeError) return { sessionLogId: null, error: completeError };
     sessionLogId = existing.id;
   } else {
@@ -117,7 +141,7 @@ export async function finishWorkout(
       trainingDayId: params.trainingDayId,
       athleteId: params.athleteId,
       performedOn,
-      note: params.workoutNote,
+      note,
     });
     if (logError || !log) return { sessionLogId: null, error: logError ?? "Couldn't save this workout. Try again." };
     sessionLogId = log.id;

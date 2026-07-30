@@ -1,4 +1,5 @@
 import type { DayRow, LoggedSet } from "@/lib/programs/types";
+import type { ReadinessCheck } from "@/lib/training/autoregulation";
 
 /**
  * One completed set/segment, kept client-side (and persisted as scratch
@@ -52,6 +53,14 @@ export interface TrainingModeSession {
    * time, same mechanism as exerciseNotes. */
   skippedExercises: Record<string, string | null>;
   workoutNote: string | null;
+  /** Rule 3's two-question pre-session readiness check (coach-answers §2
+   * Rule 3) — null until the athlete answers it, right after Begin. Never
+   * re-asked on resume: a page refresh mid-workout keeps whatever answer
+   * (or lack of one) was already recorded, the same "don't lose progress,
+   * don't repeat a question" spirit as every other piece of draft state
+   * here. See lib/training/autoregulation.ts for the downregulation
+   * decision this feeds. */
+  readiness: ReadinessCheck | null;
 }
 
 /** Raw shape of a training_mode_sessions row as Supabase returns it. */
@@ -65,6 +74,11 @@ export interface TrainingModeSessionRow {
   exercise_notes: Record<string, string> | null;
   skipped_exercises: Record<string, string | null> | null;
   workout_note: string | null;
+  /** jsonb, defaults to '{}' at the database level (migration 0044) — `{}`
+   * and a genuinely absent answer look the same on the wire, so the mapper
+   * below treats anything without a recognizable `sleep` field as "not
+   * answered yet" rather than trusting the row's raw shape. */
+  readiness: Partial<ReadinessCheck> | null;
 }
 
 export function mapTrainingModeSessionRow(row: TrainingModeSessionRow): TrainingModeSession {
@@ -78,6 +92,7 @@ export function mapTrainingModeSessionRow(row: TrainingModeSessionRow): Training
     exerciseNotes: row.exercise_notes ?? {},
     skippedExercises: row.skipped_exercises ?? {},
     workoutNote: row.workout_note,
+    readiness: row.readiness && row.readiness.sleep && row.readiness.soreness ? (row.readiness as ReadinessCheck) : null,
   };
 }
 

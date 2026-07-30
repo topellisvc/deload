@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExerciseList, buildSetTargets, findResumeExerciseId } from "./sequence";
+import { buildExerciseList, buildSetTargets, dropLastSet, findResumeExerciseId } from "./sequence";
 import type { BlockRow, SetPrescription } from "@/lib/programs/types";
 
 function makeSet(overrides: Partial<SetPrescription> & Pick<SetPrescription, "id" | "block_exercise_id" | "position">): SetPrescription {
@@ -214,5 +214,44 @@ describe("findResumeExerciseId", () => {
 
   it("defaults to no skipped exercises when the third argument is omitted", () => {
     expect(findResumeExerciseId(list, new Map())).toBe("ex-1");
+  });
+});
+
+describe("dropLastSet — Rule 3's 'drop the last set of each exercise'", () => {
+  it("decrements a single straight-set row's own count by one, keeping the same target", () => {
+    const sets = [makeSet({ id: "s1", block_exercise_id: "ex-1", position: 1, sets: 3, weight_value: 100 })];
+    const result = dropLastSet(sets);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.sets).toBe(2);
+    expect(result[0]!.weight_value).toBe(100);
+    expect(buildSetTargets(result)).toHaveLength(2);
+  });
+
+  it("drops the last row entirely once it represents exactly one set, falling back to the prior row", () => {
+    const sets = [
+      makeSet({ id: "s1", block_exercise_id: "ex-1", position: 1, sets: 3, weight_value: 100 }),
+      makeSet({ id: "s2", block_exercise_id: "ex-1", position: 2, sets: 1, weight_value: 120 }),
+    ];
+    const result = dropLastSet(sets);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.id).toBe("s1");
+    expect(buildSetTargets(result)).toHaveLength(3);
+  });
+
+  it("never reduces a single-set exercise to zero sets", () => {
+    const sets = [makeSet({ id: "s1", block_exercise_id: "ex-1", position: 1, sets: 1 })];
+    const result = dropLastSet(sets);
+    expect(buildSetTargets(result)).toHaveLength(1);
+  });
+
+  it("operates on the last set by position, not by array order", () => {
+    const sets = [
+      makeSet({ id: "s2", block_exercise_id: "ex-1", position: 2, sets: 1 }),
+      makeSet({ id: "s1", block_exercise_id: "ex-1", position: 1, sets: 3 }),
+    ];
+    const result = dropLastSet(sets);
+    // position 2 (s2) is the true last set and represented exactly one set,
+    // so it's the one dropped entirely -- s1 (position 1) survives intact.
+    expect(result.map((s) => s.id)).toEqual(["s1"]);
   });
 });

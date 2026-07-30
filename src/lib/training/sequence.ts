@@ -54,6 +54,40 @@ export function buildSetTargets(sets: SetPrescription[]): SetPrescription[] {
 }
 
 /**
+ * Rule 3's mechanical half (coach-answers §2 Rule 3): "drop the last set of
+ * each exercise" for a readiness-downregulated session. Operates on the raw
+ * SetPrescription rows rather than on buildSetTargets' already-flattened
+ * output, specifically so both call sites that independently flatten an
+ * exercise's sets (training-session.tsx's own targets/restNextTarget, and
+ * ExerciseScreen's internal StrengthLoggerSlot) see the exact same reduced
+ * total just by both calling buildSetTargets on this function's output —
+ * no second "is this session downregulated" branch needed at either call
+ * site beyond swapping which `sets` array they read.
+ *
+ * A straight set row's own `sets` count is decremented by one rather than
+ * the row being dropped outright, so "3 sets of squats" correctly becomes
+ * "2 sets of squats" with the same weight/rep target, not a different
+ * exercise's row disappearing. Only once a row represents exactly one set
+ * does removing it entirely make sense.
+ *
+ * Never reduces a single-set exercise to zero — that's what Skip Exercise
+ * is for, and asking someone to log zero sets of something still shown as
+ * "today's plan" would be a confusing, not a gentler, session.
+ */
+export function dropLastSet(sets: readonly SetPrescription[]): SetPrescription[] {
+  const totalFlattened = sets.reduce((sum, s) => sum + Math.max(1, s.sets), 0);
+  if (totalFlattened <= 1) return [...sets];
+
+  const sorted = [...sets].sort((a, b) => a.position - b.position);
+  const last = sorted[sorted.length - 1]!;
+  if (last.sets > 1) {
+    sorted[sorted.length - 1] = { ...last, sets: last.sets - 1 };
+    return sorted;
+  }
+  return sorted.slice(0, -1);
+}
+
+/**
  * First exercise in `list` that hasn't logged every prescribed set yet —
  * where a fresh workout starts, where a resumed one picks back up, and
  * where auto-advance lands after an exercise is finished (so someone who

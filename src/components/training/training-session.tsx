@@ -6,14 +6,15 @@ import { createClient } from "@/lib/supabase/client";
 import { createSessionLog } from "@/lib/logging/mutations";
 import { todayDateString } from "@/lib/dates";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
-import { buildExerciseList, buildSetTargets, findResumeExerciseId } from "@/lib/training/sequence";
+import { buildExerciseList, buildSetTargets, dropLastSet, findResumeExerciseId } from "@/lib/training/sequence";
 import { estimateWorkoutDurationSeconds } from "@/lib/training/estimate-duration";
 import { computeWorkoutTotals } from "@/lib/training/totals";
 import { saveDraftSession, deleteDraftSession, finishWorkout, createAutoregulationEvent } from "@/lib/training/mutations";
 import { isProgramComplete, getRecentAutoregulationEvents } from "@/lib/training/queries";
-import { decideRirGate } from "@/lib/training/autoregulation";
+import { decideReadinessDownregulation, decideRirGate } from "@/lib/training/autoregulation";
+import type { ReadinessCheck, SleepQuality, SorenessLevel } from "@/lib/training/autoregulation";
 import type { DraftSet, PreviousPerformance, TrainingModeSession } from "@/lib/training/types";
-import type { BlockRow } from "@/lib/programs/types";
+import type { BlockRow, SetPrescription } from "@/lib/programs/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
 import { WorkoutOverviewScreen } from "@/components/training/workout-overview-screen";
 import { ExerciseListScreen } from "@/components/training/exercise-list-screen";
@@ -21,12 +22,13 @@ import { ExerciseScreen } from "@/components/training/exercise-screen";
 import { RestScreen } from "@/components/training/rest-screen";
 import { ExerciseCompleteScreen } from "@/components/training/exercise-complete-screen";
 import { RirCheckScreen } from "@/components/training/rir-check-screen";
+import { ReadinessCheckScreen } from "@/components/training/readiness-check-screen";
 import { WorkoutSummaryScreen } from "@/components/training/workout-summary-screen";
 import { ProgramCompleteScreen } from "@/components/training/program-complete-screen";
 import { EndWorkoutDialog } from "@/components/training/end-workout-dialog";
 import { SkipExerciseDialog } from "@/components/training/skip-exercise-dialog";
 
-type Phase = "overview" | "exercises" | "exercise" | "rest" | "exercise-complete" | "rir-check" | "summary" | "program-complete";
+type Phase = "overview" | "readiness-check" | "exercises" | "exercise" | "rest" | "exercise-complete" | "rir-check" | "summary" | "program-complete";
 
 interface TrainingSessionProps {
   trainingDayId: string;
@@ -112,6 +114,10 @@ export function TrainingSession({
   const [workoutNote, setWorkoutNote] = useState(initialDraft?.workoutNote ?? "");
   const [startedAt, setStartedAt] = useState<string | null>(initialDraft?.startedAt ?? null);
   const [skipDialogExerciseId, setSkipDialogExerciseId] = useState<string | null>(null);
+  // Rule 3 (coach-answers §2 Rule 3) — never re-asked on resume, even if a
+  // prior attempt closed the tab before answering; see
+  // TrainingModeSession.readiness's own doc comment.
+  const [readiness, setReadiness] = useState<ReadinessCheck | null>(initialDraft?.readiness ?? null);
 
   const [currentExerciseId, setCurrentExerciseId] = useState<string | null>(() => {
     if (!initialDraft) return exerciseList[0]?.id ?? null;
@@ -171,11 +177,21 @@ export function TrainingSession({
   const loggedSetCounts = useMemo(() => draftSetCounts(draftSets), [draftSets]);
   const totals = useMemo(() => computeWorkoutTotals(draftSets), [draftSets]);
 
+  // Rule 3's mechanical half — see dropLastSet's own doc comment
+  // (sequence.ts) for why every buildSetTargets call in this component
+  // reads through this one helper rather than each independently deciding
+  // whether to trim.
+  const readinessDownregulated = readiness ? decideReadinessDownregulation(readiness) : false;
+  function effectiveSets(sets: SetPrescription[]): SetPrescription[] {
+    return readinessDownregulated ? dropLastSet(sets) : sets;
+  }
+
   async function persist(overrides: {
     draftSets?: DraftSet[];
     exerciseNotes?: Record<string, string>;
     skippedExercises?: Record<string, string | null>;
     workoutNote?: string | null;
+    readiness?: ReadinessCheck | null;
   }) {
     const supabase = createClient();
     const { session, error: saveError } = await saveDraftSession(supabase, {
@@ -185,6 +201,7 @@ export function TrainingSession({
       exerciseNotes: overrides.exerciseNotes ?? exerciseNotes,
       skippedExercises: overrides.skippedExercises ?? skippedExercises,
       workoutNote: overrides.workoutNote !== undefined ? overrides.workoutNote : workoutNote || null,
+      readiness: overrides.readiness !== undefined ? overrides.readiness : readiness,
     });
     if (session) setStartedAt(session.startedAt);
     if (saveError) setError(saveError);
@@ -201,6 +218,7 @@ export function TrainingSession({
       exerciseNotes: {},
       skippedExercises: {},
       workoutNote: null,
+      readiness: null,
     });
     setStarting(false);
     if (saveError || !session) {
@@ -208,12 +226,24 @@ export function TrainingSession({
       return;
     }
     setStartedAt(session.startedAt);
-    // Lands on the full exercise list rather than jumping straight into
-    // exercise #1 — makes "these don't have to be done in order" obvious
-    // from the first moment, instead of only discoverable via a button
-    // once already mid-set (see ExerciseListScreen's doc comment).
-    setPhase(exerciseList.length === 0 ? "summary" : "exercises");
+    // Rule 3's own question comes right after Begin, before the exercise
+    // list — "these don't have to be done in order" is still the very next
+    // thing shown once that's answered (see ExerciseListScreen's doc
+    // comment), just one screen later than before. Skipped entirely for a
+    // rest-only day with nothing to train.
+    setPhase(exerciseList.length === 0 ? "summary" : "readiness-check");
     if (exerciseList.length === 0) setCompletedAt(new Date().toISOString());
+  }
+
+  async function handleReadinessAnswer(sleep: SleepQuality, soreness: SorenessLevel) {
+    const next: ReadinessCheck = { sleep, soreness };
+    setReadiness(next);
+    setSaving(true);
+    await persist({ readiness: next });
+    setSaving(false);
+    // Only ever reached when exerciseList.length > 0 (see handleBegin) —
+    // there's always a real exercise list waiting on the other side.
+    setPhase("exercises");
   }
 
   // Moves to a specific exercise (or, when null, to the summary — every
@@ -279,7 +309,7 @@ export function TrainingSession({
 
   async function handleCompleteSet(payload: { weight: number | null; reps: number | null; notes: string | null }) {
     if (!currentExercise) return;
-    const targets = buildSetTargets(currentExercise.sets);
+    const targets = buildSetTargets(effectiveSets(currentExercise.sets));
     const loggedCount = loggedSetCounts.get(currentExercise.id) ?? 0;
     const target = targets[loggedCount] ?? targets[targets.length - 1];
     if (!target) return;
@@ -322,13 +352,32 @@ export function TrainingSession({
         setRestSeconds(target.rest_seconds);
         setPhase("rest");
       }
-    } else if (currentExercise.exercise_category === "strength" && currentExercise.autoregulation_eligible) {
+    } else if (currentExercise.exercise_category === "strength" && currentExercise.autoregulation_eligible && !readinessDownregulated) {
       // Rule 1's own question (coach-answers §2 Rule 1) — asked once per
       // autoregulation-eligible exercise, right after its last working set,
       // never per set. Auto-advance is deferred until the athlete answers
       // (see handleRirAnswer), rather than firing on the usual 1100ms
       // timer straight into exercise-complete.
       setPhase("rir-check");
+    } else if (currentExercise.exercise_category === "strength" && currentExercise.autoregulation_eligible && readinessDownregulated) {
+      // Rule 3 interaction: a session capped by a rough-sleep/high-soreness
+      // readiness answer isn't a true reading of capacity (see
+      // readiness-check-screen.tsx's header comment), so this skips the
+      // question entirely — no advance/hold/reset decision is made — and
+      // just records why, so Rule 1's own history correctly excludes this
+      // session from its consecutive-miss count (migration 0044's
+      // 'readiness_downregulated' kind exists specifically for this).
+      void createAutoregulationEvent(createClient(), {
+        athleteId,
+        blockExerciseId: currentExercise.id,
+        kind: "readiness_downregulated",
+        detail: { reason: "Session was downregulated by the pre-session readiness check." },
+      });
+      setPhase("exercise-complete");
+      transitionTimeout.current = setTimeout(
+        () => goToExercise(findResumeExerciseId(exerciseList, updatedCounts, new Set(Object.keys(nextSkipped)))),
+        1100
+      );
     } else {
       // This exercise is fully logged — celebrate, then auto-advance to
       // whatever's actually still incomplete (which may not be the next
@@ -365,7 +414,7 @@ export function TrainingSession({
 
     const exerciseDraftSets = draftSets.filter((s) => s.blockExerciseId === currentExercise.id);
     const lastDraftSet = exerciseDraftSets[exerciseDraftSets.length - 1] ?? null;
-    const targets = buildSetTargets(currentExercise.sets);
+    const targets = buildSetTargets(effectiveSets(currentExercise.sets));
     const lastTarget = targets[targets.length - 1] ?? null;
     const expectedReps =
       lastTarget?.max_reps ?? (lastTarget?.reps && /^\d+$/.test(lastTarget.reps.trim()) ? Number(lastTarget.reps) : null);
@@ -533,6 +582,7 @@ export function TrainingSession({
       exerciseNotes,
       skippedExercises,
       workoutNote: workoutNote.trim() || null,
+      readiness,
     });
     if (finishError) {
       setFinishing(false);
@@ -573,7 +623,7 @@ export function TrainingSession({
   // handleCompleteSet), so the preview is always that same exercise's next
   // target — never a different exercise's, the way a superset's
   // interleaved turns used to require.
-  const restNextTarget = currentExercise ? buildSetTargets(currentExercise.sets)[loggedSetCounts.get(currentExercise.id) ?? 0] : undefined;
+  const restNextTarget = currentExercise ? buildSetTargets(effectiveSets(currentExercise.sets))[loggedSetCounts.get(currentExercise.id) ?? 0] : undefined;
 
   return (
     <div className="min-h-screen">
@@ -596,6 +646,8 @@ export function TrainingSession({
         />
       )}
 
+      {phase === "readiness-check" && <ReadinessCheckScreen onAnswer={handleReadinessAnswer} busy={saving} />}
+
       {phase === "exercises" && (
         <ExerciseListScreen
           dayLabel={dayLabel}
@@ -611,24 +663,36 @@ export function TrainingSession({
       )}
 
       {phase === "exercise" && currentExercise && (
-        <ExerciseScreen
-          key={currentExercise.id}
-          exercise={currentExercise}
-          exerciseIndex={Math.max(0, currentExerciseIndex)}
-          totalExercises={exerciseList.length}
-          loggedSetCount={loggedSetCounts.get(currentExercise.id) ?? 0}
-          draftSets={draftSets}
-          personalRecords={personalRecords}
-          previous={previousPerformance[currentExercise.id]}
-          exerciseNote={exerciseNotes[currentExercise.id] ?? ""}
-          onExerciseNoteChange={handleExerciseNoteChange}
-          onCompleteSet={handleCompleteSet}
-          onCardioFinish={handleCardioFinish}
-          onOpenExerciseList={openExerciseList}
-          onSkipExercise={() => handleOpenSkipDialog(currentExercise.id)}
-          onEndWorkout={handleEndWorkout}
-          busy={saving}
-        />
+        <>
+          {readinessDownregulated && currentExercise.exercise_category === "strength" && (
+            <div className="mx-auto max-w-lg px-6 pt-6">
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <p className="text-sm text-foreground">
+                  Rough night — today has one fewer set on each exercise. Treat your top set as an RPE 7 ceiling: stop there even if the
+                  plan would normally ask for more.
+                </p>
+              </div>
+            </div>
+          )}
+          <ExerciseScreen
+            key={currentExercise.id}
+            exercise={{ ...currentExercise, sets: effectiveSets(currentExercise.sets) }}
+            exerciseIndex={Math.max(0, currentExerciseIndex)}
+            totalExercises={exerciseList.length}
+            loggedSetCount={loggedSetCounts.get(currentExercise.id) ?? 0}
+            draftSets={draftSets}
+            personalRecords={personalRecords}
+            previous={previousPerformance[currentExercise.id]}
+            exerciseNote={exerciseNotes[currentExercise.id] ?? ""}
+            onExerciseNoteChange={handleExerciseNoteChange}
+            onCompleteSet={handleCompleteSet}
+            onCardioFinish={handleCardioFinish}
+            onOpenExerciseList={openExerciseList}
+            onSkipExercise={() => handleOpenSkipDialog(currentExercise.id)}
+            onEndWorkout={handleEndWorkout}
+            busy={saving}
+          />
+        </>
       )}
 
       {phase === "rest" && currentExercise && restNextTarget && (

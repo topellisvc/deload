@@ -119,3 +119,25 @@ export function decideRirGate(input: RirGateInput): RirGateResult {
   }
   return { outcome: "advance", multiplier: 1.03, reason: "3 or more reps in reserve — adding a bit extra next session." };
 }
+
+/**
+ * Rule 3 — the two-question pre-session readiness check (coach-answers §2
+ * Rule 3). Asked once, before the athlete starts the exercise list, never
+ * per exercise.
+ *
+ * Only the *both bad* combination downregulates — a bad night's sleep on
+ * its own, or high soreness on its own, is normal training life and not
+ * something this app should react to. Both together is the coach's actual
+ * threshold for "today should ask less of you than the plan does."
+ */
+export type SleepQuality = "good" | "ok" | "bad";
+export type SorenessLevel = "fresh" | "normal" | "beat_up";
+
+export interface ReadinessCheck {
+  sleep: SleepQuality;
+  soreness: SorenessLevel;
+}
+
+export function decideReadinessDownregulation(readiness: ReadinessCheck): boolean {
+  return readiness.sleep === "bad" && readiness.soreness === "beat_up";
+}

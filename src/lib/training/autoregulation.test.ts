@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { decideRirGate } from "@/lib/training/autoregulation";
-import type { AutoregulationEventKind } from "@/lib/training/autoregulation";
+import { decideReadinessDownregulation, decideRirGate } from "@/lib/training/autoregulation";
+import type { AutoregulationEventKind, ReadinessCheck } from "@/lib/training/autoregulation";
 
 function events(kinds: AutoregulationEventKind[]): { kind: AutoregulationEventKind }[] {
   return kinds.map((kind) => ({ kind }));
@@ -108,5 +108,31 @@ describe("decideRirGate — no_change sessions never pollute the miss-streak rea
     // second, since a caller correctly never included a no_change entry.
     const result = decideRirGate({ performedRir: 0, repsMissed: false, recentEvents: [] });
     expect(result.outcome).toBe("hold");
+  });
+});
+
+describe("decideReadinessDownregulation — Rule 3's two-question check", () => {
+  function readiness(overrides: Partial<ReadinessCheck>): ReadinessCheck {
+    return { sleep: "good", soreness: "fresh", ...overrides };
+  }
+
+  it("downregulates only when both sleep is bad AND soreness is beat_up", () => {
+    expect(decideReadinessDownregulation(readiness({ sleep: "bad", soreness: "beat_up" }))).toBe(true);
+  });
+
+  it("does not downregulate for bad sleep alone", () => {
+    expect(decideReadinessDownregulation(readiness({ sleep: "bad", soreness: "normal" }))).toBe(false);
+  });
+
+  it("does not downregulate for beat_up soreness alone", () => {
+    expect(decideReadinessDownregulation(readiness({ sleep: "ok", soreness: "beat_up" }))).toBe(false);
+  });
+
+  it("does not downregulate when both are merely middling (ok / normal)", () => {
+    expect(decideReadinessDownregulation(readiness({ sleep: "ok", soreness: "normal" }))).toBe(false);
+  });
+
+  it("does not downregulate when everything is good", () => {
+    expect(decideReadinessDownregulation(readiness({ sleep: "good", soreness: "fresh" }))).toBe(false);
   });
 });

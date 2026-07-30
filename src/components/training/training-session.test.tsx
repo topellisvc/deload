@@ -82,6 +82,18 @@ vi.mock("@/components/training/rir-check-screen", () => ({
     </div>
   ),
 }));
+vi.mock("@/components/training/readiness-check-screen", () => ({
+  ReadinessCheckScreen: ({ onAnswer, busy }: { onAnswer: (sleep: "good" | "ok" | "bad", soreness: "fresh" | "normal" | "beat_up") => void; busy: boolean }) => (
+    <div>
+      <button type="button" onClick={() => onAnswer("good", "fresh")} disabled={busy}>
+        Readiness: all good
+      </button>
+      <button type="button" onClick={() => onAnswer("bad", "beat_up")} disabled={busy}>
+        Readiness: rough night
+      </button>
+    </div>
+  ),
+}));
 vi.mock("@/components/training/workout-summary-screen", () => ({ WorkoutSummaryScreen: () => null }));
 vi.mock("@/components/training/program-complete-screen", () => ({ ProgramCompleteScreen: () => null }));
 
@@ -127,6 +139,10 @@ vi.mock("@/lib/training/sequence", () => ({
   buildExerciseList: vi.fn(() => [FAKE_EXERCISE]),
   buildSetTargets: vi.fn(() => [{ id: "target-1", rest_seconds: null }]),
   findResumeExerciseId: vi.fn(() => FAKE_EXERCISE.id),
+  // Real dropLastSet has its own thorough coverage in sequence.test.ts —
+  // this stub only needs to be a passthrough so effectiveSets() in
+  // training-session.tsx has something to call.
+  dropLastSet: vi.fn((sets) => sets),
 }));
 vi.mock("@/lib/training/estimate-duration", () => ({ estimateWorkoutDurationSeconds: () => 0 }));
 vi.mock("@/lib/training/totals", () => ({ computeWorkoutTotals: () => ({}) }));
@@ -217,6 +233,7 @@ describe("TrainingSession End Workout dialog", () => {
     exerciseNotes: {},
     skippedExercises: {},
     workoutNote: null,
+    readiness: null,
   };
 
   beforeEach(() => {
@@ -299,6 +316,7 @@ describe("TrainingSession Skip Exercise dialog", () => {
     exerciseNotes: {},
     skippedExercises: {},
     workoutNote: null,
+    readiness: null,
   };
 
   beforeEach(() => {
@@ -390,6 +408,7 @@ describe("TrainingSession beforeunload guard", () => {
         exerciseNotes: {},
         skippedExercises: {},
         workoutNote: null,
+        readiness: null,
       },
       error: null,
     });
@@ -421,6 +440,7 @@ describe("TrainingSession RIR check (Rule 1)", () => {
     exerciseNotes: {},
     skippedExercises: {},
     workoutNote: null,
+    readiness: null,
   };
 
   beforeEach(() => {
@@ -480,5 +500,74 @@ describe("TrainingSession RIR check (Rule 1)", () => {
     await waitFor(() =>
       expect(createAutoregulationEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kind: "hold" }))
     );
+  });
+});
+
+describe("TrainingSession readiness check (Rule 3)", () => {
+  beforeEach(() => {
+    vi.mocked(saveDraftSession).mockReset().mockResolvedValue({
+      session: {
+        id: "session-1",
+        trainingDayId: "day-1",
+        athleteId: "athlete-1",
+        startedAt: "2026-07-25T09:00:00.000Z",
+        updatedAt: "2026-07-25T09:00:00.000Z",
+        draftSets: [],
+        exerciseNotes: {},
+        skippedExercises: {},
+        workoutNote: null,
+        readiness: null,
+      },
+      error: null,
+    });
+    vi.mocked(buildExerciseList).mockReturnValue([FAKE_EXERCISE]);
+  });
+
+  it("asks the readiness check right after Begin, before the exercise list", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={null} />);
+
+    await user.click(screen.getByRole("button", { name: "Begin" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Readiness: all good" })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Begin" })).not.toBeInTheDocument();
+  });
+});
+
+describe("TrainingSession readiness downregulation suppresses the RIR check (Rule 3 x Rule 1)", () => {
+  const downregulatedDraft: TrainingModeSession = {
+    id: "session-1",
+    trainingDayId: "day-1",
+    athleteId: "athlete-1",
+    startedAt: "2026-07-25T09:00:00.000Z",
+    updatedAt: "2026-07-25T09:00:00.000Z",
+    draftSets: [],
+    exerciseNotes: {},
+    skippedExercises: {},
+    workoutNote: null,
+    readiness: { sleep: "bad", soreness: "beat_up" },
+  };
+
+  beforeEach(() => {
+    vi.mocked(saveDraftSession).mockReset().mockResolvedValue({ session: { ...downregulatedDraft }, error: null });
+    vi.mocked(getRecentAutoregulationEvents).mockReset().mockResolvedValue([]);
+    vi.mocked(createAutoregulationEvent).mockReset().mockResolvedValue({ error: null });
+    vi.mocked(buildExerciseList).mockReturnValue([{ ...FAKE_EXERCISE, autoregulation_eligible: true }]);
+  });
+
+  it("skips the RIR question entirely and records readiness_downregulated instead, for a session the readiness check already downregulated", async () => {
+    const user = userEvent.setup();
+    render(<TrainingSession {...BASE_PROPS} initialDraft={downregulatedDraft} />);
+
+    await user.click(screen.getByRole("button", { name: "Complete set" }));
+
+    await waitFor(() =>
+      expect(createAutoregulationEvent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ blockExerciseId: "ex-1", kind: "readiness_downregulated" })
+      )
+    );
+    expect(screen.queryByRole("button", { name: "RIR 3+" })).not.toBeInTheDocument();
+    expect(getRecentAutoregulationEvents).not.toHaveBeenCalled();
   });
 });

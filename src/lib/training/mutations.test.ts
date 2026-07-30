@@ -78,6 +78,7 @@ describe("finishWorkout — skipped exercises", () => {
       exerciseNotes: {},
       skippedExercises: { "ex-2": "Shoulder felt tight" },
       workoutNote: null,
+      readiness: null,
     });
 
     expect(createLoggedSet).toHaveBeenCalledWith(
@@ -95,6 +96,7 @@ describe("finishWorkout — skipped exercises", () => {
       exerciseNotes: {},
       skippedExercises: { "ex-2": null },
       workoutNote: null,
+      readiness: null,
     });
 
     expect(createLoggedSet).toHaveBeenCalledWith(supabase, expect.objectContaining({ blockExerciseId: "ex-2", notes: "Skipped" }));
@@ -112,6 +114,7 @@ describe("finishWorkout — skipped exercises", () => {
       // but finishWorkout guards against it too.
       skippedExercises: { "ex-1": "changed my mind" },
       workoutNote: null,
+      readiness: null,
     });
 
     const skipWrites = vi
@@ -129,6 +132,7 @@ describe("finishWorkout — skipped exercises", () => {
       exerciseNotes: { "ex-3": "Felt strong today" },
       skippedExercises: { "ex-3": "actually skipped anyway" },
       workoutNote: null,
+      readiness: null,
     });
 
     const positions = vi
@@ -137,5 +141,62 @@ describe("finishWorkout — skipped exercises", () => {
       .map(([, params]) => params.position);
     expect(positions).toHaveLength(2);
     expect(new Set(positions).size).toBe(2);
+  });
+});
+
+describe("finishWorkout — Rule 3's readiness note", () => {
+  beforeEach(() => {
+    vi.mocked(createSessionLog).mockReset().mockResolvedValue({ log: { id: "log-1" } as never, error: null });
+    vi.mocked(completeSessionLog).mockReset().mockResolvedValue({ error: null });
+    vi.mocked(createLoggedSet).mockReset().mockResolvedValue({ log: null, error: null });
+  });
+
+  it("prepends a plain-language note when both sleep and soreness triggered a downregulation", async () => {
+    const supabase = makeSupabase(null) as never;
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: "Felt okay overall.",
+      readiness: { sleep: "bad", soreness: "beat_up" },
+    });
+
+    expect(createSessionLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ note: expect.stringContaining("Reduced load today") })
+    );
+    expect(createSessionLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ note: expect.stringContaining("Felt okay overall.") }));
+  });
+
+  it("leaves the note untouched when readiness didn't trigger a downregulation", async () => {
+    const supabase = makeSupabase(null) as never;
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: "Felt okay overall.",
+      readiness: { sleep: "ok", soreness: "normal" },
+    });
+
+    expect(createSessionLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ note: "Felt okay overall." }));
+  });
+
+  it("leaves a null workout note as null when readiness didn't trigger a downregulation", async () => {
+    const supabase = makeSupabase(null) as never;
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: null,
+      readiness: null,
+    });
+
+    expect(createSessionLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ note: null }));
   });
 });
