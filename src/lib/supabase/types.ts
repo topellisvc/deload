@@ -208,6 +208,21 @@ export interface BlockExercise {
   custom_name: string | null;
   notes: string | null;
   exercise_category: ExerciseCategory;
+  /** True for the 3-5 movements a generated program's template designated
+   * as scheduled-progression lifts (see generate/types.ts's
+   * ExerciseSlot.autoregulationEligible) — the flag the runtime RIR gate
+   * (task #25) reads to decide which rows it's allowed to progress/hold/
+   * reset. Optional (not just nullable) rather than required, so the many
+   * existing object literals across this codebase that build a
+   * BlockExerciseRow by hand (test fixtures, starter-templates.ts,
+   * text-parse.ts) don't all need updating for a column that defaults to
+   * false at the database level regardless — undefined and false mean
+   * exactly the same thing here, "the gate leaves this row alone." Only
+   * assemble.ts (the generator's own row-builder) and the mutation paths
+   * that clone an existing BlockExerciseRow (addWeek, copyDayContents,
+   * duplicateExercise) need to read/preserve it explicitly. Migration
+   * 0046. */
+  autoregulation_eligible?: boolean;
 }
 
 export type StrengthPrescriptionType =

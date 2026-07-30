@@ -133,6 +133,24 @@ describe("assembleWeeks — per-week prescription resolution", () => {
     expect(set.weight_value).toBeNull();
     expect(set.pr_record_type).toBeNull();
   });
+
+  it("persists the slot's autoregulationEligible flag onto the block_exercise row rather than dropping it", () => {
+    const day: DayPlan = {
+      label: "Day 1",
+      isRestDay: false,
+      intensity: "moderate",
+      loadsLowerBody: true,
+      slots: [slot({ autoregulationEligible: true }), slot({ autoregulationEligible: false, role: "conditioning", movementPattern: "carry", primaryMuscleGroup: "full_body" })],
+    };
+    const pool = [
+      ex({ id: "barbell-back-squat", metadata: { [METADATA_KEYS.slotPatterns]: ["squat_bilateral"] } }),
+      ex({ id: "farmers-carry", metadata: { [METADATA_KEYS.slotPatterns]: ["carry"] } }),
+    ];
+    const result = assembleWeeks({ template: simpleTemplate([day]), totalWeeks: 1, exercises: pool, selection: baseSelection() });
+    const [eligibleBlock, ineligibleBlock] = result.weeks[0]!.days[0]!.blocks;
+    expect(eligibleBlock!.exercises[0]!.autoregulation_eligible).toBe(true);
+    expect(ineligibleBlock!.exercises[0]!.autoregulation_eligible).toBe(false);
+  });
 });
 
 describe("assembleWeeks — exercise selection is stable across weeks", () => {

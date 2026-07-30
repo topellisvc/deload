@@ -164,6 +164,10 @@ function toBlockExerciseRow(resolved: ResolvedSlot, position: number, plan: Week
     custom_name: resolved.placeholderName,
     notes: null,
     exercise_category: resolved.slot.category,
+    // Read straight off the slot the template built this row from — see
+    // BlockExercise.autoregulation_eligible's doc comment (supabase/types.ts)
+    // for why this is the one place in the generator that needs to set it.
+    autoregulation_eligible: resolved.slot.autoregulationEligible,
     sets: [toSetRow(plan, 1)],
   };
 }

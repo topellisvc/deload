@@ -1,0 +1,35 @@
+-- Closes a gap between the program generator (tasks #10-23) and the
+-- autoregulation runtime (task #25, migration 0044): every template builder
+-- already computes ExerciseSlot.autoregulationEligible (types.ts) — true for
+-- the 3-5 movements a template designates as scheduled-progression lifts,
+-- per §2's "don't put an accessory on a scheduled progression" — but
+-- assemble.ts's toBlockExerciseRow never carried that flag onto the row it
+-- builds, and block_exercises has never had a column to hold it. The flag
+-- was computed and then silently dropped on the way to the database.
+--
+-- Rule 1 (the RIR gate) needs this at read time to know which block_exercise
+-- rows on a *persisted* program it's allowed to progress/hold/reset — it
+-- can't re-derive "was this a scheduled progression lift" from a
+-- set_prescriptions row alone once a coach may have since edited it.
+--
+-- Defaults false rather than true: every exercise added through the manual
+-- program builder (addExerciseBlock, duplicateExercise) is a coach/athlete's
+-- own choice, not one of a template's designated progression lifts, and
+-- false is the safe "the RIR gate leaves this alone" default for all of
+-- them. Only the generator's own insert path (addWeek, when its source rows
+-- came from assemble.ts) sets it true.
+--
+-- Run this once in the Supabase SQL Editor, after 0045. Safe to re-run.
+--
+-- ROLLBACK — see DELOAD-SUPABASE-ROLLBACK.md. Before any athlete has logged
+-- against a generated program with this column populated, the undo is:
+--
+--   alter table public.block_exercises drop column if exists autoregulation_eligible;
+--
+-- AFTER go-live, autoregulation_events.detail may already reference which
+-- lifts were eligible at the time an adjustment fired, so the correct
+-- rollback is to stop reading the column (treat every row as false in
+-- application code), not to drop it.
+
+alter table public.block_exercises
+  add column if not exists autoregulation_eligible boolean not null default false;

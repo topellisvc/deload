@@ -608,6 +608,10 @@ export async function addWeek(
           custom_name: sourceExercise.custom_name,
           notes: sourceExercise.notes,
           exercise_category: sourceExercise.exercise_category,
+          // Carries a generated program's per-slot autoregulation flag
+          // through to the persisted row — see assemble.ts's
+          // toBlockExerciseRow, the only place that sets this to true.
+          autoregulation_eligible: sourceExercise.autoregulation_eligible ?? false,
         });
 
         const newSets: SetRow[] = sourceExercise.sets.map((sourceSet) => {
@@ -835,6 +839,7 @@ export async function copyDayContents(
         custom_name: sourceExercise.custom_name,
         notes: sourceExercise.notes,
         exercise_category: sourceExercise.exercise_category,
+        autoregulation_eligible: sourceExercise.autoregulation_eligible ?? false,
       });
 
       const newSets: SetRow[] = sourceExercise.sets.map((sourceSet) => {
@@ -931,6 +936,7 @@ export async function duplicateExercise(
     custom_name: params.exercise.custom_name,
     notes: params.exercise.notes,
     exercise_category: params.exercise.exercise_category,
+    autoregulation_eligible: params.exercise.autoregulation_eligible ?? false,
   });
   if (exerciseError) return { block: null, error: exerciseError.message };
 
