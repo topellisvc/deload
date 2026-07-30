@@ -1,6 +1,8 @@
-import { ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { Eye, ShieldCheck } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import type { AdminRosterRow } from "@/lib/admin/queries";
+import { Button } from "@/components/ui/button";
 import { DeleteAccountButton } from "@/components/admin/delete-account-button";
 
 const ROLE_BADGE_CLASS: Record<AdminRosterRow["role"], string> = {
@@ -89,7 +91,15 @@ export function AdminRosterTable({ roster, currentUserId }: { roster: AdminRoste
               <td className="px-6 py-3 text-right tabular-nums text-foreground">{row.programsCreated}</td>
               <td className="px-6 py-3 text-right tabular-nums text-foreground">{row.sessionCount}</td>
               <td className="px-6 py-3 text-right">
-                {row.id !== currentUserId && <DeleteAccountButton userId={row.id} email={row.email} />}
+                <div className="flex items-center justify-end gap-2">
+                  <Link href={`/admin/users/${row.id}`}>
+                    <Button variant="outline" size="sm">
+                      <Eye className="size-3.5" />
+                      View
+                    </Button>
+                  </Link>
+                  {row.id !== currentUserId && <DeleteAccountButton userId={row.id} email={row.email} />}
+                </div>
               </td>
             </tr>
           ))}

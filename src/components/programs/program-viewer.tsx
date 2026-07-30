@@ -164,12 +164,25 @@ export function ProgramViewer({
 
   return (
     <div className="mx-auto flex max-w-[100rem] flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
-      {!isOwner && (
+      {/* Used to be simply `!isOwner`, on the assumption that anyone who
+          isn't the owner must be the athlete — true as long as RLS only
+          ever let the owner or athlete reach this page at all. An admin
+          viewing someone else's program (migration 0041) breaks that
+          assumption: they're neither, so this needs to actually check
+          isAthlete rather than just "not owner". */}
+      {!isOwner && isAthlete && (
         <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
           <UserRound className="mt-0.5 size-4 shrink-0 text-primary" />
           <p className="text-sm text-foreground">
             Assigned by {assignedByEmail ?? "your coach"} — you can set it active or remove your own copy, but only they can edit its exercises.
           </p>
+        </div>
+      )}
+
+      {!isOwner && !isAthlete && (
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-4">
+          <UserRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <p className="text-sm text-foreground">Viewing as admin — read-only, no changes can be made from here.</p>
         </div>
       )}
 
