@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideReadinessDownregulation, decideRirGate } from "@/lib/training/autoregulation";
+import { decideJointCheck, decideReadinessDownregulation, decideRirGate } from "@/lib/training/autoregulation";
 import type { AutoregulationEventKind, ReadinessCheck } from "@/lib/training/autoregulation";
 
 function events(kinds: AutoregulationEventKind[]): { kind: AutoregulationEventKind }[] {
@@ -134,5 +134,34 @@ describe("decideReadinessDownregulation — Rule 3's two-question check", () => 
 
   it("does not downregulate when everything is good", () => {
     expect(decideReadinessDownregulation(readiness({ sleep: "good", soreness: "fresh" }))).toBe(false);
+  });
+});
+
+describe("decideJointCheck — Rule 4's per-joint better/same/worse check", () => {
+  it("regresses only when 'worse' is reported two sessions in a row", () => {
+    expect(decideJointCheck("worse", "worse")).toBe("regress");
+  });
+
+  it("does not regress on a single 'worse' with no prior worse reading", () => {
+    expect(decideJointCheck("worse", null)).toBe("no_change");
+    expect(decideJointCheck("worse", "same")).toBe("no_change");
+    expect(decideJointCheck("worse", "better")).toBe("no_change");
+  });
+
+  it("progresses only when 'better' is reported two sessions in a row", () => {
+    expect(decideJointCheck("better", "better")).toBe("progress");
+  });
+
+  it("does not progress on a single 'better' with no prior better reading", () => {
+    expect(decideJointCheck("better", null)).toBe("no_change");
+    expect(decideJointCheck("better", "same")).toBe("no_change");
+    expect(decideJointCheck("better", "worse")).toBe("no_change");
+  });
+
+  it("never changes anything for a 'same' reading, regardless of what came before", () => {
+    expect(decideJointCheck("same", "worse")).toBe("no_change");
+    expect(decideJointCheck("same", "better")).toBe("no_change");
+    expect(decideJointCheck("same", "same")).toBe("no_change");
+    expect(decideJointCheck("same", null)).toBe("no_change");
   });
 });

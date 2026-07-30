@@ -141,3 +141,53 @@ export interface ReadinessCheck {
 export function decideReadinessDownregulation(readiness: ReadinessCheck): boolean {
   return readiness.sleep === "bad" && readiness.soreness === "beat_up";
 }
+
+/**
+ * Rule 4 — the per-joint "how was it after last session?" check
+ * (coach-answers §10 step 2). For any joint the athlete has flagged, asked
+ * before the next session on that joint: better / same / worse.
+ *
+ * Two in a row is the coach's own threshold in both directions — worse
+ * twice in a row regresses one step down that joint's substitution ladder
+ * (see generate/patterns.ts's ladderFor, which already sorts a pattern's
+ * candidates most-to-least demanding); better twice in a row progresses one
+ * step back up. A single "worse" or "same" reading changes nothing, the
+ * same "don't overreact to one data point" principle Rule 1's RIR gate
+ * already uses for a single miss.
+ *
+ * This function only decides the *step direction* — walking that step
+ * against a specific joint's exercise ladder (finding the athlete's current
+ * exercise for that pattern, then substituting the next-lighter or
+ * next-heavier candidate from ladderFor's output against the live equipment/
+ * injury-filtered pool) is deliberately not implemented here. That's a real,
+ * separate piece of work: it needs a live exercise-substitution mutation
+ * against an already-persisted program's block_exercises rows (nothing
+ * else in this app rewrites a generated program's actual exercise choice
+ * after the fact), and it needs to know which joint an athlete has flagged
+ * in the first place — which isn't stored anywhere queryable at Training
+ * Mode runtime today. The questionnaire's InjuryProfile only ever lived in
+ * the generate-program form's local state; nothing persists it as a
+ * standing athlete profile. Both are genuine architecture decisions, not
+ * "wire the existing pieces together" the way Rules 1-3 all were.
+ */
+export type JointCheckAnswer = "better" | "same" | "worse";
+export type JointCheckOutcome = "regress" | "progress" | "no_change";
+
+/**
+ * Deliberately takes the *previous session's raw answer* for this joint
+ * rather than an AutoregulationEventKind history the way decideRirGate
+ * does — unlike Rule 1's miss-hold, which is itself written as an event on
+ * the very first occurrence (so a second miss can look back and find it),
+ * a single "worse" here does nothing and so has no natural event to record
+ * — there would be nothing in an event history for a second "worse" to
+ * compare against. Whatever eventually calls this needs to have the prior
+ * answer on hand some other way (most likely a durable per-athlete,
+ * per-joint answer log, which — like the "which joints does this athlete
+ * have flagged at all" question — doesn't exist in this schema yet; see
+ * this file's header comment above this function's sibling exports).
+ */
+export function decideJointCheck(current: JointCheckAnswer, previous: JointCheckAnswer | null): JointCheckOutcome {
+  if (current === "worse" && previous === "worse") return "regress";
+  if (current === "better" && previous === "better") return "progress";
+  return "no_change";
+}
