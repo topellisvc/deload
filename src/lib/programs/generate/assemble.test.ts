@@ -133,6 +133,53 @@ describe("assembleWeeks — per-week prescription resolution", () => {
     expect(set.weight_value).toBeNull();
     expect(set.pr_record_type).toBeNull();
     expect(set.is_max_test).toBe(false);
+    // prescription-types.ts's contract: every strength type except
+    // rep_range reads the free-text `reps` field, not min_reps/max_reps —
+    // SetDetails renders "?" if reps is null regardless of min_reps/
+    // max_reps, so a plan that only ever set minReps/maxReps (the shape
+    // every RIR-wave function in this generator actually produces) still
+    // needs a computed reps string here.
+    expect(set.reps).toBe("6-8");
+  });
+
+  it("computes a single-value reps string ('5', not '5-5') when a plan's minReps equals its maxReps", () => {
+    const day: DayPlan = {
+      label: "Day 1",
+      isRestDay: false,
+      intensity: "moderate",
+      loadsLowerBody: true,
+      slots: [
+        slot({
+          prescription: {
+            forWeek: (): WeekSetPlan => ({ prescriptionType: "rir", sets: 3, minReps: 5, maxReps: 5, rir: 2, restSeconds: 120 }),
+          },
+        }),
+      ],
+    };
+    const pool = [ex({ id: "barbell-back-squat", metadata: { [METADATA_KEYS.slotPatterns]: ["squat_bilateral"] } })];
+    const result = assembleWeeks({ template: simpleTemplate([day]), totalWeeks: 1, exercises: pool, selection: baseSelection() });
+    const set = result.weeks[0]!.days[0]!.blocks[0]!.exercises[0]!.sets[0]!;
+    expect(set.reps).toBe("5");
+  });
+
+  it("leaves a plan's own explicit reps string alone rather than recomputing it from minReps/maxReps", () => {
+    const day: DayPlan = {
+      label: "Day 1",
+      isRestDay: false,
+      intensity: "moderate",
+      loadsLowerBody: true,
+      slots: [
+        slot({
+          prescription: {
+            forWeek: (): WeekSetPlan => ({ prescriptionType: "rir", sets: 1, reps: "AMRAP", rir: 1, restSeconds: 120 }),
+          },
+        }),
+      ],
+    };
+    const pool = [ex({ id: "barbell-back-squat", metadata: { [METADATA_KEYS.slotPatterns]: ["squat_bilateral"] } })];
+    const result = assembleWeeks({ template: simpleTemplate([day]), totalWeeks: 1, exercises: pool, selection: baseSelection() });
+    const set = result.weeks[0]!.days[0]!.blocks[0]!.exercises[0]!.sets[0]!;
+    expect(set.reps).toBe("AMRAP");
   });
 
   it("carries a percent_1rm plan's prRecordType/isMaxTest through onto pr_record_type/is_max_test", () => {

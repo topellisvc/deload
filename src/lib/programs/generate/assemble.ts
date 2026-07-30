@@ -75,6 +75,35 @@ export interface AssembledProgram {
   warnings: string[];
 }
 
+/**
+ * prescription-types.ts's declarative contract is explicit: every strength
+ * type except 'rep_range' reads the free-text `reps` field (min_reps/
+ * max_reps is 'rep_range''s field alone) — SetDetails and every other
+ * display surface follow that contract exactly, falling back to "?" when
+ * `reps` is null regardless of whether min_reps/max_reps happen to be set.
+ * But most of this file's own prescription-building functions (every RIR
+ * wave in resistance-templates.ts, powerlifting-templates.ts's
+ * MAIN_LIFT_SPEC, power-athletic-templates.ts's maximalStrengthPrescription,
+ * sport-specific-templates.ts's slotPrescription, hybrid-templates.ts's
+ * maintenance dose) represent a rep target as structured minReps/maxReps
+ * numbers rather than a string — which e1rm.ts's percentOf1RM and this
+ * file's own targetRepsAndRir-style helpers actually need to do real math on
+ * a range, so that's not a mistake to "fix" at the source. Rather than
+ * touching every one of those functions to also stringify a `reps` field
+ * that would otherwise sit unused, this is the one place a WeekSetPlan
+ * becomes a real SetRow, so it's the one place that reconciles the two: any
+ * plan that supplies minReps/maxReps but no plain reps string gets one
+ * computed here, in the exact shape the display layer already expects
+ * ("6-8", or a bare "5" when min equals max) — same convention load-
+ * calculation.ts's own repsLabel already uses for the same reason.
+ */
+function repsFieldFor(plan: WeekSetPlan): string | null {
+  if (plan.reps != null) return plan.reps;
+  if (plan.minReps != null && plan.maxReps != null) return plan.minReps === plan.maxReps ? String(plan.minReps) : `${plan.minReps}-${plan.maxReps}`;
+  if (plan.minReps != null) return String(plan.minReps);
+  return null;
+}
+
 function toSetRow(plan: WeekSetPlan, position: number): SetRow {
   return {
     id: "",
@@ -82,7 +111,7 @@ function toSetRow(plan: WeekSetPlan, position: number): SetRow {
     position,
     prescription_type: plan.prescriptionType,
     sets: plan.sets,
-    reps: plan.reps ?? null,
+    reps: repsFieldFor(plan),
     min_reps: plan.minReps ?? null,
     max_reps: plan.maxReps ?? null,
     // The generator never hand-authors an absolute load for someone it
