@@ -221,6 +221,8 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
 
   const [laggingMuscleGroups, setLaggingMuscleGroups] = useState<MuscleGroup[]>([]);
 
+  const [includeCardio, setIncludeCardio] = useState(false);
+
   const [currentWeeklyKm, setCurrentWeeklyKm] = useState(15);
   const [weeksAtCurrentVolume, setWeeksAtCurrentVolume] = useState(4);
   const [hasRunContinuouslyThirtyMinutes, setHasRunContinuouslyThirtyMinutes] = useState(true);
@@ -302,6 +304,7 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
       bodybuilding: goal === "build_muscle_bodybuilding" ? { laggingMuscleGroups } : null,
       conditioningModality: "no_preference",
       coachedOnOlympicLifts,
+      includeCardio,
     };
   }
 
@@ -541,6 +544,12 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
               />
             ))}
           </div>
+        </Section>
+      )}
+
+      {(goal === "general_fitness" || goal === "lose_fat") && (
+        <Section title="Cardio" description="Optional — 2 easy cardio sessions on top of your lifting days. Included, not developed; pick Conditioning or Hybrid if cardio itself is the priority.">
+          <CheckboxRow id="includeCardio" label="Include cardio sessions in this program" checked={includeCardio} onChange={setIncludeCardio} />
         </Section>
       )}
 

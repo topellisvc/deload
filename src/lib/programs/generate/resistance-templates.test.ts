@@ -45,6 +45,7 @@ function baseInput(overrides: Partial<ProgramGenerationInput> = {}): ProgramGene
     bodybuilding: null,
     conditioningModality: "no_preference",
     coachedOnOlympicLifts: false,
+    includeCardio: false,
     ...overrides,
   };
 }
@@ -125,6 +126,45 @@ describe("buildResistanceTemplate — successful generation", () => {
     );
     if (!("template" in result)) throw new Error("expected a template");
     expect(result.recommendConsultation).not.toBeNull();
+  });
+});
+
+describe("buildResistanceTemplate — opt-in cardio", () => {
+  it("adds no cardio days by default", () => {
+    const result = buildResistanceTemplate(baseInput({ goal: "general_fitness", daysPerWeek: 3 }));
+    if (!("template" in result)) throw new Error("expected a template");
+    expect(result.template.weekStructure.days).toHaveLength(3);
+    expect(result.template.weekStructure.days.some((d) => d.label.startsWith("Cardio"))).toBe(false);
+  });
+
+  it("appends 2 cardio days on top of the lifting split for general_fitness when opted in", () => {
+    const result = buildResistanceTemplate(baseInput({ goal: "general_fitness", daysPerWeek: 3, includeCardio: true }));
+    if (!("template" in result)) throw new Error("expected a template");
+    expect(result.template.weekStructure.days).toHaveLength(5);
+    const cardioDays = result.template.weekStructure.days.filter((d) => d.label.startsWith("Cardio"));
+    expect(cardioDays).toHaveLength(2);
+    for (const day of cardioDays) {
+      expect(day.slots).toHaveLength(1);
+      expect(day.slots[0]?.category).toBe("cardio");
+      expect(day.slots[0]?.movementPattern).toBeNull();
+      const plan = day.slots[0]!.prescription.forWeek({ weekIndex: 1, totalWeeks: 8, phase: "standard", deload: null });
+      expect(plan.prescriptionType).toBe("heart_rate_zone");
+    }
+    expect(result.warnings.some((w) => w.includes("included here, not developed"))).toBe(true);
+  });
+
+  it("appends cardio days for lose_fat when opted in", () => {
+    const result = buildResistanceTemplate(baseInput({ goal: "lose_fat", daysPerWeek: 3, includeCardio: true }));
+    if (!("template" in result)) throw new Error("expected a template");
+    expect(result.template.weekStructure.days.filter((d) => d.label.startsWith("Cardio"))).toHaveLength(2);
+  });
+
+  it("ignores includeCardio for goals that stay lifting-only, with an explanatory warning", () => {
+    const result = buildResistanceTemplate(baseInput({ goal: "get_stronger", daysPerWeek: 3, includeCardio: true }));
+    if (!("template" in result)) throw new Error("expected a template");
+    expect(result.template.weekStructure.days).toHaveLength(3);
+    expect(result.template.weekStructure.days.some((d) => d.label.startsWith("Cardio"))).toBe(false);
+    expect(result.warnings.some((w) => w.includes("wasn't added"))).toBe(true);
   });
 
   it("does not recommend a consultation for a clear injury profile", () => {

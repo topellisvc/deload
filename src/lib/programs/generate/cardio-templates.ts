@@ -59,7 +59,11 @@ function modalityLabel(modality: ConditioningModality): string {
   return labels[modality];
 }
 
-function easyPrescription(durationSeconds: number, modality: ConditioningModality): WeekSetPlan {
+/** Exported for resistance-templates.ts's opt-in cardio addition — same
+ * Zone 2 shape, reused rather than re-implemented, so a "general fitness"
+ * or "fat loss" athlete's cardio day and a dedicated conditioning athlete's
+ * easy day read identically. */
+export function easyPrescription(durationSeconds: number, modality: ConditioningModality): WeekSetPlan {
   return {
     prescriptionType: "heart_rate_zone",
     sets: 1,

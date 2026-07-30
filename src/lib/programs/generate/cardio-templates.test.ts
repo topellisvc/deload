@@ -45,6 +45,7 @@ function baseInput(overrides: Partial<ProgramGenerationInput> = {}): ProgramGene
     bodybuilding: null,
     conditioningModality: "cycling",
     coachedOnOlympicLifts: false,
+    includeCardio: false,
     ...overrides,
   };
 }

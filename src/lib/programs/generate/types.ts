@@ -327,6 +327,17 @@ export interface ProgramGenerationInput {
   /** Required when goal is "build_muscle_bodybuilding", ignored otherwise. */
   bodybuilding: BodybuildingProfile | null;
   conditioningModality: ConditioningModality;
+  /** Opt-in only, and only acted on for goal "general_fitness" or
+   * "lose_fat" (resistance-templates.ts) — those two are the resistance
+   * goals where cardio is a standard expectation rather than something
+   * that competes with the goal's own recovery demands (build_muscle_*
+   * and get_stronger deliberately stay lifting-only regardless of this
+   * flag). When true, 2 easy Zone 2 cardio sessions/week are appended on
+   * top of the lifting split, using conditioningModality, same as a
+   * hybrid's maintained secondary side — cardio here is included, not
+   * developed, so it doesn't reduce or replace any lifting day. Ignored
+   * for every other goal. */
+  includeCardio: boolean;
   /** §6's middle ground. Hang power clean, high pull and power snatch from
    * blocks are "allowed but not default" — motivated people can learn them,
    * but the coach wants them behind an explicit "have you been coached on

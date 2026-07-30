@@ -1,3 +1,4 @@
+import { easyPrescription } from "@/lib/programs/generate/cardio-templates";
 import { needsHumanReason, recommendConsultationReason } from "@/lib/programs/generate/injuries";
 import { chooseSplit, missingWeeklyPatterns, slotSequenceForDayRole, type DayRole, type SlotRequest } from "@/lib/programs/generate/splits";
 import type {
@@ -245,6 +246,34 @@ const LOWER_BODY_PATTERNS: ReadonlySet<SlotPattern> = new Set<SlotPattern>([
   "calf_soleus",
 ]);
 
+/** Goals where cardio is a standard-enough expectation that an opt-in
+ * toggle makes sense — the build_muscle_ goals and get_stronger
+ * deliberately stay lifting-only regardless of
+ * ProgramGenerationInput.includeCardio (see that field's doc comment). */
+const CARDIO_ELIGIBLE_GOALS: ReadonlySet<ResistanceGoal> = new Set<ResistanceGoal>(["general_fitness", "lose_fat"]);
+
+/** Two easy Zone 2 sessions/week, appended on top of the lifting split —
+ * same "maintained, not developed" dose hybrid-templates.ts gives its
+ * secondary side, reusing cardio-templates.ts's easyPrescription so this
+ * reads identically to a dedicated conditioning day. Fixed 25 minutes
+ * rather than scaling with experience level: this is meant to stay a small
+ * addition next to the lifting split, not grow into its own program. */
+function cardioDaysFor(modality: ProgramGenerationInput["conditioningModality"]): DayPlan[] {
+  const slot = (): ExerciseSlot => ({
+    role: "conditioning",
+    category: "cardio",
+    movementPattern: null,
+    primaryMuscleGroup: null,
+    isPrimary: false,
+    autoregulationEligible: false,
+    prescription: { forWeek: () => easyPrescription(25 * 60, modality) },
+  });
+  return [
+    { label: "Cardio A", isRestDay: false, intensity: "easy", loadsLowerBody: false, slots: [slot()] },
+    { label: "Cardio B", isRestDay: false, intensity: "easy", loadsLowerBody: false, slots: [slot()] },
+  ];
+}
+
 function dayLabel(role: DayRole, index: number): string {
   const labels: Record<DayRole, string> = {
     full_body_a: "Full Body A",
@@ -356,7 +385,9 @@ export function buildResistanceTemplate(input: ProgramGenerationInput): Template
       ? input.bodybuilding.laggingMuscleGroups.slice(0, 2).map((group) => ({ pattern: null, primaryMuscleGroup: group, emphasis: "accessory" as const }))
       : [];
 
-  const days = dayRoles.map((role, index) => buildDayPlan(role, index, goal, input.experienceLevel, laggingGroupSlots));
+  const liftingDays = dayRoles.map((role, index) => buildDayPlan(role, index, goal, input.experienceLevel, laggingGroupSlots));
+  const includesCardio = input.includeCardio && CARDIO_ELIGIBLE_GOALS.has(goal);
+  const days = includesCardio ? [...liftingDays, ...cardioDaysFor(input.conditioningModality)] : liftingDays;
 
   // §14 point 12: a returner needs a distinct ramp-in, not the first-week-
   // only calibration a brand-new user gets. Approximated here as an extended
@@ -373,6 +404,13 @@ export function buildResistanceTemplate(input: ProgramGenerationInput): Template
   };
 
   const warnings = [...splitWarnings];
+  if (includesCardio) {
+    warnings.push(
+      "Cardio is included here, not developed — 2 easy sessions on top of your lifting days, not a conditioning program in its own right. If cardio is actually a priority for you, Conditioning or Hybrid will build it properly."
+    );
+  } else if (input.includeCardio && !CARDIO_ELIGIBLE_GOALS.has(goal)) {
+    warnings.push(`Cardio wasn't added — this goal stays lifting-only by design, since extra cardio here would compete with recovery for the main lifts.`);
+  }
   if (goal === "lose_fat") {
     warnings.push(
       "Expect load and reps to plateau rather than climb most weeks — that's the deficit, not a training failure. Success here looks like maintaining your numbers, not beating them every week."
