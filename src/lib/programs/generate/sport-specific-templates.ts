@@ -1,7 +1,9 @@
 import { needsHumanReason, recommendConsultationReason } from "@/lib/programs/generate/injuries";
+import { applyLoadCalculationMethod } from "@/lib/programs/generate/load-calculation";
 import type {
   DayPlan,
   ExerciseSlot,
+  LoadCalculationMethod,
   ProgramGenerationInput,
   ProgramPhase,
   ProgramTemplate,
@@ -85,6 +87,20 @@ import type { MuscleGroup } from "@/lib/exercises/types";
  * builder that doesn't know what day training happens can't know what's
  * 48h from a game. Both are runtime-scheduling concerns, not something a
  * week-shape skeleton can enforce.
+ *
+ * LOAD CALCULATION METHOD — WHY test_then_percent_1rm IS EXCLUDED HERE
+ * ----------------------------------------------------------------------------
+ * percent_1rm and coach_entered/athlete_choice apply normally, through
+ * load-calculation.ts's shared dispatcher — every day's first two slots are
+ * isPrimary, and for most SportGroups those are squat_bilateral/
+ * hinge_bilateral, both trackable patterns. test_then_percent_1rm is
+ * different: buildDays repeats the exact same ordered slot list on every
+ * generated day (no rotation), so a testing week here would mean maxing out
+ * the same one or two lifts every single session for a week straight,
+ * rather than once. That's not a defensible testing protocol, so this file
+ * downgrades the request to autoregulated_rir regardless of experience
+ * level, with an explanatory warning — the UI also doesn't offer the option
+ * for this goal, but this is the actual guardrail.
  */
 
 export function isSportSpecificGoal(goal: TrainingGoal): goal is "sport_specific" {
@@ -305,6 +321,19 @@ function phaseByWeekFor(programLengthWeeks: number): Map<number, ProgramPhase> {
   return phaseByWeek;
 }
 
+/** See this file's header comment for why test_then_percent_1rm is never
+ * honoured here — every day repeats the same ordered slot list, so a
+ * testing week would mean maxing the same lift(s) out every session. */
+function applyLoadMethodToDays(days: DayPlan[], method: LoadCalculationMethod): DayPlan[] {
+  return days.map((day) => ({
+    ...day,
+    slots: day.slots.map((slot) => ({
+      ...slot,
+      prescription: applyLoadCalculationMethod(slot.prescription, method, slot.isPrimary, slot.movementPattern, slot.category),
+    })),
+  }));
+}
+
 export function buildSportSpecificTemplate(input: ProgramGenerationInput): TemplateResult {
   const routeOut = needsHumanReason({ redFlags: input.redFlags, globalRefusals: input.globalRefusals, injuries: input.injuries });
   if (routeOut) return { needsHumanReason: routeOut };
@@ -317,8 +346,23 @@ export function buildSportSpecificTemplate(input: ProgramGenerationInput): Templ
   }
   const sport = input.sport;
 
+  const testingWeekUnsupported = input.loadCalculationMethod === "test_then_percent_1rm";
+  const loadCalculationMethod: LoadCalculationMethod = testingWeekUnsupported ? "autoregulated_rir" : input.loadCalculationMethod;
+
   const warnings: string[] = [GROUP_NOTES[sport.sportGroup]];
-  const days = buildDays(sport, input.daysPerWeek, warnings);
+  const rawDays = buildDays(sport, input.daysPerWeek, warnings);
+  const days = applyLoadMethodToDays(rawDays, loadCalculationMethod);
+
+  if (testingWeekUnsupported) {
+    warnings.push(
+      "A dedicated testing week isn't offered for sport-specific programs — every day here uses the same slot list, so a testing week would mean maxing out the same lift(s) every session for a week straight. Use % of 1RM with your current saved maxes instead, or test separately and update your maxes on your profile."
+    );
+  }
+  if (loadCalculationMethod === "percent_1rm") {
+    warnings.push(
+      "Weights shown as a percentage need a saved max to calculate an actual number — add or update your squat/bench/deadlift/overhead press maxes on your profile so these resolve to real working weights."
+    );
+  }
 
   if (sport.currentlyCuttingWeight) {
     warnings.push("You're cutting weight, so this program is downgraded across the board — maintenance only, no new stimulus. This app doesn't give weight-cut guidance itself; that's between you and your coach.");

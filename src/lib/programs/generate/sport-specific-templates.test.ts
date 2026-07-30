@@ -222,3 +222,61 @@ describe("buildSportSpecificTemplate — screening flags", () => {
     expect(result.template.name).toContain("General Athletic Development");
   });
 });
+
+// field_court_invasion's ordered slots are [SQUAT, HINGE, hip_adduction,
+// PULL, PUSH, JUMP, CORE] — the first two (both trackable patterns) are
+// isPrimary, everything else isn't.
+describe("buildSportSpecificTemplate — load calculation method", () => {
+  const ctx = { weekIndex: 1, totalWeeks: 8, phase: "standard" as const, deload: null };
+
+  function build(method: ProgramGenerationInput["loadCalculationMethod"]) {
+    const result = buildSportSpecificTemplate(baseInput({ loadCalculationMethod: method }));
+    if (!("template" in result)) throw new Error("expected a template");
+    return result;
+  }
+
+  it("autoregulated_rir leaves every slot RIR-based", () => {
+    const result = build("autoregulated_rir");
+    const squatSlot = result.template.weekStructure.days[0]!.slots.find((s) => s.movementPattern === "squat_bilateral")!;
+    expect(squatSlot.prescription.forWeek(ctx).prescriptionType).toBe("rir");
+  });
+
+  it("percent_1rm converts the primary squat/hinge slots but leaves the non-primary accessory slots alone", () => {
+    const result = build("percent_1rm");
+    const day = result.template.weekStructure.days[0]!;
+    const squatSlot = day.slots.find((s) => s.movementPattern === "squat_bilateral")!;
+    const hingeSlot = day.slots.find((s) => s.movementPattern === "hinge_bilateral")!;
+    const adductionSlot = day.slots.find((s) => s.movementPattern === "hip_adduction")!;
+    expect(squatSlot.prescription.forWeek(ctx).prescriptionType).toBe("percent_1rm");
+    expect(hingeSlot.prescription.forWeek(ctx).prescriptionType).toBe("percent_1rm");
+    expect(adductionSlot.prescription.forWeek(ctx).prescriptionType).toBe("rir"); // not primary — unaffected
+  });
+
+  it("coach_entered and athlete_choice convert every slot in the day, not just the primaries", () => {
+    for (const method of ["coach_entered", "athlete_choice"] as const) {
+      const result = build(method);
+      const expectedType = method === "coach_entered" ? "fixed_weight" : "athlete_chooses_weight";
+      for (const slot of result.template.weekStructure.days[0]!.slots) {
+        expect(slot.prescription.forWeek(ctx).prescriptionType).toBe(expectedType);
+      }
+    }
+  });
+
+  it("downgrades test_then_percent_1rm to autoregulated_rir regardless of experience level, with an explanatory warning, since every day repeats the same slot list", () => {
+    for (const experienceLevel of ["beginner", "intermediate", "advanced"] as const) {
+      const result = buildSportSpecificTemplate(baseInput({ experienceLevel, loadCalculationMethod: "test_then_percent_1rm" }));
+      if (!("template" in result)) throw new Error("expected a template");
+      const squatSlot = result.template.weekStructure.days[0]!.slots.find((s) => s.movementPattern === "squat_bilateral")!;
+      expect(squatSlot.prescription.forWeek(ctx).prescriptionType).toBe("rir");
+      expect(result.template.phaseByWeek.size).toBe(8); // no testing week inserted
+      expect(result.warnings.some((w) => w.includes("A dedicated testing week isn't offered for sport-specific programs"))).toBe(true);
+    }
+  });
+
+  it("warns that a percentage needs a saved max only for percent_1rm", () => {
+    const percent = build("percent_1rm");
+    const rir = build("autoregulated_rir");
+    expect(percent.warnings.some((w) => w.includes("Weights shown as a percentage need a saved max"))).toBe(true);
+    expect(rir.warnings.some((w) => w.includes("Weights shown as a percentage need a saved max"))).toBe(false);
+  });
+});

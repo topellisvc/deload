@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GlobalRefusalScreen, InjuryProfile, ProgramGenerationInput, RedFlagScreen, TrainingGoal } from "@/lib/programs/generate/types";
+import type { GlobalRefusalScreen, InjuryProfile, ProgramGenerationInput, RedFlagScreen, TrainingGoal, WeekContext } from "@/lib/programs/generate/types";
 import { buildPowerAthleticTemplate, isPowerAthleticGoal } from "@/lib/programs/generate/power-athletic-templates";
 
 function clearRedFlags(): RedFlagScreen {
@@ -204,5 +204,97 @@ describe("buildPowerAthleticTemplate — warnings and exclusions", () => {
     const result = buildPowerAthleticTemplate(baseInput({ coachedOnOlympicLifts: true }));
     if (!("template" in result)) throw new Error("expected a template");
     expect(result.warnings.some((w) => w.includes("never included here regardless"))).toBe(true);
+  });
+});
+
+// daysPerWeek 3 -> [Speed & Power A, Speed & Power B, Strength Base]. Speed &
+// Power A's slots: sprint (category "running"), jump, 2 hamstring-prep
+// accessories, then a primary squat_bilateral strength slot. Speed & Power
+// B: jump-squat, throw (primary, pattern "throw" — not trackable), push
+// press, then a primary horizontal_push strength slot.
+describe("buildPowerAthleticTemplate — load calculation method", () => {
+  const ctx: WeekContext = { weekIndex: 5, totalWeeks: 10, phase: "standard", deload: null };
+
+  function build(method: ProgramGenerationInput["loadCalculationMethod"], experienceLevel: ProgramGenerationInput["experienceLevel"] = "advanced") {
+    const result = buildPowerAthleticTemplate(baseInput({ daysPerWeek: 3, experienceLevel, loadCalculationMethod: method }));
+    if (!("template" in result)) throw new Error("expected a template");
+    return result;
+  }
+
+  it("autoregulated_rir (the default) leaves every slot exactly as buildDays produced it", () => {
+    const result = build("autoregulated_rir");
+    const day0 = result.template.weekStructure.days[0]!;
+    const sprintSlot = day0.slots[0]!;
+    const squatSlot = day0.slots.find((s) => s.movementPattern === "squat_bilateral")!;
+    expect(sprintSlot.prescription.forWeek(ctx).prescriptionType).toBe("distance");
+    expect(squatSlot.prescription.forWeek(ctx).prescriptionType).toBe("rir");
+  });
+
+  it("percent_1rm converts only the primary trackable-pattern strength slots, and never touches the running-category sprint slot", () => {
+    const result = build("percent_1rm");
+    const day0 = result.template.weekStructure.days[0]!;
+    const sprintSlot = day0.slots[0]!;
+    const squatSlot = day0.slots.find((s) => s.movementPattern === "squat_bilateral")!;
+    const jumpSlot = day0.slots.find((s) => s.movementPattern === "jump")!;
+
+    expect(sprintSlot.category).toBe("running");
+    expect(sprintSlot.prescription.forWeek(ctx).prescriptionType).not.toBe("percent_1rm");
+    expect(squatSlot.prescription.forWeek(ctx).prescriptionType).toBe("percent_1rm");
+    // "jump" has no matching personal-records type, so it's untouched even
+    // though it's a primary strength-category slot.
+    expect(jumpSlot.prescription.forWeek(ctx).prescriptionType).toBe("rep_range");
+  });
+
+  it("coach_entered converts every strength-category slot, including jump/throw, but leaves the running-category sprint slot alone", () => {
+    const result = build("coach_entered");
+    const day0 = result.template.weekStructure.days[0]!;
+    const day1 = result.template.weekStructure.days[1]!;
+    const sprintSlot = day0.slots[0]!;
+    const jumpSlot = day0.slots.find((s) => s.movementPattern === "jump")!;
+    const throwSlot = day1.slots.find((s) => s.movementPattern === "throw")!;
+
+    expect(sprintSlot.prescription.forWeek(ctx).prescriptionType).not.toBe("fixed_weight");
+    expect(jumpSlot.prescription.forWeek(ctx).prescriptionType).toBe("fixed_weight");
+    expect(throwSlot.prescription.forWeek(ctx).prescriptionType).toBe("fixed_weight");
+  });
+
+  it("inserts a testing week and warns about the Strength Base day's back-to-back squat/deadlift test", () => {
+    const result = build("test_then_percent_1rm", "advanced");
+    expect(result.template.phaseByWeek.get(1)).toBe("testing");
+    expect(result.template.phaseByWeek.size).toBe(11); // baseInput's programLengthWeeks is 10
+    expect(result.warnings.some((w) => w.includes("now spans 11 weeks total"))).toBe(true);
+    expect(result.warnings.some((w) => w.includes("Strength Base day tests both"))).toBe(true);
+  });
+
+  it("the testing week's squat slot prescribes a single graded top set naming the lift", () => {
+    const result = build("test_then_percent_1rm", "advanced");
+    const squatSlot = result.template.weekStructure.days[0]!.slots.find((s) => s.movementPattern === "squat_bilateral")!;
+    const testingCtx: WeekContext = { weekIndex: 1, totalWeeks: 11, phase: "testing", deload: null };
+    const plan = squatSlot.prescription.forWeek(testingCtx);
+    expect(plan.sets).toBe(1);
+    expect(plan.notes).toContain("Squat");
+  });
+
+  it("downgrades test_then_percent_1rm to autoregulated_rir for a beginner, with a warning, and inserts no testing week", () => {
+    const result = build("test_then_percent_1rm", "beginner");
+    expect(result.template.phaseByWeek.get(1)).toBe("standard");
+    expect(result.template.phaseByWeek.size).toBe(10);
+    expect(result.warnings.some((w) => w.toLowerCase().includes("isn't something this generator does for beginners"))).toBe(true);
+  });
+
+  it("warns that a percentage needs a saved max, for percent_1rm and test_then_percent_1rm but not the other methods", () => {
+    const methods: ProgramGenerationInput["loadCalculationMethod"][] = ["autoregulated_rir", "percent_1rm", "coach_entered", "athlete_choice", "test_then_percent_1rm"];
+    const expectFires: Record<string, boolean> = {
+      autoregulated_rir: false,
+      percent_1rm: true,
+      coach_entered: false,
+      athlete_choice: false,
+      test_then_percent_1rm: true,
+    };
+    for (const method of methods) {
+      const result = build(method, "advanced");
+      const fires = result.warnings.some((w) => w.includes("Weights shown as a percentage need a saved max"));
+      expect(fires).toBe(expectFires[method]);
+    }
   });
 });

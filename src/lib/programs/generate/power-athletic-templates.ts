@@ -1,7 +1,9 @@
 import { needsHumanReason, recommendConsultationReason } from "@/lib/programs/generate/injuries";
+import { applyLoadCalculationMethod, withTestingWeek } from "@/lib/programs/generate/load-calculation";
 import type {
   DayPlan,
   ExerciseSlot,
+  LoadCalculationMethod,
   ProgramGenerationInput,
   ProgramPhase,
   ProgramTemplate,
@@ -92,6 +94,18 @@ import type { ExperienceLevel } from "@/lib/supabase/types";
  * doesn't have; both belong with task #25, not here. Days are clamped to
  * 2-4 — this volume of high-CNS work doesn't scale usefully higher without
  * the spacing rule actually being enforced.
+ *
+ * LOAD CALCULATION METHOD
+ * -----------------------------
+ * The strength-base slots (squat_bilateral/hinge_bilateral/horizontal_push,
+ * all isPrimary) support the same LoadCalculationMethod choices resistance-
+ * templates.ts does, via load-calculation.ts's shared dispatcher. The sprint
+ * slot (category "running") is structurally exempt — see that dispatcher's
+ * category guard. Jump/throw/weightlifting-derivative slots stay
+ * RIR-untouched by the two %1RM methods (their patterns aren't in
+ * TRACKABLE_PATTERN_LIFT_LABEL — there's no personal-records type for a
+ * jump), but coach_entered/athlete_choice still apply to them like any other
+ * strength-category slot.
  */
 
 export function isPowerAthleticGoal(goal: TrainingGoal): goal is "power_athletic" {
@@ -321,6 +335,24 @@ function phaseByWeekFor(programLengthWeeks: number): Map<number, ProgramPhase> {
   return phaseByWeek;
 }
 
+/** Applies the chosen LoadCalculationMethod to every slot in every day —
+ * see load-calculation.ts's own header comment for the shared dispatcher
+ * this delegates to. The category guard baked into that dispatcher is what
+ * keeps coach_entered/athlete_choice from touching the sprint slot (category
+ * "running") the same way the hamstring-prep prescriptionType bug earlier
+ * in this file's history got fixed: a strength-only prescriptionType on a
+ * running-category slot trips the DB's set_prescriptions_valid_type
+ * trigger. */
+function applyLoadMethodToDays(days: DayPlan[], method: LoadCalculationMethod): DayPlan[] {
+  return days.map((day) => ({
+    ...day,
+    slots: day.slots.map((slot) => ({
+      ...slot,
+      prescription: applyLoadCalculationMethod(slot.prescription, method, slot.isPrimary, slot.movementPattern, slot.category),
+    })),
+  }));
+}
+
 export function buildPowerAthleticTemplate(input: ProgramGenerationInput): TemplateResult {
   const routeOut = needsHumanReason({ redFlags: input.redFlags, globalRefusals: input.globalRefusals, injuries: input.injuries });
   if (routeOut) return { needsHumanReason: routeOut };
@@ -329,14 +361,23 @@ export function buildPowerAthleticTemplate(input: ProgramGenerationInput): Templ
     return { error: `buildPowerAthleticTemplate does not handle goal "${input.goal}"` };
   }
 
-  const { days, warnings: dayWarnings } = buildDays(input.daysPerWeek, input.experienceLevel);
-  const phaseByWeek = phaseByWeekFor(input.programLengthWeeks);
+  // See LoadCalculationMethod's doc comment (types.ts) — a beginner
+  // requesting test_then_percent_1rm is downgraded rather than honoured,
+  // same defensive backstop resistance-templates.ts uses.
+  const beginnerRequestedTesting = input.loadCalculationMethod === "test_then_percent_1rm" && input.experienceLevel === "beginner";
+  const loadCalculationMethod: LoadCalculationMethod = beginnerRequestedTesting ? "autoregulated_rir" : input.loadCalculationMethod;
+  const includesTestingWeek = loadCalculationMethod === "test_then_percent_1rm";
+
+  const { days: rawDays, warnings: dayWarnings } = buildDays(input.daysPerWeek, input.experienceLevel);
+  const days = applyLoadMethodToDays(rawDays, loadCalculationMethod);
+  const basePhaseByWeek = phaseByWeekFor(input.programLengthWeeks);
+  const { phaseByWeek, deloadWeeks } = includesTestingWeek ? withTestingWeek(basePhaseByWeek, new Map()) : { phaseByWeek: basePhaseByWeek, deloadWeeks: new Map() };
 
   const template: ProgramTemplate = {
     name: "Power & Athletic Development",
     discipline: "resistance",
     weekStructure: { days } satisfies WeekStructure,
-    deloadWeeks: new Map(),
+    deloadWeeks,
     phaseByWeek,
   };
 
@@ -346,6 +387,26 @@ export function buildPowerAthleticTemplate(input: ProgramGenerationInput): Templ
     `Sprinting doesn't start until week ${SPRINT_HAMSTRING_PREP_WEEKS[input.experienceLevel] + 1} — the weeks before that are mandatory hamstring preparation, not a delay.`,
     "The full snatch, clean & jerk, depth jumps, and heavy contrast training are never included here regardless of your answers — those need a coach physically present.",
   ];
+  if (beginnerRequestedTesting) {
+    warnings.push(
+      "Testing a working max isn't something this generator does for beginners — it's using autoregulated RIR targets instead, the safer way to find a starting weight without a coach present to catch a bad rep."
+    );
+  }
+  if (includesTestingWeek) {
+    warnings.push(
+      `This program includes an extra testing week at the start to establish your working maxes on the squat/bench/deadlift slots — your requested ${input.programLengthWeeks}-week program now spans ${input.programLengthWeeks + 1} weeks total. Sprinting is delayed by that same week, on top of the usual hamstring-prep gate.`
+    );
+    if (days.some((d) => d.label === "Strength Base")) {
+      warnings.push(
+        "Your Strength Base day tests both the squat and the deadlift in the same session during the testing week — pace yourself, and prioritise whichever lift matters more to you if you're gassed by the second one."
+      );
+    }
+  }
+  if (loadCalculationMethod === "percent_1rm" || includesTestingWeek) {
+    warnings.push(
+      "Weights shown as a percentage need a saved max to calculate an actual number — add or update your squat/bench/deadlift maxes on your profile so these resolve to real working weights."
+    );
+  }
 
   return { template, warnings, recommendConsultation: consultationFrom(input) };
 }

@@ -12,6 +12,8 @@ import { createClient } from "@/lib/supabase/client";
 import { createProgramFromParsedProgram } from "@/lib/programs/mutations";
 import { upsertAthleteInjuryProfile } from "@/lib/profile/mutations";
 import { isResistanceGoal } from "@/lib/programs/generate/resistance-templates";
+import { isPowerAthleticGoal } from "@/lib/programs/generate/power-athletic-templates";
+import { isSportSpecificGoal } from "@/lib/programs/generate/sport-specific-templates";
 import type {
   EquipmentAccess,
   GlobalRefusalScreen,
@@ -86,8 +88,12 @@ const RUN_GOALS: TrainingGoal[] = ["run_general", "run_5k", "run_10k", "run_half
 /** "Load calculation" Section below filters this list by minLevel before
  * rendering it, so test_then_percent_1rm never even appears as a choice
  * for a beginner — that's the actual guardrail. The generator's own
- * downgrade-with-a-warning (resistance-templates.ts) only exists as a
- * defensive backstop in case this filtering is ever bypassed. */
+ * downgrade-with-a-warning (resistance-templates.ts, power-athletic-
+ * templates.ts) only exists as a defensive backstop in case this filtering
+ * is ever bypassed. Sport Specific hides the same option for a different
+ * reason — see loadMethodOptionsFor's own comment — since every day there
+ * repeats the same slot list, so it's excluded regardless of experience
+ * level, not just for beginners. */
 const LOAD_METHOD_OPTIONS: { value: LoadCalculationMethod; label: string; description: string; minLevel?: ExperienceLevel }[] = [
   {
     value: "test_then_percent_1rm",
@@ -182,6 +188,33 @@ function clearGlobalRefusals(): GlobalRefusalScreen {
 
 function isRunGoalValue(goal: TrainingGoal): boolean {
   return RUN_GOALS.includes(goal);
+}
+
+/** Whether the "How should weight be calculated?" question applies at all
+ * for this goal (and, for hybrid, this particular primary-goal choice) —
+ * every goal here has real RIR-based main lifts the generator can convert,
+ * via load-calculation.ts's shared dispatcher. Running/conditioning-only
+ * goals and Powerlifting Peak are deliberately excluded: Powerlifting
+ * Peak's own file states RPE/RIR is "arguably better than % of a stale
+ * 1RM" for a meet peak, straight from the coach source document, so
+ * offering %1RM there would contradict its own design rather than round
+ * out a gap. */
+function loadCalculationAppliesTo(goal: TrainingGoal, hybridPrimaryGoal: TrainingGoal): boolean {
+  if (isResistanceGoal(goal) || isPowerAthleticGoal(goal) || isSportSpecificGoal(goal)) return true;
+  if (goal === "hybrid") return isResistanceGoal(hybridPrimaryGoal);
+  return false;
+}
+
+/** Sport Specific repeats the same ordered slot list on every generated
+ * day (see sport-specific-templates.ts's own header comment) — a testing
+ * week there would mean maxing out the same one or two lifts every session
+ * for a week straight, not once, so it's excluded regardless of experience
+ * level rather than just hidden from beginners. */
+function loadMethodOptionsFor(goal: TrainingGoal, experienceLevel: ExperienceLevel) {
+  return LOAD_METHOD_OPTIONS.filter((opt) => {
+    if (opt.value === "test_then_percent_1rm" && goal === "sport_specific") return false;
+    return !opt.minLevel || experienceLevel !== "beginner";
+  });
 }
 
 // ---- small presentational helpers ----
@@ -522,7 +555,20 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label htmlFor="goal">Goal</Label>
-            <Select id="goal" value={goal} onChange={(e) => setGoal(e.target.value as TrainingGoal)}>
+            <Select
+              id="goal"
+              value={goal}
+              onChange={(e) => {
+                const nextGoal = e.target.value as TrainingGoal;
+                setGoal(nextGoal);
+                // Sport Specific never offers test_then_percent_1rm (see
+                // loadMethodOptionsFor's comment) — reset back to the
+                // default rather than leaving a now-hidden option selected.
+                if (nextGoal === "sport_specific" && loadCalculationMethod === "test_then_percent_1rm") {
+                  setLoadCalculationMethod("autoregulated_rir");
+                }
+              }}
+            >
               {GOAL_OPTIONS.map((g) => (
                 <option key={g.value} value={g.value} disabled={g.comingSoon}>
                   {g.label}
@@ -643,10 +689,10 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
         </Section>
       )}
 
-      {isResistanceGoal(goal) && (
+      {loadCalculationAppliesTo(goal, hybridPrimaryGoal) && (
         <Section title="How should weight be calculated?" description="This determines how the main lifts are loaded week to week — you can always adjust weights by hand once the program is running.">
           <div className="flex flex-col gap-2">
-            {LOAD_METHOD_OPTIONS.filter((opt) => !opt.minLevel || experienceLevel !== "beginner").map((opt) => (
+            {loadMethodOptionsFor(goal, experienceLevel).map((opt) => (
               <RadioRow
                 key={opt.value}
                 id={`loadMethod-${opt.value}`}
@@ -679,7 +725,22 @@ export function GenerateProgramForm({ userId }: { userId: string }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
               <Label htmlFor="hybridPrimary">Primary goal</Label>
-              <Select id="hybridPrimary" value={hybridPrimaryGoal} onChange={(e) => setHybridPrimaryGoal(e.target.value as TrainingGoal)}>
+              <Select
+                id="hybridPrimary"
+                value={hybridPrimaryGoal}
+                onChange={(e) => {
+                  const nextPrimary = e.target.value as TrainingGoal;
+                  setHybridPrimaryGoal(nextPrimary);
+                  // The load-calculation question only applies when lifting
+                  // is the developed (primary) side — see
+                  // loadCalculationAppliesTo. Switching to a running primary
+                  // goal hides the question, so reset it the same way the
+                  // experience-level and goal switches do above.
+                  if (!isResistanceGoal(nextPrimary) && loadCalculationMethod !== "autoregulated_rir") {
+                    setLoadCalculationMethod("autoregulated_rir");
+                  }
+                }}
+              >
                 {MAINTAINABLE_GOAL_OPTIONS.map((g) => (
                   <option key={g.value} value={g.value}>
                     {g.label}

@@ -132,6 +132,33 @@ describe("GenerateProgramForm", () => {
     expect(screen.getByText("Hybrid priority")).toBeInTheDocument();
   });
 
+  it("shows the load-calculation question for resistance/power-athletic/sport-specific goals and a lifting-primary hybrid, but not for a pure running goal", async () => {
+    const user = userEvent.setup();
+    render(<GenerateProgramForm userId="user-1" />);
+    // Default goal is get_stronger — a resistance goal.
+    expect(screen.getByText("How should weight be calculated?")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Goal"), "run_10k");
+    expect(screen.queryByText("How should weight be calculated?")).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Goal"), "power_athletic");
+    expect(screen.getByText("How should weight be calculated?")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Goal"), "hybrid");
+    // hybridPrimaryGoal defaults to get_stronger (a resistance goal).
+    expect(screen.getByText("How should weight be calculated?")).toBeInTheDocument();
+  });
+
+  it("hides the testing-week option for sport_specific even at advanced experience level, though it's still offered for get_stronger", async () => {
+    const user = userEvent.setup();
+    render(<GenerateProgramForm userId="user-1" />);
+    await user.click(screen.getByRole("radio", { name: "Advanced" }));
+    expect(screen.getByText("Test my maxes first (recommended)")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Goal"), "sport_specific");
+    expect(screen.queryByText("Test my maxes first (recommended)")).not.toBeInTheDocument();
+  });
+
   it("reveals a follow-up presentation picker only once an injury is flagged", async () => {
     const user = userEvent.setup();
     render(<GenerateProgramForm userId="user-1" />);

@@ -148,6 +148,26 @@ describe("buildHybridTemplate — running primary, lifting maintained", () => {
   });
 });
 
+describe("buildHybridTemplate — load calculation method (delegated straight through to buildResistanceTemplate)", () => {
+  it("applies percent_1rm to the primary resistance side's main lift when lifting is primary — no logic of this file's own, just pass-through", () => {
+    const result = buildHybridTemplate(baseInput({ loadCalculationMethod: "percent_1rm" }));
+    if (!("template" in result)) throw new Error("expected a template");
+    const primary = result.template.weekStructure.days.flatMap((d) => d.slots).find((s) => s.isPrimary && s.movementPattern === "squat_bilateral");
+    expect(primary).toBeDefined();
+    const plan = primary!.prescription.forWeek({ weekIndex: 3, totalWeeks: 10, phase: "standard", deload: null });
+    expect(plan.prescriptionType).toBe("percent_1rm");
+  });
+
+  it("leaves the maintenance (secondary, not developed) lifting dose on autoregulated RIR even when a %1RM method is requested — the maintenance dose doesn't consult loadCalculationMethod at all", () => {
+    const hybrid: HybridProfile = { priority: "endurance_primary", primaryGoal: "run_10k", secondaryGoal: "get_stronger" };
+    const result = buildHybridTemplate(baseInput({ hybrid, loadCalculationMethod: "percent_1rm" }));
+    if (!("template" in result)) throw new Error("expected a template");
+    const maintenanceDay = result.template.weekStructure.days.find((d) => d.label.startsWith("Maintenance Full Body"))!;
+    const plan = maintenanceDay.slots[0]!.prescription.forWeek({ weekIndex: 1, totalWeeks: 10, phase: "base", deload: null });
+    expect(plan.prescriptionType).toBe("rir");
+  });
+});
+
 describe("buildHybridTemplate — hard-session count warning (§13 point 6)", () => {
   it("warns when the combination produces more than 3 hard sessions a week", () => {
     // get_stronger (advanced, upper_lower_plus_one -> mostly hard days) + a
