@@ -245,12 +245,20 @@ export type HybridPriority = "resistance_primary" | "endurance_primary";
 
 /** Required only when goal is "hybrid"; null otherwise. §13: force a
  * priority declaration — the secondary goal is maintained, not developed,
- * and the UI should say so explicitly. secondaryGoal reuses TrainingGoal
- * so the hybrid template can borrow directly from an existing run/cardio/
- * resistance template for whichever side isn't primary, rather than
- * duplicating maintenance-dose logic. */
+ * and the UI should say so explicitly. Both goals reuse TrainingGoal so the
+ * hybrid template can borrow directly from an existing run/cardio/
+ * resistance template for each side, rather than duplicating either
+ * discipline's actual programming logic.
+ *
+ * `primaryGoal` was missing from an earlier draft of this type — there was
+ * a `secondaryGoal` but nothing said what the priority side actually *was*
+ * (e.g. "get_stronger primary, run_half_marathon secondary" vs the
+ * reverse), which made the type unimplementable: `priority` alone says
+ * which discipline wins, not which specific goal within it. Caught while
+ * building the hybrid template (task #13), not a deliberate simplification. */
 export interface HybridProfile {
   priority: HybridPriority;
+  primaryGoal: TrainingGoal;
   secondaryGoal: TrainingGoal;
 }
 
