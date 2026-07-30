@@ -1,6 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import type { AdminRosterRow } from "@/lib/admin/queries";
+import { DeleteAccountButton } from "@/components/admin/delete-account-button";
 
 const ROLE_BADGE_CLASS: Record<AdminRosterRow["role"], string> = {
   athlete: "bg-muted text-muted-foreground",
@@ -12,16 +13,20 @@ function formatDate(iso: string): string {
 }
 
 /**
- * View-only roster of every signed-up account — the whole first version
- * of /admin (see migration 0021's comment: mutation controls like role
- * changes or suspension are deliberately left for later, once there's an
- * actual need for them rather than building them speculatively). A plain
- * <table> rather than ClientListSection's card grid, matching
- * TrainingTable's convention — this is denser, more columns, and more
- * rows than a coach's few clients, so a scannable table fits better than
- * cards here.
+ * Roster of every signed-up account — started view-only (migration 0021's
+ * comment: mutation controls deliberately left for later, once there's an
+ * actual need). Account deletion is the first one, added once test-account
+ * cleanup during development made "there's no way to remove one" a real
+ * problem rather than a speculative one. A plain <table> rather than
+ * ClientListSection's card grid, matching TrainingTable's convention —
+ * this is denser, more columns, and more rows than a coach's few clients,
+ * so a scannable table fits better than cards here.
+ *
+ * currentUserId hides the delete action on the signed-in admin's own row —
+ * belt-and-suspenders alongside the API route's own same-user check, so
+ * there isn't even a button to misclick.
  */
-export function AdminRosterTable({ roster }: { roster: AdminRosterRow[] }) {
+export function AdminRosterTable({ roster, currentUserId }: { roster: AdminRosterRow[]; currentUserId: string }) {
   return (
     <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
       <table className="w-full border-collapse text-sm">
@@ -45,6 +50,7 @@ export function AdminRosterTable({ roster }: { roster: AdminRosterRow[] }) {
             <th scope="col" className="px-6 py-3 text-right font-medium">
               Sessions
             </th>
+            <th scope="col" className="px-6 py-3" />
           </tr>
         </thead>
         <tbody>
@@ -82,6 +88,9 @@ export function AdminRosterTable({ roster }: { roster: AdminRosterRow[] }) {
               <td className="px-6 py-3 text-muted-foreground">{row.lastActiveOn ? formatDate(row.lastActiveOn) : "Never"}</td>
               <td className="px-6 py-3 text-right tabular-nums text-foreground">{row.programsCreated}</td>
               <td className="px-6 py-3 text-right tabular-nums text-foreground">{row.sessionCount}</td>
+              <td className="px-6 py-3 text-right">
+                {row.id !== currentUserId && <DeleteAccountButton userId={row.id} email={row.email} />}
+              </td>
             </tr>
           ))}
         </tbody>

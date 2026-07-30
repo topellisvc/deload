@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { AdminRosterTable } from "./admin-roster-table";
 import type { AdminRosterRow } from "@/lib/admin/queries";
+
+// DeleteAccountButton (rendered per-row) needs a router and toast context —
+// out of scope for these tests, which are only about what the table itself
+// renders, not what the button does when clicked.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("@/components/ui/toast", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 
 function makeRow(overrides: Partial<AdminRosterRow> = {}): AdminRosterRow {
   return {
@@ -21,7 +27,7 @@ function makeRow(overrides: Partial<AdminRosterRow> = {}): AdminRosterRow {
 
 describe("AdminRosterTable", () => {
   it("shows an empty state when there are no accounts", () => {
-    render(<AdminRosterTable roster={[]} />);
+    render(<AdminRosterTable roster={[]} currentUserId="viewer-id" />);
     expect(screen.getByText("No accounts yet.")).toBeInTheDocument();
   });
 
@@ -29,6 +35,7 @@ describe("AdminRosterTable", () => {
     render(
       <AdminRosterTable
         roster={[makeRow({ email: "coach@example.com", role: "coach", programsCreated: 3, sessionCount: 12 })]}
+        currentUserId="viewer-id"
       />
     );
     expect(screen.getByText("coach@example.com")).toBeInTheDocument();
@@ -38,22 +45,27 @@ describe("AdminRosterTable", () => {
   });
 
   it("shows 'Never' when a user has no last-active date", () => {
-    render(<AdminRosterTable roster={[makeRow({ lastActiveOn: null })]} />);
+    render(<AdminRosterTable roster={[makeRow({ lastActiveOn: null })]} currentUserId="viewer-id" />);
     expect(screen.getByText("Never")).toBeInTheDocument();
   });
 
   it("shows an Admin badge only for admin accounts", () => {
-    render(<AdminRosterTable roster={[makeRow({ isAdmin: true })]} />);
+    render(<AdminRosterTable roster={[makeRow({ isAdmin: true })]} currentUserId="viewer-id" />);
     expect(screen.getByTitle("Admin")).toBeInTheDocument();
   });
 
   it("omits the Admin badge for non-admin accounts", () => {
-    render(<AdminRosterTable roster={[makeRow({ isAdmin: false })]} />);
+    render(<AdminRosterTable roster={[makeRow({ isAdmin: false })]} currentUserId="viewer-id" />);
     expect(screen.queryByTitle("Admin")).not.toBeInTheDocument();
   });
 
   it("falls back to 'No email on file' when email is null", () => {
-    render(<AdminRosterTable roster={[makeRow({ email: null })]} />);
+    render(<AdminRosterTable roster={[makeRow({ email: null })]} currentUserId="viewer-id" />);
     expect(screen.getByText("No email on file")).toBeInTheDocument();
+  });
+
+  it("shows a Delete button for another account, but not for the signed-in admin's own row", () => {
+    render(<AdminRosterTable roster={[makeRow({ id: "user-1" }), makeRow({ id: "viewer-id", email: "me@example.com" })]} currentUserId="viewer-id" />);
+    expect(screen.getAllByRole("button", { name: /delete/i })).toHaveLength(1);
   });
 });

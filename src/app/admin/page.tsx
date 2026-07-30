@@ -62,7 +62,7 @@ export default async function AdminPage() {
             {roster.length} {roster.length === 1 ? "account" : "accounts"} signed up.
           </p>
         </div>
-        <AdminRosterTable roster={roster} />
+        <AdminRosterTable roster={roster} currentUserId={user.id} />
       </div>
 
       <div className="flex flex-col gap-4">
