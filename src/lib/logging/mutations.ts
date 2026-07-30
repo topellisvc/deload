@@ -37,6 +37,35 @@ export async function createSessionLog(
   return { log: data as SessionLog, error: null };
 }
 
+/**
+ * Rule 2's "skip ahead" (coach-answers §2 Rule 2, deload-autoregulation-
+ * design.md) — marks every day in a week that doesn't already have a log as
+ * skipped, in one batch, for an athlete who wants to move on from a week
+ * that isn't going well rather than grind through what's left of it. Reuses
+ * the exact createSessionLog(..., skipped: true) mechanism SkipWorkoutButton
+ * already uses for a single day (migration 0015) — no new schema at all,
+ * per the design doc's own framing of this as the "highest-value feature
+ * relative to effort" of the whole autoregulation design.
+ *
+ * Best-effort per day: one day's insert failing (most likely because it was
+ * already logged a moment ago, e.g. from another open tab) doesn't block
+ * the rest — this tries every day and only surfaces an error for a genuine
+ * failure, not for "already logged," which isn't a failure at all here.
+ */
+export async function skipRemainingDays(
+  supabase: SupabaseClient,
+  params: { trainingDayIds: string[]; athleteId: string; performedOn: string }
+): Promise<{ skippedCount: number; error: string | null }> {
+  const results = await Promise.all(
+    params.trainingDayIds.map((trainingDayId) =>
+      createSessionLog(supabase, { trainingDayId, athleteId: params.athleteId, performedOn: params.performedOn, skipped: true })
+    )
+  );
+  const skippedCount = results.filter((r) => !r.error).length;
+  const genuineFailure = results.some((r) => r.error && r.error !== "Already logged for this date.");
+  return { skippedCount, error: genuineFailure ? "Some days couldn't be skipped. Try again, or skip them individually." : null };
+}
+
 export async function updateSessionLogNote(
   supabase: SupabaseClient,
   logId: string,

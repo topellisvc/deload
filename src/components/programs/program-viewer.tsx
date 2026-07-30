@@ -27,7 +27,8 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScrollFadeX } from "@/components/ui/scroll-fade-x";
 import { createClient } from "@/lib/supabase/client";
-import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
+import { addWeek, deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
+import { skipRemainingDays } from "@/lib/logging/mutations";
 import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import { formatLogDate as formatLogDateShared, todayDateString } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -140,6 +141,63 @@ export function ProgramViewer({
     // router those cached payloads are now stale. router.refresh() clears
     // that cache and forces a fresh server fetch, so the switch shows up
     // everywhere without a manual hard reload.
+    router.refresh();
+  }
+
+  // Rule 2 of the autoregulation design (coach-answers §2 Rule 2,
+  // deload-autoregulation-design.md) — "repeat this week" / "skip ahead,"
+  // the design doc's own "highest-value feature relative to effort in the
+  // whole document." Both are athlete self-service actions on the
+  // currently-viewed week, not a coach editing feature, so they only ever
+  // render for isAthlete.
+  //
+  // Repeat currently only works for a self-programmer (isOwner too): addWeek
+  // inserts into program_weeks/training_days/exercise_blocks/
+  // block_exercises/set_prescriptions, and RLS's insert policies on all five
+  // of those tables require owner_id = auth.uid() (migration 0017 only
+  // widened DELETE and a couple of narrow RPCs for the athlete side of a
+  // coach-assigned program, not these inserts). Rather than quietly fail or
+  // rush a broad RLS widening here, a coach-assigned program's athlete sees
+  // an explanatory note instead of a working button — see the render below.
+  const [repeatingWeek, setRepeatingWeek] = useState(false);
+  const [repeatWeekError, setRepeatWeekError] = useState<string | null>(null);
+  const [skippingWeek, setSkippingWeek] = useState(false);
+  const [skipWeekError, setSkipWeekError] = useState<string | null>(null);
+
+  async function handleRepeatWeek() {
+    if (!week) return;
+    setRepeatingWeek(true);
+    setRepeatWeekError(null);
+    const supabase = createClient();
+    const dayTemplate = week.days.map((d) => ({ label: d.label, is_rest_day: d.is_rest_day }));
+    const nextWeekPosition = program.weeks.reduce((max, w) => Math.max(max, w.position), 0) + 1;
+    const { week: newWeek, error } = await addWeek(supabase, {
+      programId: program.id,
+      position: nextWeekPosition,
+      dayTemplate,
+      sourceWeek: week,
+    });
+    setRepeatingWeek(false);
+    if (error || !newWeek) {
+      setRepeatWeekError(error ?? "Couldn't repeat this week. Try again.");
+      return;
+    }
+    setSelectedWeekId(newWeek.id);
+    router.refresh();
+  }
+
+  async function handleSkipRestOfWeek() {
+    if (!week) return;
+    setSkippingWeek(true);
+    setSkipWeekError(null);
+    const supabase = createClient();
+    const remainingDayIds = week.days.filter((d) => !d.is_rest_day && (logsByDay[d.id] ?? []).length === 0).map((d) => d.id);
+    const { error } = await skipRemainingDays(supabase, { trainingDayIds: remainingDayIds, athleteId: currentUserId, performedOn: today });
+    setSkippingWeek(false);
+    if (error) {
+      setSkipWeekError(error);
+      return;
+    }
     router.refresh();
   }
 
@@ -302,6 +360,27 @@ export function ProgramViewer({
               </button>
             ))}
           </ScrollFadeX>
+
+          {isAthlete && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" disabled={skippingWeek} onClick={handleSkipRestOfWeek}>
+                  <SkipForward className="size-3.5" />
+                  {skippingWeek ? "Skipping…" : "Skip rest of this week"}
+                </Button>
+                {isOwner ? (
+                  <Button variant="outline" size="sm" disabled={repeatingWeek} onClick={handleRepeatWeek}>
+                    <Repeat className="size-3.5" />
+                    {repeatingWeek ? "Repeating…" : "Repeat this week"}
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Not going well this week? Ask your coach to add another week like this one.</span>
+                )}
+              </div>
+              {skipWeekError && <p className="text-xs text-danger">{skipWeekError}</p>}
+              {repeatWeekError && <p className="text-xs text-danger">{repeatWeekError}</p>}
+            </div>
+          )}
 
           {/* Same overflow-y-visible fix as the week-tabs row above — this
               is the row that actually caused the bug in practice, since

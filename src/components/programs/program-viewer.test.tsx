@@ -26,9 +26,12 @@ vi.mock("@/lib/programs/mutations", () => ({
   deleteProgram: vi.fn(),
   removeAssignedProgram: vi.fn(),
   setActiveProgram: vi.fn(),
+  addWeek: vi.fn(),
 }));
+vi.mock("@/lib/logging/mutations", () => ({ skipRemainingDays: vi.fn() }));
 
-import { deleteProgram, removeAssignedProgram, setActiveProgram } from "@/lib/programs/mutations";
+import { deleteProgram, removeAssignedProgram, setActiveProgram, addWeek } from "@/lib/programs/mutations";
+import { skipRemainingDays } from "@/lib/logging/mutations";
 
 function makeProgram(overrides: Partial<ProgramTree> = {}): ProgramTree {
   return {
@@ -43,6 +46,22 @@ function makeProgram(overrides: Partial<ProgramTree> = {}): ProgramTree {
     updated_at: "2026-01-01T00:00:00.000Z",
     weeks: [],
     ...overrides,
+  };
+}
+
+function makeWeekWithDays(): ProgramTree["weeks"][number] {
+  return {
+    id: "week-1",
+    program_id: "prog-1",
+    position: 1,
+    label: "Week 1",
+    based_on_week_id: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+    days: [
+      { id: "day-1", week_id: "week-1", position: 1, label: "Day 1", is_rest_day: false, blocks: [] },
+      { id: "day-2", week_id: "week-1", position: 2, label: "Rest", is_rest_day: true, blocks: [] },
+      { id: "day-3", week_id: "week-1", position: 3, label: "Day 2", is_rest_day: false, blocks: [] },
+    ],
   };
 }
 
@@ -173,5 +192,93 @@ describe("ProgramViewer delete/remove", () => {
 
     expect(setActiveProgram).toHaveBeenCalledWith(expect.anything(), "prog-1");
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
+  });
+});
+
+/**
+ * Rule 2 of the autoregulation design (coach-answers §2 Rule 2) — "repeat
+ * this week" / "skip ahead," an athlete self-service action on whichever
+ * week is currently selected. addWeek's insert-side RLS only allows a
+ * self-programmer (owner_id === athlete_id) today (see program-viewer.tsx's
+ * own comment on why), so these tests exercise both that working case and
+ * the coach-assigned case's honest fallback explanation.
+ */
+describe("ProgramViewer week actions (Rule 2)", () => {
+  beforeEach(() => {
+    vi.mocked(addWeek).mockReset();
+    vi.mocked(skipRemainingDays).mockReset();
+    routerMock.refresh.mockClear();
+  });
+
+  it("shows a working 'Repeat this week' for a self-programmer, and calls addWeek with this week as the source", async () => {
+    vi.mocked(addWeek).mockResolvedValue({
+      week: { id: "week-2", program_id: "prog-1", position: 2, label: "Week 2", based_on_week_id: "week-1", created_at: "2026-01-01T00:00:00.000Z", days: [] },
+      error: null,
+    });
+    const user = userEvent.setup();
+    renderViewer({
+      currentUserId: "athlete-1",
+      program: makeProgram({ owner_id: "athlete-1", athlete_id: "athlete-1", weeks: [makeWeekWithDays()] }),
+    });
+
+    await user.click(screen.getByRole("button", { name: "Repeat this week" }));
+
+    expect(addWeek).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ programId: "prog-1", position: 2, sourceWeek: expect.objectContaining({ id: "week-1" }) })
+    );
+    await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
+  });
+
+  it("replaces 'Repeat this week' with an explanatory note for the athlete on a coach-assigned program", () => {
+    renderViewer({
+      currentUserId: "athlete-1",
+      program: makeProgram({ owner_id: "coach-1", athlete_id: "athlete-1", weeks: [makeWeekWithDays()] }),
+    });
+
+    expect(screen.queryByRole("button", { name: "Repeat this week" })).not.toBeInTheDocument();
+    expect(screen.getByText(/ask your coach to add another week/i)).toBeInTheDocument();
+    expect(addWeek).not.toHaveBeenCalled();
+  });
+
+  it("skips only the non-rest days without a log yet, leaving rest days and already-logged days alone", async () => {
+    vi.mocked(skipRemainingDays).mockResolvedValue({ skippedCount: 1, error: null });
+    const user = userEvent.setup();
+    renderViewer({
+      currentUserId: "athlete-1",
+      program: makeProgram({ owner_id: "coach-1", athlete_id: "athlete-1", weeks: [makeWeekWithDays()] }),
+      logsByDay: {
+        "day-1": [
+          {
+            id: "log-1",
+            training_day_id: "day-1",
+            athlete_id: "athlete-1",
+            performed_on: "2026-07-29",
+            note: null,
+            skipped: false,
+            completed_at: "2026-07-29T10:00:00.000Z",
+            created_at: "2026-07-29T10:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Skip rest of this week" }));
+
+    expect(skipRemainingDays).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ trainingDayIds: ["day-3"], athleteId: "athlete-1" })
+    );
+    await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
+  });
+
+  it("does not render either week action for a non-athlete viewer (e.g. a coach reviewing their own build)", () => {
+    renderViewer({
+      currentUserId: "coach-1",
+      program: makeProgram({ owner_id: "coach-1", athlete_id: "athlete-1", weeks: [makeWeekWithDays()] }),
+    });
+
+    expect(screen.queryByRole("button", { name: "Repeat this week" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Skip rest of this week" })).not.toBeInTheDocument();
   });
 });
