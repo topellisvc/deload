@@ -1,4 +1,5 @@
 import { Clock3 } from "lucide-react";
+import { formatDistance } from "@/lib/programs/distance";
 import { formatDuration } from "@/lib/programs/duration";
 import type { ExerciseCategory, SetRow } from "@/lib/programs/types";
 
@@ -82,13 +83,13 @@ function Primary({ set, category }: { set: SetRow; category: ExerciseCategory })
   // running + cardio share the same shape for every type they hold in common
   switch (set.prescription_type) {
     case "distance":
-      return set.distance_meters != null ? <Stat value={`${set.distance_meters / 1000}km`} label="" /> : dash;
+      return set.distance_meters != null ? <Stat value={formatDistance(set.distance_meters)} label="" /> : dash;
     case "time":
       return set.duration_seconds != null ? <Stat value={formatDuration(set.duration_seconds)} label="" /> : dash;
     case "distance_time":
       return (
         <span className="flex items-baseline gap-1.5">
-          {set.distance_meters != null && <Stat value={`${set.distance_meters / 1000}km`} label="" />}
+          {set.distance_meters != null && <Stat value={formatDistance(set.distance_meters)} label="" />}
           {set.distance_meters != null && set.duration_seconds != null && (
             <span className="text-[11px] text-muted-foreground">in</span>
           )}
@@ -115,7 +116,7 @@ function Primary({ set, category }: { set: SetRow; category: ExerciseCategory })
       return (
         <span className="flex items-baseline gap-2.5">
           <Stat value={set.sets} label="×" />
-          {set.distance_meters != null && <Stat value={`${set.distance_meters / 1000}km`} label="" />}
+          {set.distance_meters != null && <Stat value={formatDistance(set.distance_meters)} label="" />}
           {set.duration_seconds != null && <Stat value={formatDuration(set.duration_seconds)} label="" />}
         </span>
       );

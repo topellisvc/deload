@@ -102,6 +102,21 @@ export function ExerciseCard({
   const prescriptionType = firstSet?.prescription_type ?? defaultPrescriptionType(category);
   const primarySummary = firstSet ? summarizePrescriptionPrimary(firstSet, category) : "No prescription yet";
   const restSummary = firstSet ? summarizeRest(firstSet) : null;
+  // Prescription-level guidance (e.g. sprint effort %, pacing cues) lives in
+  // set.notes and is otherwise invisible until the card is expanded — for a
+  // non-notes-only prescription type it wasn't shown anywhere in the
+  // collapsed view at all, so a distance/time/etc. row with real coaching
+  // detail attached (see power-athletic-templates.ts's sprintPrescription)
+  // looked like a bare number with no explanation of what to actually do.
+  // coach_notes(_only) already fold their note into primarySummary itself,
+  // so this only fires for every other type.
+  const isNotesOnlyType = firstSet?.prescription_type === "coach_notes_only" || firstSet?.prescription_type === "coach_notes";
+  const fullNote = firstSet && !isNotesOnlyType ? firstSet.notes : null;
+  // Truncated to keep the collapsed row to one line — the full text is
+  // still there once the card is expanded (PrescriptionRowEditor's notes
+  // field), this is just enough to flag "there's guidance here, expand to
+  // read it" rather than reproducing a whole paragraph inline.
+  const noteSummary = fullNote && fullNote.length > 64 ? `${fullNote.slice(0, 64).trimEnd()}…` : fullNote;
 
   return (
     <div
@@ -142,6 +157,7 @@ export function ExerciseCard({
               </span>
               <span>{primarySummary}</span>
               {restSummary && <span>· {restSummary}</span>}
+              {noteSummary && <span className="italic">· {noteSummary}</span>}
             </span>
           </div>
         </button>

@@ -1,4 +1,5 @@
 import { History } from "lucide-react";
+import { formatDistance } from "@/lib/programs/distance";
 import { formatDuration } from "@/lib/programs/duration";
 import { formatLogDate, todayDateString } from "@/lib/dates";
 import type { ExerciseCategory } from "@/lib/programs/types";
@@ -24,7 +25,7 @@ function formatSet(set: LoggedSet, category: ExerciseCategory): string {
     return parts.join(" ") || "Logged";
   }
   const parts: string[] = [];
-  if (set.performed_distance_meters != null) parts.push(`${(set.performed_distance_meters / 1000).toFixed(2)}km`);
+  if (set.performed_distance_meters != null) parts.push(formatDistance(set.performed_distance_meters));
   if (set.performed_duration_seconds != null) parts.push(formatDuration(set.performed_duration_seconds));
   if (set.performed_calories != null) parts.push(`${set.performed_calories} cal`);
   return parts.join(" · ") || "Logged";

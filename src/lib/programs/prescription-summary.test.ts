@@ -73,7 +73,11 @@ describe("summarizePrescriptionPrimary", () => {
   it("formats intervals as count x distance/time", () => {
     expect(
       summarizePrescriptionPrimary(makeSet({ prescription_type: "intervals", sets: 6, distance_meters: 400 }), "running")
-    ).toBe("6 × 0.4km");
+    ).toBe("6 × 400m");
+  });
+
+  it("formats sub-1000m distances in meters, not a fractional km", () => {
+    expect(summarizePrescriptionPrimary(makeSet({ prescription_type: "distance", distance_meters: 40 }), "running")).toBe("40m");
   });
 
   it("returns a dash when a numeric field required by the type hasn't been filled in", () => {

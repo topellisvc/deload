@@ -1,3 +1,4 @@
+import { formatDistance } from "@/lib/programs/distance";
 import { formatDuration } from "@/lib/programs/duration";
 import type { ExerciseCategory, SetRow } from "@/lib/programs/types";
 
@@ -46,12 +47,12 @@ export function summarizePrescriptionPrimary(set: SetRow, category: ExerciseCate
   // running + cardio share the same shape for every type they hold in common
   switch (set.prescription_type) {
     case "distance":
-      return set.distance_meters != null ? `${set.distance_meters / 1000}km` : "—";
+      return set.distance_meters != null ? formatDistance(set.distance_meters) : "—";
     case "time":
       return set.duration_seconds != null ? formatDuration(set.duration_seconds) : "—";
     case "distance_time":
       return joinParts([
-        set.distance_meters != null ? `${set.distance_meters / 1000}km` : null,
+        set.distance_meters != null ? formatDistance(set.distance_meters) : null,
         set.duration_seconds != null ? `in ${formatDuration(set.duration_seconds)}` : null,
       ]);
     case "pace":
@@ -69,7 +70,7 @@ export function summarizePrescriptionPrimary(set: SetRow, category: ExerciseCate
     case "intervals":
       return joinParts([
         `${set.sets} ×`,
-        set.distance_meters != null ? `${set.distance_meters / 1000}km` : null,
+        set.distance_meters != null ? formatDistance(set.distance_meters) : null,
         set.duration_seconds != null ? formatDuration(set.duration_seconds) : null,
       ]);
     case "calories":
