@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ClipboardList, Plus, Sparkles } from "lucide-react";
+import { AlertTriangle, ClipboardList, Plus, Sparkles, Wand2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NewProgramDialog } from "@/components/programs/new-program-dialog";
@@ -212,6 +212,10 @@ export function ProgramsList({ programs: initialPrograms, userId, activeClients,
             <span className="ml-1 rounded-full bg-surface-hover px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Coming soon
             </span>
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/programs/generate")}>
+            <Wand2 className="size-4" />
+            Build my program
           </Button>
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="size-4" />
