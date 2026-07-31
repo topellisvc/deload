@@ -21,8 +21,13 @@ const supabaseHostname = (() => {
 // message-thread/notification-bell subscriptions), Unsplash-hosted seed
 // article images, and Sentry's ingest endpoint for client-side error
 // reporting (src/instrumentation-client.ts). Vercel Analytics/Speed
-// Insights are same-origin (Vercel proxies them under /_vercel/*), so they
-// don't need a separate connect-src/script-src entry.
+// Insights (src/app/layout.tsx's <Analytics />/<SpeedInsights />) are
+// same-origin ONLY on an actual Vercel deployment, where Vercel's edge
+// proxies them under /_vercel/*. Anywhere else — `next dev`, or any
+// non-Vercel host — both packages fall back to fetching their debug build
+// directly from https://va.vercel-scripts.com/v1/*.debug.js (console-only
+// logging, no real data collection), so that host needs to be allowlisted
+// too or the browser blocks it outright.
 //
 // script-src and style-src both need 'unsafe-inline': this app has no
 // nonce plumbing (that needs a middleware.ts generating a per-request
@@ -42,7 +47,7 @@ const csp = [
   // ThemeToggle, the notification badge, all of it) with a CSP EvalError
   // in the console. `next build`'s production output doesn't eval(), so
   // prod stays on the stricter policy without it.
-  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
+  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval' https://va.vercel-scripts.com"}`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: https://images.unsplash.com${supabaseHostname ? ` https://${supabaseHostname}` : ""}`,
   "font-src 'self' data:",
