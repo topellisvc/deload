@@ -107,7 +107,23 @@ export function StrengthSetLogger({
       </div>
 
       <div className="flex flex-wrap items-start justify-center gap-6">
-        {showWeight && <BigNumberField label="Weight" unit="kg" value={weight} onChange={setWeight} step={2.5} autoFocus />}
+        {showWeight && (
+          <BigNumberField
+            // A percent_1rm target with a resolved suggestion is a real
+            // computed recommendation (from the athlete's own tested max,
+            // or the generator's e1RM — see resolvePercent1RMRecord), not
+            // just an empty field waiting to be filled in like a
+            // fixed_weight or RPE set's is. Labeling it "Weight" the same
+            // as those read like there was nothing to go on, when there
+            // was.
+            label={target.prescription_type === "percent_1rm" && suggestedWeight != null ? "Recommended Weight" : "Weight"}
+            unit="kg"
+            value={weight}
+            onChange={setWeight}
+            step={2.5}
+            autoFocus
+          />
+        )}
         <BigNumberField label="Reps" value={reps} onChange={setReps} step={1} autoFocus={!showWeight} />
       </div>
 
