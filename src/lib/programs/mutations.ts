@@ -701,6 +701,30 @@ export async function deleteWeek(supabase: SupabaseClient, weekId: string): Prom
   return { error: error?.message ?? null };
 }
 
+interface FlaggedTestExercise {
+  exerciseId: string;
+  exerciseName: string | null;
+  /** The position of the real (non-testing) day this exercise was first
+   * found flagged on — the grouping key for which testing day it lands in.
+   * See syncTestingWeek's own doc comment for why this matters instead of
+   * cramming every flagged exercise into one day. */
+  dayPosition: number;
+  dayLabel: string;
+}
+
+/** Groups flagged exercises by their source dayPosition, in ascending
+ * dayPosition order — the shape both syncTestingWeek branches below need
+ * ("for each real day that has something new to test, do X"). */
+function groupByDayPosition(exercises: FlaggedTestExercise[]): { dayPosition: number; dayLabel: string; exercises: FlaggedTestExercise[] }[] {
+  const byPosition = new Map<number, { dayPosition: number; dayLabel: string; exercises: FlaggedTestExercise[] }>();
+  for (const f of exercises) {
+    const group = byPosition.get(f.dayPosition) ?? { dayPosition: f.dayPosition, dayLabel: f.dayLabel, exercises: [] };
+    group.exercises.push(f);
+    byPosition.set(f.dayPosition, group);
+  }
+  return [...byPosition.values()].sort((a, b) => a.dayPosition - b.dayPosition);
+}
+
 /**
  * The manual builder's "Add testing week" button — the hand-built
  * counterpart to the generator's own test_then_percent_1rm testing week
@@ -709,20 +733,38 @@ export async function deleteWeek(supabase: SupabaseClient, weekId: string): Prom
  * (block_exercises.test_max_before, migration 0054) instead of a fixed set
  * of 4 main lifts — so it works for any exercise in the library.
  *
+ * Flagged exercises are spread across one testing day per REAL day they're
+ * normally trained on (grouped by that source day's position), not crammed
+ * into a single day — same principle the generator's own testing week
+ * already follows: each day's primary lift becomes a max test, everything
+ * else about that day's split stays intact, rather than turning "test 3
+ * different lifts" into one exhausting max-effort session that would also
+ * pre-fatigue whichever lift gets tested last. A "Push"/"Pull"/"Legs" split
+ * that flags a lift on each day produces 3 separate testing days, labeled
+ * after their source day ("Push — Test", etc.) so the mapping is obvious.
+ *
  * First click: shifts every existing week's position up by one (same
  * staged-negative-position two-pass trick reorderBlocks/reorderSets use,
  * since program_weeks has a unique(program_id, position) constraint) and
- * inserts a new week at position 1 (is_testing_week = true) with one block
- * per flagged exercise, each holding a single max-test set (is_max_test =
- * true, pr_record_type left null since the weight this resolves against is
- * this set's own exercise_id in exercise_max_records, not one of
- * personal_records' 4 fixed lift strings — see getPersonalRecords).
+ * inserts a new week at position 1 (is_testing_week = true) with one
+ * testing day per distinct source dayPosition, each holding one block per
+ * flagged exercise from that day (is_max_test = true, pr_record_type left
+ * null since the weight this resolves against is this set's own
+ * exercise_id in exercise_max_records, not one of personal_records' 4
+ * fixed lift strings — see getPersonalRecords). A testing day's own
+ * position is set to match its source dayPosition directly (gaps allowed —
+ * e.g. only days 1 and 3 had anything flagged) rather than compacted to
+ * 1, 2, 3…, so a later re-sync can find "the day for source day N" by
+ * position alone, no separate mapping needed.
  *
  * Later clicks (a testing week already exists): only ADDS a block for any
- * flagged exercise_id not already present in it — never touches or removes
- * an exercise already there, so nothing an athlete may have already logged
- * a real test against gets silently rewritten. Matches this session's own
- * "re-click to re-sync, additive only" scoping decision.
+ * flagged exercise_id not already present anywhere in the testing week —
+ * never touches or removes an exercise already there, so nothing an
+ * athlete may have already logged a real test against gets silently
+ * rewritten. A newly-flagged exercise lands in the testing day matching its
+ * source dayPosition if one already exists, otherwise a new testing day is
+ * created for it. Matches this session's own "re-click to re-sync,
+ * additive only" scoping decision.
  *
  * Returns the freshly-reloaded ProgramTree rather than hand-assembling one
  * (same pattern createProgramFromSavedTemplate/createProgramFromParsedProgram
@@ -733,14 +775,21 @@ export async function deleteWeek(supabase: SupabaseClient, weekId: string): Prom
 export async function syncTestingWeek(supabase: SupabaseClient, program: ProgramTree): Promise<{ program: ProgramTree | null; error: string | null }> {
   const existingTestingWeek = program.weeks.find((w) => w.is_testing_week) ?? null;
 
-  const flagged = new Map<string, string | null>(); // exercise_id -> exercise_name
-  for (const week of program.weeks) {
+  const flagged = new Map<string, FlaggedTestExercise>();
+  const sourceWeeks = [...program.weeks].sort((a, b) => a.position - b.position);
+  for (const week of sourceWeeks) {
     if (existingTestingWeek && week.id === existingTestingWeek.id) continue;
-    for (const day of week.days) {
+    const sourceDays = [...week.days].sort((a, b) => a.position - b.position);
+    for (const day of sourceDays) {
       for (const block of day.blocks) {
         for (const ex of block.exercises) {
           if (ex.test_max_before && ex.exercise_id && ex.exercise_category === "strength" && !flagged.has(ex.exercise_id)) {
-            flagged.set(ex.exercise_id, ex.exercise_name ?? null);
+            flagged.set(ex.exercise_id, {
+              exerciseId: ex.exercise_id,
+              exerciseName: ex.exercise_name ?? null,
+              dayPosition: day.position,
+              dayLabel: day.label || `Day ${day.position}`,
+            });
           }
         }
       }
@@ -796,24 +845,29 @@ export async function syncTestingWeek(supabase: SupabaseClient, program: Program
     const alreadyTested = new Set(
       existingTestingWeek.days.flatMap((d) => d.blocks.flatMap((b) => b.exercises.map((ex) => ex.exercise_id).filter((id): id is string => !!id)))
     );
-    const toAdd = [...flagged.entries()].filter(([exerciseId]) => !alreadyTested.has(exerciseId));
+    const toAdd = [...flagged.values()].filter((f) => !alreadyTested.has(f.exerciseId));
     if (toAdd.length === 0) {
       return { program, error: null }; // Already in sync.
     }
 
-    let day = existingTestingWeek.days[0];
-    if (!day) {
-      const dayId = newId();
-      const { error: dayError } = await supabase.from("training_days").insert({ id: dayId, week_id: existingTestingWeek.id, position: 1, label: "Test your maxes", is_rest_day: false });
-      if (dayError) return { program: null, error: dayError.message };
-      day = { id: dayId, week_id: existingTestingWeek.id, position: 1, label: "Test your maxes", is_rest_day: false, blocks: [] };
-    }
+    for (const group of groupByDayPosition(toAdd)) {
+      let day = existingTestingWeek.days.find((d) => d.position === group.dayPosition);
+      if (!day) {
+        const dayId = newId();
+        const label = `${group.dayLabel} — Test`;
+        const { error: dayError } = await supabase
+          .from("training_days")
+          .insert({ id: dayId, week_id: existingTestingWeek.id, position: group.dayPosition, label, is_rest_day: false });
+        if (dayError) return { program: null, error: dayError.message };
+        day = { id: dayId, week_id: existingTestingWeek.id, position: group.dayPosition, label, is_rest_day: false, blocks: [] };
+      }
 
-    let nextPosition = Math.max(0, ...day.blocks.map((b) => b.position)) + 1;
-    for (const [exerciseId, exerciseName] of toAdd) {
-      const { error } = await insertMaxTestBlock(day.id, nextPosition, exerciseId, exerciseName);
-      if (error) return { program: null, error };
-      nextPosition += 1;
+      let nextPosition = Math.max(0, ...day.blocks.map((b) => b.position)) + 1;
+      for (const f of group.exercises) {
+        const { error } = await insertMaxTestBlock(day.id, nextPosition, f.exerciseId, f.exerciseName);
+        if (error) return { program: null, error };
+        nextPosition += 1;
+      }
     }
   } else {
     // Shift every existing week's position up by one, staged through
@@ -830,7 +884,6 @@ export async function syncTestingWeek(supabase: SupabaseClient, program: Program
     }
 
     const weekId = newId();
-    const dayId = newId();
     const { error: weekError } = await supabase.from("program_weeks").insert({
       id: weekId,
       program_id: program.id,
@@ -841,14 +894,20 @@ export async function syncTestingWeek(supabase: SupabaseClient, program: Program
     });
     if (weekError) return { program: null, error: weekError.message };
 
-    const { error: dayError } = await supabase.from("training_days").insert({ id: dayId, week_id: weekId, position: 1, label: "Test your maxes", is_rest_day: false });
-    if (dayError) return { program: null, error: dayError.message };
+    for (const group of groupByDayPosition([...flagged.values()])) {
+      const dayId = newId();
+      const label = `${group.dayLabel} — Test`;
+      const { error: dayError } = await supabase
+        .from("training_days")
+        .insert({ id: dayId, week_id: weekId, position: group.dayPosition, label, is_rest_day: false });
+      if (dayError) return { program: null, error: dayError.message };
 
-    let position = 1;
-    for (const [exerciseId, exerciseName] of flagged) {
-      const { error } = await insertMaxTestBlock(dayId, position, exerciseId, exerciseName);
-      if (error) return { program: null, error };
-      position += 1;
+      let position = 1;
+      for (const f of group.exercises) {
+        const { error } = await insertMaxTestBlock(dayId, position, f.exerciseId, f.exerciseName);
+        if (error) return { program: null, error };
+        position += 1;
+      }
     }
   }
 

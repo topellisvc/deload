@@ -1128,6 +1128,79 @@ describe("syncTestingWeek", () => {
     expect((inserted.set_prescriptions![0]!.notes as string)).toContain("Back Squat");
   });
 
+  it("spreads flagged exercises across one testing day per source day, instead of cramming everything into one day", async () => {
+    const { supabase, inserted } = makeTestingWeekSupabaseMock();
+    vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-1" } as unknown as ProgramTree);
+    const program = makeTestProgram([
+      makeTestWeek([
+        makeTestDay(
+          [makeTestBlock([makeTestExercise({ id: "be-1", exercise_id: "squat-ex", exercise_name: "Back Squat", test_max_before: true })], { id: "block-1" })],
+          { id: "day-1", position: 1, label: "Push" }
+        ),
+        makeTestDay(
+          [makeTestBlock([makeTestExercise({ id: "be-2", exercise_id: "bench-ex", exercise_name: "Bench Press", test_max_before: true })], { id: "block-2" })],
+          { id: "day-2", position: 2, label: "Pull" }
+        ),
+      ]),
+    ]);
+
+    const result = await syncTestingWeek(supabase as never, program);
+
+    expect(result.error).toBeNull();
+    // Two source days each contributed one flagged exercise — expect two
+    // separate testing days, not one day holding both.
+    expect(inserted.training_days).toHaveLength(2);
+    expect(inserted.training_days).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ position: 1, label: "Push — Test" }),
+        expect.objectContaining({ position: 2, label: "Pull — Test" }),
+      ])
+    );
+    expect(inserted.exercise_blocks).toHaveLength(2);
+    expect(inserted.block_exercises).toHaveLength(2);
+  });
+
+  it("on re-sync, routes a newly-flagged exercise into a new testing day matching its source day, leaving other testing days untouched", async () => {
+    const { supabase, inserted } = makeTestingWeekSupabaseMock();
+    vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-1" } as unknown as ProgramTree);
+    const testingWeek = makeTestWeek(
+      [
+        makeTestDay([makeTestBlock([makeTestExercise({ id: "be-existing", exercise_id: "squat-ex", exercise_name: "Back Squat" })])], {
+          id: "testing-day-1",
+          position: 1,
+          label: "Push — Test",
+        }),
+      ],
+      { id: "testing-week", position: 1, is_testing_week: true }
+    );
+    const realWeek = makeTestWeek(
+      [
+        makeTestDay(
+          [makeTestBlock([makeTestExercise({ id: "be-1", exercise_id: "squat-ex", exercise_name: "Back Squat", test_max_before: true })], { id: "block-1" })],
+          { id: "day-1", position: 1, label: "Push" }
+        ),
+        makeTestDay(
+          [makeTestBlock([makeTestExercise({ id: "be-2", exercise_id: "bench-ex", exercise_name: "Bench Press", test_max_before: true })], { id: "block-2" })],
+          { id: "day-2", position: 2, label: "Pull" }
+        ),
+      ],
+      { id: "week-2", position: 2 }
+    );
+    const program = makeTestProgram([testingWeek, realWeek]);
+
+    const result = await syncTestingWeek(supabase as never, program);
+
+    expect(result.error).toBeNull();
+    // squat-ex already covered by the existing "Push — Test" day; bench-ex
+    // is new and belongs to source day position 2, which has no testing
+    // day yet — expect exactly one new testing day, for Pull, not a second
+    // exercise crammed into the existing Push testing day.
+    expect(inserted.training_days).toHaveLength(1);
+    expect(inserted.training_days![0]).toMatchObject({ position: 2, label: "Pull — Test" });
+    expect(inserted.block_exercises).toHaveLength(1);
+    expect(inserted.block_exercises![0]).toMatchObject({ exercise_id: "bench-ex" });
+  });
+
   it("re-clicking with an existing testing week only adds newly-flagged exercises, leaving what's already there untouched", async () => {
     const { supabase, inserted } = makeTestingWeekSupabaseMock();
     vi.mocked(getProgramTree).mockResolvedValue({ id: "prog-1" } as unknown as ProgramTree);
