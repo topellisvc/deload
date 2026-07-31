@@ -67,6 +67,13 @@ interface DayColumnProps {
   onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockId: string, blockExerciseId: string, category: ExerciseCategory) => void;
   onTestMaxBeforeChange: (blockId: string, blockExerciseId: string, testMaxBefore: boolean) => void;
+  /** Every exercise's latest known max (tested or coach-entered), keyed by
+   * exercise_id — see program-builder.tsx's own doc comment on this state
+   * for why a shared map (not per-row data) is what makes entering a known
+   * max for one appearance of an exercise update every other appearance's
+   * display automatically. */
+  knownMaxByExerciseId: Map<string, { valueKg: number; performedOn: string }>;
+  onSaveKnownMax: (exerciseId: string, valueKg: number) => void;
   onPrescriptionTypeChange: (blockId: string, blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockId: string, blockExerciseId: string) => void;
   onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
@@ -120,6 +127,8 @@ export function DayColumn({
   onNoteChange,
   onCategoryChange,
   onTestMaxBeforeChange,
+  knownMaxByExerciseId,
+  onSaveKnownMax,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
@@ -250,6 +259,8 @@ export function DayColumn({
     onNoteChange,
     onCategoryChange,
     onTestMaxBeforeChange,
+    knownMaxByExerciseId,
+    onSaveKnownMax,
     onPrescriptionTypeChange,
     onAddSet,
     onSetChange,
@@ -469,6 +480,8 @@ interface BlockSectionProps {
   onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockId: string, blockExerciseId: string, category: ExerciseCategory) => void;
   onTestMaxBeforeChange: (blockId: string, blockExerciseId: string, testMaxBefore: boolean) => void;
+  knownMaxByExerciseId: Map<string, { valueKg: number; performedOn: string }>;
+  onSaveKnownMax: (exerciseId: string, valueKg: number) => void;
   onPrescriptionTypeChange: (blockId: string, blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockId: string, blockExerciseId: string) => void;
   onSetChange: (blockId: string, blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
@@ -509,6 +522,8 @@ function BlockSection({
   onNoteChange,
   onCategoryChange,
   onTestMaxBeforeChange,
+  knownMaxByExerciseId,
+  onSaveKnownMax,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
@@ -580,6 +595,8 @@ function BlockSection({
                 onNoteChange={(blockExerciseId, notes) => onNoteChange(block.id, blockExerciseId, notes)}
                 onCategoryChange={(blockExerciseId, category) => onCategoryChange(block.id, blockExerciseId, category)}
                 onTestMaxBeforeChange={(blockExerciseId, testMaxBefore) => onTestMaxBeforeChange(block.id, blockExerciseId, testMaxBefore)}
+                knownMaxByExerciseId={knownMaxByExerciseId}
+                onSaveKnownMax={onSaveKnownMax}
                 onPrescriptionTypeChange={(blockExerciseId, prescriptionType) =>
                   onPrescriptionTypeChange(block.id, blockExerciseId, prescriptionType)
                 }

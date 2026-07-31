@@ -57,18 +57,27 @@ export interface PrescriptionTypeDef {
 }
 
 const STRENGTH_TYPES: PrescriptionTypeDef[] = [
-  {
-    value: "fixed_weight",
-    label: "Fixed Weight",
-    example: "4 × 6 @ 100kg",
-    prescriptionFields: ["sets", "reps", "weight", "rest"],
-    performanceFields: ["weight", "reps", "rpe", "notes"],
-  },
+  // % of 1RM listed (and thus defaulted to — see defaultPrescriptionType,
+  // which just takes index 0) before Fixed Weight: it's the prescription
+  // that actually adapts to the athlete's own strength rather than a coach
+  // guessing a number up front, and it's what the whole testing-week /
+  // "library of maxes" machinery (migration 0054, syncTestingWeek,
+  // resolvePercent1RMRecord) exists to feed. A coach who already knows an
+  // athlete's max can enter it directly (see ExerciseCard's known-max
+  // control next to "Test max before") instead of switching prescription
+  // types just to type in a flat number.
   {
     value: "percent_1rm",
     label: "% of 1RM",
     example: "4 × 6 @ 80% 1RM",
     prescriptionFields: ["sets", "reps", "percent_1rm", "rest"],
+    performanceFields: ["weight", "reps", "rpe", "notes"],
+  },
+  {
+    value: "fixed_weight",
+    label: "Fixed Weight",
+    example: "4 × 6 @ 100kg",
+    prescriptionFields: ["sets", "reps", "weight", "rest"],
     performanceFields: ["weight", "reps", "rpe", "notes"],
   },
   {
@@ -338,6 +347,20 @@ export function suggestedWeightFromPercent1RM(percent: number | null, oneRepMax:
  */
 export function exerciseMaxRecordType(exerciseId: string): string {
   return `exercise:${exerciseId}`;
+}
+
+/**
+ * exerciseMaxRecordType's inverse — given a PersonalRecord's record_type,
+ * returns the exercise_id it's scoped to, or null for anything else (one of
+ * personal_records' 4 fixed lift strings, a running distance type, etc.).
+ * Used by the program builder (program-builder.tsx) to build a
+ * per-exercise "known max" lookup out of getPersonalRecords' flat array —
+ * the same merged list resolvePercent1RMRecord reads from, just indexed by
+ * exercise_id instead of scanned per lookup.
+ */
+export function parseExerciseIdFromRecordType(recordType: string): string | null {
+  const prefix = "exercise:";
+  return recordType.startsWith(prefix) ? recordType.slice(prefix.length) : null;
 }
 
 /**

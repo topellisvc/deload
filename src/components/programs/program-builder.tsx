@@ -19,7 +19,7 @@ import type {
   SetRow,
   WeekRow,
 } from "@/lib/programs/types";
-import { defaultCategoryForDiscipline, defaultPrescriptionType } from "@/lib/programs/prescription-types";
+import { defaultCategoryForDiscipline, defaultPrescriptionType, exerciseMaxRecordType, parseExerciseIdFromRecordType } from "@/lib/programs/prescription-types";
 import { DISCIPLINE_META } from "@/lib/programs/discipline-meta";
 import * as m from "@/lib/programs/mutations";
 import { getExerciseLibrary, addToExerciseLibrary } from "@/lib/programs/exercise-library";
@@ -27,7 +27,10 @@ import { searchExerciseLibraryForPicker } from "@/lib/exercises/queries";
 import { createCustomExerciseFromPicker } from "@/lib/exercises/mutations";
 import { getExerciseTemplates } from "@/lib/programs/exercise-templates";
 import { getDayTemplates } from "@/lib/programs/day-templates";
+import { getPersonalRecords } from "@/lib/profile/queries";
+import { todayDateString } from "@/lib/dates";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
+import type { PersonalRecord } from "@/lib/supabase/types";
 import { useBuilderMode, type BuilderMode } from "@/lib/programs/use-builder-mode";
 import { DayColumn } from "@/components/programs/day-column";
 import { AthletePreviewDay } from "@/components/programs/athlete-preview";
@@ -172,6 +175,15 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // action is triggered.
   const [saveExerciseTemplateFor, setSaveExerciseTemplateFor] = useState<BlockExerciseRow | null>(null);
   const [saveDayTemplateFor, setSaveDayTemplateFor] = useState<DayRow | null>(null);
+  // The athlete's merged personal_records + exercise_max_records
+  // (getPersonalRecords already does this merge — see its own doc comment)
+  // — fetched once by athlete_id (NOT owner_id: a coach building for
+  // someone else needs THAT athlete's maxes, not their own), and turned
+  // into a per-exercise "known max" lookup below. Powers ExerciseCard's
+  // known-max control next to "Test max before": showing what's already on
+  // record, and letting a coach who already knows a number enter it
+  // directly instead of being forced through a testing week first.
+  const [personalRecords, setPersonalRecords] = useState<PersonalRecord[]>([]);
 
   useEffect(() => setNameDraft(program.name), [program.name]);
 
@@ -201,6 +213,64 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       cancelled = true;
     };
   }, [supabase, program.owner_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPersonalRecords(supabase, program.athlete_id)
+      .then((records) => {
+        if (!cancelled) setPersonalRecords(records);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, program.athlete_id]);
+
+  // Map<exerciseId, {valueKg, performedOn}> — the shared, single source of
+  // truth every ExerciseCard for a given exercise reads its known-max
+  // display from. Since this is keyed by exercise (not by block_exercise
+  // row), entering a known max for one appearance of an exercise updates
+  // every OTHER appearance's display automatically just by re-rendering
+  // off this same map — no per-row propagation loop needed the way
+  // test_max_before's checkbox required (see matchingBlockExerciseIds).
+  const knownMaxByExerciseId = useMemo(() => {
+    const map = new Map<string, { valueKg: number; performedOn: string }>();
+    for (const record of personalRecords) {
+      const exerciseId = parseExerciseIdFromRecordType(record.record_type);
+      if (exerciseId) map.set(exerciseId, { valueKg: record.value_number, performedOn: record.achieved_on ?? "" });
+    }
+    return map;
+  }, [personalRecords]);
+
+  /** Saves a coach-entered known max (see saveKnownExerciseMax's own doc
+   * comment for why this writes to the same table a logged test does).
+   * Optimistically updates the shared knownMaxByExerciseId map — every
+   * card showing this exercise reflects the new value immediately, this
+   * program included, since resolvePercent1RMRecord (used at logging time,
+   * not here) will read the same exercise_max_records row regardless of
+   * which program it was entered from. */
+  function handleSaveKnownMax(exerciseId: string, valueKg: number) {
+    const recordType = exerciseMaxRecordType(exerciseId);
+    const now = todayDateString();
+    setPersonalRecords((prev) => [
+      ...prev.filter((r) => r.record_type !== recordType),
+      {
+        id: `local-${exerciseId}-${now}`,
+        user_id: program.athlete_id,
+        record_type: recordType,
+        value_number: valueKg,
+        unit: "kg",
+        achieved_on: now,
+        created_at: now,
+        updated_at: now,
+      },
+    ]);
+    track(m.saveKnownExerciseMax(supabase, { athleteId: program.athlete_id, exerciseId, estimated1RMKg: valueKg, programId: program.id })).then(
+      ({ error }) => {
+        if (error) fail(error);
+      }
+    );
+  }
 
   // Every program is created with a first week and never allowed to drop
   // below one (handleDeleteWeek blocks removing the last week), so this is
@@ -1239,6 +1309,8 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 onTestMaxBeforeChange={(blockId, blockExerciseId, testMaxBefore) =>
                   handleTestMaxBeforeChange(day.id, blockId, blockExerciseId, testMaxBefore)
                 }
+                knownMaxByExerciseId={knownMaxByExerciseId}
+                onSaveKnownMax={handleSaveKnownMax}
                 onPrescriptionTypeChange={(blockId, blockExerciseId, prescriptionType) =>
                   handlePrescriptionTypeChange(day.id, blockId, blockExerciseId, prescriptionType)
                 }

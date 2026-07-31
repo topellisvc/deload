@@ -17,6 +17,7 @@ import {
   moveExerciseToDay,
   reorderBlocks,
   reorderSets,
+  saveKnownExerciseMax,
   saveProgramAsTemplate,
   syncTestingWeek,
   updateBlockExercisesTestMaxBefore,
@@ -33,6 +34,8 @@ vi.mock("./queries", () => ({
 vi.mock("@/lib/notifications/mutations", () => ({
   notifyProgramAssigned: vi.fn(),
 }));
+
+vi.mock("@/lib/dates", () => ({ todayDateString: () => "2026-07-31" }));
 
 import { notifyProgramAssigned } from "@/lib/notifications/mutations";
 
@@ -1299,5 +1302,36 @@ describe("updateBlockExercisesTestMaxBefore", () => {
 
     expect(error).toBeNull();
     expect(calls).toEqual([]);
+  });
+});
+
+describe("saveKnownExerciseMax", () => {
+  /**
+   * The manual builder's other on-ramp into exercise_max_records besides
+   * actually logging a testing-week set — a coach typing in a max they
+   * already know, next to "Test max before" (see ExerciseCard's known-max
+   * control). Writes the same shape a real logged test does, so
+   * resolvePercent1RMRecord can't tell the difference.
+   */
+  it("inserts one exercise_max_records row keyed by athlete + exercise, dated today", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    const { error } = await saveKnownExerciseMax(supabase as never, {
+      athleteId: "athlete-1",
+      exerciseId: "barbell-back-squat",
+      estimated1RMKg: 140,
+      programId: "prog-1",
+    });
+
+    expect(error).toBeNull();
+    expect(inserted.exercise_max_records).toEqual([
+      {
+        athlete_id: "athlete-1",
+        exercise_id: "barbell-back-squat",
+        estimated_1rm_kg: 140,
+        performed_on: "2026-07-31",
+        program_id: "prog-1",
+      },
+    ]);
   });
 });

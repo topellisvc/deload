@@ -36,6 +36,8 @@ interface ExerciseBlockCardProps {
   onNoteChange: (blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockExerciseId: string, category: ExerciseCategory) => void;
   onTestMaxBeforeChange: (blockExerciseId: string, testMaxBefore: boolean) => void;
+  knownMaxByExerciseId: Map<string, { valueKg: number; performedOn: string }>;
+  onSaveKnownMax: (exerciseId: string, valueKg: number) => void;
   onPrescriptionTypeChange: (blockExerciseId: string, prescriptionType: PrescriptionType) => void;
   onAddSet: (blockExerciseId: string) => void;
   onSetChange: (blockExerciseId: string, setId: string, patch: Partial<SetRow>) => void;
@@ -81,6 +83,8 @@ export function ExerciseBlockCard({
   onNoteChange,
   onCategoryChange,
   onTestMaxBeforeChange,
+  knownMaxByExerciseId,
+  onSaveKnownMax,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
@@ -169,6 +173,8 @@ export function ExerciseBlockCard({
             onNoteChange={(notes) => onNoteChange(exercise.id, notes)}
             onCategoryChange={(category) => onCategoryChange(exercise.id, category)}
             onTestMaxBeforeChange={(testMaxBefore) => onTestMaxBeforeChange(exercise.id, testMaxBefore)}
+            knownMax={exercise.exercise_id ? (knownMaxByExerciseId.get(exercise.exercise_id) ?? null) : null}
+            onSaveKnownMax={(valueKg) => onSaveKnownMax(exercise.exercise_id!, valueKg)}
             onPrescriptionTypeChange={(type) => onPrescriptionTypeChange(exercise.id, type)}
             onAddSet={() => onAddSet(exercise.id)}
             onSetChange={(setId, patch) => onSetChange(exercise.id, setId, patch)}

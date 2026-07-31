@@ -17,6 +17,7 @@ import type {
 } from "@/lib/programs/types";
 import { defaultPrescriptionType } from "@/lib/programs/prescription-types";
 import { getProgramTree } from "@/lib/programs/queries";
+import { todayDateString } from "@/lib/dates";
 import type { StarterProgramTemplate } from "@/lib/programs/starter-templates";
 import { notifyProgramAssigned } from "@/lib/notifications/mutations";
 
@@ -1503,6 +1504,40 @@ export async function updateBlockExercisesTestMaxBefore(
 ): Promise<{ error: string | null }> {
   if (blockExerciseIds.length === 0) return { error: null };
   const { error } = await supabase.from("block_exercises").update({ test_max_before: testMaxBefore }).in("id", blockExerciseIds);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * The manual builder's other on-ramp into the "library of maxes"
+ * (exercise_max_records, migration 0054) besides actually logging a
+ * testing-week set: a coach who already KNOWS an athlete's current max for
+ * an exercise (from experience, a previous program elsewhere, whatever)
+ * can just type it in directly next to "Test max before" (see
+ * ExerciseCard's known-max control) instead of being forced to build and
+ * run a whole testing week first just to get a number the coach already
+ * has.
+ *
+ * Writes to exercise_max_records exactly like a logged test does —
+ * program-builder.tsx's own doc comment on this call site explains why
+ * that's the right table: it's the SAME athlete-scoped history
+ * resolvePercent1RMRecord reads from, so a manually-entered value
+ * auto-resolves every percent_1rm set for that exercise, in this program
+ * and any other, exactly like a real test would. It's still append-only
+ * history (no upsert) — entering a new number later doesn't erase the old
+ * one, same "every test is its own row, latest wins for display" contract
+ * as everything else in this table.
+ */
+export async function saveKnownExerciseMax(
+  supabase: SupabaseClient,
+  params: { athleteId: string; exerciseId: string; estimated1RMKg: number; programId: string }
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("exercise_max_records").insert({
+    athlete_id: params.athleteId,
+    exercise_id: params.exerciseId,
+    estimated_1rm_kg: params.estimated1RMKg,
+    performed_on: todayDateString(),
+    program_id: params.programId,
+  });
   return { error: error?.message ?? null };
 }
 

@@ -104,6 +104,8 @@ function baseProps() {
     onNoteChange: vi.fn(),
     onCategoryChange: vi.fn(),
     onTestMaxBeforeChange: vi.fn(),
+    knownMaxByExerciseId: new Map(),
+    onSaveKnownMax: vi.fn(),
     onPrescriptionTypeChange: vi.fn(),
     onAddSet: vi.fn(),
     onSetChange: vi.fn(),

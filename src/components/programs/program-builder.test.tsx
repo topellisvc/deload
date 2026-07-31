@@ -11,6 +11,12 @@ const { routerMock } = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({}) }));
+// Bare vi.fn() would return undefined instead of a promise, and
+// ProgramBuilder's own effect does `getPersonalRecords(...).then(...)`
+// unconditionally on mount — every existing test in this file would throw
+// synchronously without a resolved default here, whether or not it cares
+// about known-max behavior.
+vi.mock("@/lib/profile/queries", () => ({ getPersonalRecords: vi.fn().mockResolvedValue([]) }));
 vi.mock("next/link", () => ({
   default: ({ href, children, className }: { href: string; children: ReactNode; className?: string }) => (
     <a href={href} className={className}>
@@ -27,6 +33,8 @@ vi.mock("@/components/programs/day-column", () => ({
     day,
     onCategoryChange,
     onTestMaxBeforeChange,
+    knownMaxByExerciseId,
+    onSaveKnownMax,
     onAddExerciseToBlock,
     addingExerciseBlockId,
     onDeleteDay,
@@ -35,6 +43,8 @@ vi.mock("@/components/programs/day-column", () => ({
     day: DayRow;
     onCategoryChange: (blockId: string, blockExerciseId: string, category: string) => void;
     onTestMaxBeforeChange: (blockId: string, blockExerciseId: string, testMaxBefore: boolean) => void;
+    knownMaxByExerciseId: Map<string, { valueKg: number; performedOn: string }>;
+    onSaveKnownMax: (exerciseId: string, valueKg: number) => void;
     onAddExerciseToBlock: (blockId: string) => void;
     addingExerciseBlockId: string | null;
     onDeleteDay?: () => void;
@@ -71,6 +81,21 @@ vi.mock("@/components/programs/day-column", () => ({
               tests can observe propagation to a week that isn't the one the
               toggle button above was clicked in. */}
           <span>{day.blocks[0].exercises[0]!.test_max_before ? "flagged" : "not-flagged"}</span>
+          {/* Exposes the shared knownMaxByExerciseId map's current value for
+              this exercise, purely so tests can observe that saving a known
+              max from one card's control updates every other card's
+              display too — same "one shared source of truth" propagation
+              handleSaveKnownMax's own doc comment describes. */}
+          <span>
+            {(() => {
+              const exerciseId = day.blocks[0]!.exercises[0]!.exercise_id;
+              const known = exerciseId ? knownMaxByExerciseId.get(exerciseId) : undefined;
+              return known ? `known-max:${known.valueKg}` : "known-max:none";
+            })()}
+          </span>
+          <button type="button" onClick={() => onSaveKnownMax(day.blocks[0]!.exercises[0]!.exercise_id!, 140)}>
+            Save known max
+          </button>
           <button type="button" disabled={addingExerciseBlockId === day.blocks[0].id} onClick={() => onAddExerciseToBlock(day.blocks[0]!.id)}>
             {addingExerciseBlockId === day.blocks[0].id
               ? "Adding…"
@@ -139,6 +164,7 @@ vi.mock("@/lib/programs/mutations", () => ({
   swapBlockPositions: vi.fn(),
   updateBlockExercise: vi.fn(),
   updateBlockExercisesTestMaxBefore: vi.fn(),
+  saveKnownExerciseMax: vi.fn(),
   switchExerciseCategory: vi.fn(),
   updatePrescriptionType: vi.fn(),
   addSetRow: vi.fn(),
@@ -148,6 +174,7 @@ vi.mock("@/lib/programs/mutations", () => ({
 }));
 
 import * as m from "@/lib/programs/mutations";
+import { getPersonalRecords } from "@/lib/profile/queries";
 
 function makeSet(overrides: Partial<SetRow> = {}): SetRow {
   return {
@@ -648,6 +675,82 @@ describe("ProgramBuilder 'Test max before' propagates across every appearance of
 
     resolveWrite!({ error: null });
     await waitFor(() => expect(m.syncTestingWeek).toHaveBeenCalledWith(expect.anything(), expect.anything()));
+  });
+});
+
+/**
+ * A coach who already knows an athlete's current max can type it in
+ * directly (KnownMaxControl, next to "Test max before") instead of running
+ * a whole testing week first. Unlike test_max_before — a real per-row DB
+ * column that needs matchingBlockExerciseIds to propagate — the known-max
+ * display is driven by one shared knownMaxByExerciseId map keyed by
+ * exercise_id, so entering it once should update every appearance of that
+ * exercise without any per-row write. This covers that propagation plus
+ * the write itself landing in the same library (exercise_max_records) a
+ * real logged test would.
+ */
+describe("ProgramBuilder known-max control", () => {
+  beforeEach(() => {
+    vi.mocked(m.saveKnownExerciseMax).mockReset().mockResolvedValue({ error: null });
+    vi.mocked(getPersonalRecords).mockReset().mockResolvedValue([]);
+  });
+
+  it("saves to the library and updates every other appearance of the same exercise, not just the one edited", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProgramBuilder
+        initialProgram={makeProgram({
+          weeks: [
+            makeWeek({
+              id: "week-1",
+              position: 1,
+              label: "Week 1",
+              days: [
+                makeDay({
+                  id: "day-1",
+                  blocks: [makeBlock({ id: "block-1", exercises: [makeExercise({ id: "ex-1", exercise_id: "barbell-back-squat" })] })],
+                }),
+              ],
+            }),
+            makeWeek({
+              id: "week-2",
+              position: 2,
+              label: "Week 2",
+              days: [
+                makeDay({
+                  id: "day-2",
+                  week_id: "week-2",
+                  blocks: [
+                    makeBlock({
+                      id: "block-2",
+                      day_id: "day-2",
+                      exercises: [makeExercise({ id: "ex-2", block_id: "block-2", exercise_id: "barbell-back-squat" })],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        })}
+      />
+    );
+
+    expect(screen.getByText("known-max:none")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save known max" }));
+
+    await waitFor(() => {
+      expect(m.saveKnownExerciseMax).toHaveBeenCalledWith(expect.anything(), {
+        athleteId: "coach-1",
+        exerciseId: "barbell-back-squat",
+        estimated1RMKg: 140,
+        programId: "prog-1",
+      });
+    });
+    expect(screen.getByText("known-max:140")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Week 2" }));
+    expect(await screen.findByText("known-max:140")).toBeInTheDocument();
   });
 });
 

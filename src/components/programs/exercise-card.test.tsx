@@ -55,6 +55,8 @@ const baseProps = {
   onNoteChange: vi.fn(),
   onCategoryChange: vi.fn(),
   onTestMaxBeforeChange: vi.fn(),
+  knownMax: null,
+  onSaveKnownMax: vi.fn(),
   onPrescriptionTypeChange: vi.fn(),
   onAddSet: vi.fn(),
   onSetChange: vi.fn(),
@@ -190,6 +192,108 @@ describe("ExerciseCard expanded state", () => {
 
     await user.click(checkbox);
     expect(onTestMaxBeforeChange).toHaveBeenCalledWith(true);
+  });
+
+  it('shows an "Enter it" link and a testing-week hint when no known max is on record', () => {
+    render(
+      <ExerciseCard exercise={makeExercise({ exercise_id: "bench-press" })} expanded onToggleExpand={vi.fn()} {...baseProps} knownMax={null} />
+    );
+    expect(screen.getByRole("button", { name: /know their max\? enter it/i })).toBeInTheDocument();
+    expect(screen.getByText(/add a testing week/i)).toBeInTheDocument();
+    expect(screen.queryByText(/known max:/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the known max plainly, with a Change link, once one is on record", () => {
+    render(
+      <ExerciseCard
+        exercise={makeExercise({ exercise_id: "bench-press" })}
+        expanded
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+        knownMax={{ valueKg: 140, performedOn: "2026-07-30" }}
+      />
+    );
+    expect(screen.getByText("140kg")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /know their max\? enter it/i })).not.toBeInTheDocument();
+  });
+
+  it("entering a known max calls onSaveKnownMax with the typed number", async () => {
+    const onSaveKnownMax = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ExerciseCard
+        exercise={makeExercise({ exercise_id: "bench-press" })}
+        expanded
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+        knownMax={null}
+        onSaveKnownMax={onSaveKnownMax}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /know their max\? enter it/i }));
+    await user.type(screen.getByLabelText("Known 1RM"), "140");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSaveKnownMax).toHaveBeenCalledWith(140);
+  });
+
+  it("Change on an existing known max pre-fills the input with the current value", async () => {
+    const user = userEvent.setup();
+    render(
+      <ExerciseCard
+        exercise={makeExercise({ exercise_id: "bench-press" })}
+        expanded
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+        knownMax={{ valueKg: 140, performedOn: "2026-07-30" }}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Change" }));
+
+    expect(screen.getByLabelText("Known 1RM")).toHaveValue(140);
+  });
+
+  it("Cancel discards the edit without calling onSaveKnownMax", async () => {
+    const onSaveKnownMax = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ExerciseCard
+        exercise={makeExercise({ exercise_id: "bench-press" })}
+        expanded
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+        knownMax={null}
+        onSaveKnownMax={onSaveKnownMax}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /know their max\? enter it/i }));
+    await user.type(screen.getByLabelText("Known 1RM"), "140");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onSaveKnownMax).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /know their max\? enter it/i })).toBeInTheDocument();
+  });
+
+  it("hides the known-max control alongside 'Test max before' for a custom_name-only or non-strength exercise", () => {
+    const { rerender } = render(
+      <ExerciseCard exercise={makeExercise({ exercise_id: null })} expanded onToggleExpand={vi.fn()} {...baseProps} knownMax={null} />
+    );
+    expect(screen.queryByRole("button", { name: /know their max\? enter it/i })).not.toBeInTheDocument();
+
+    rerender(
+      <ExerciseCard
+        exercise={makeExercise({ exercise_id: "assault-bike", exercise_category: "cardio", sets: [makeSet({ prescription_type: "time" })] })}
+        expanded
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+        knownMax={null}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /know their max\? enter it/i })).not.toBeInTheDocument();
   });
 
   it("renders the Cardio Builder's structured interval table instead of generic rows for the 'intervals' prescription type", () => {

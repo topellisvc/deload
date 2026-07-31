@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRightLeft, BookMarked, Copy, StickyNote, Trash2, X } from "lucide-react";
+import { useState } from "react";
+import { ArrowRightLeft, BookMarked, Copy, Info, StickyNote, Trash2, X } from "lucide-react";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { summarizePrescriptionPrimary, summarizeRest } from "@/lib/programs/prescription-summary";
 import { EXERCISE_CATEGORY_ACTIVE_CLASSES, EXERCISE_CATEGORY_LABELS, defaultPrescriptionType } from "@/lib/programs/prescription-types";
@@ -46,6 +47,12 @@ interface ExerciseCardProps {
    * See program-builder.tsx's syncTestingWeek call for what flipping this
    * actually does. */
   onTestMaxBeforeChange: (testMaxBefore: boolean) => void;
+  /** This exercise's latest known max (a real logged test, or a coach's own
+   * entry — see KnownMaxControl below), or null if nothing's on record yet.
+   * Resolved by ExerciseBlockCard from program-builder.tsx's shared
+   * knownMaxByExerciseId map. */
+  knownMax: { valueKg: number; performedOn: string } | null;
+  onSaveKnownMax: (valueKg: number) => void;
   onPrescriptionTypeChange: (type: PrescriptionType) => void;
   onAddSet: () => void;
   onSetChange: (setId: string, patch: Partial<SetRow>) => void;
@@ -90,6 +97,8 @@ export function ExerciseCard({
   onNoteChange,
   onCategoryChange,
   onTestMaxBeforeChange,
+  knownMax,
+  onSaveKnownMax,
   onPrescriptionTypeChange,
   onAddSet,
   onSetChange,
@@ -219,15 +228,18 @@ export function ExerciseCard({
           <SegmentedControl aria-label="Exercise category" options={CATEGORY_OPTIONS} value={category} onChange={onCategoryChange} className="w-fit" />
 
           {category === "strength" && exercise.exercise_id && (
-            <label className="flex w-fit items-center gap-2 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={exercise.test_max_before ?? false}
-                onChange={(e) => onTestMaxBeforeChange(e.target.checked)}
-                className="size-4 rounded border-border-strong text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              />
-              Test max before
-            </label>
+            <div className="flex flex-col gap-2">
+              <label className="flex w-fit items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={exercise.test_max_before ?? false}
+                  onChange={(e) => onTestMaxBeforeChange(e.target.checked)}
+                  className="size-4 rounded border-border-strong text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                />
+                Test max before
+              </label>
+              <KnownMaxControl knownMax={knownMax} onSave={onSaveKnownMax} />
+            </div>
           )}
 
           <PrescriptionTypePicker category={category} value={prescriptionType} onChange={onPrescriptionTypeChange} />
@@ -304,6 +316,119 @@ export function ExerciseCard({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/**
+ * Sits next to "Test max before" — the other on-ramp into the same
+ * exercise_max_records "library of maxes" (migration 0054). A coach who
+ * already knows an athlete's current max (from experience, a previous
+ * program, wherever) can type it in directly here instead of being forced
+ * to build and run a whole testing week first just to get a number they
+ * already have — see saveKnownExerciseMax's own doc comment in
+ * mutations.ts.
+ *
+ * Three states:
+ * - Nothing on record: a link to enter one, plus a hint that a testing
+ *   week (the "Add testing week" button, further up this same builder)
+ *   can calculate it automatically instead.
+ * - Something on record: shown plainly, with a "Change" link that's always
+ *   available — a known value isn't locked in, a coach can correct or
+ *   update it any time, not just fill it in once while it's blank.
+ * - Mid-edit: a bare number input, Save/Cancel.
+ *
+ * Entering a value here writes to the SAME shared knownMaxByExerciseId map
+ * every other card for this exercise reads from (program-builder.tsx), so
+ * every other appearance of this exercise — this program, any other —
+ * reflects the new number immediately, the same "one shared source of
+ * truth" reasoning that makes "Test max before" propagate without a
+ * separate loop over every matching row.
+ */
+function KnownMaxControl({
+  knownMax,
+  onSave,
+}: {
+  knownMax: { valueKg: number; performedOn: string } | null;
+  onSave: (valueKg: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  function startEdit() {
+    setDraft(knownMax ? String(knownMax.valueKg) : "");
+    setEditing(true);
+  }
+
+  function commit() {
+    const value = Number(draft.trim());
+    if (Number.isFinite(value) && value > 0) onSave(value);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="0.5"
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          placeholder="e.g. 100"
+          aria-label="Known 1RM"
+          className="h-8 w-24 rounded-md border border-border bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        />
+        <span className="text-xs text-muted-foreground">kg</span>
+        <button type="button" onClick={commit} className="text-xs font-medium text-primary hover:underline">
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  if (knownMax) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted-foreground">
+          Known max: <span className="font-medium text-foreground">{knownMax.valueKg}kg</span>
+          {knownMax.performedOn && <span className="text-xs"> ({formatShortDate(knownMax.performedOn)})</span>}
+        </span>
+        <button type="button" onClick={startEdit} className="text-xs font-medium text-primary hover:underline">
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button type="button" onClick={startEdit} className="w-fit text-xs font-medium text-primary hover:underline">
+        Know their max? Enter it
+      </button>
+      <p className="flex items-start gap-1 text-xs text-muted-foreground">
+        <Info className="mt-0.5 size-3 shrink-0" />
+        No tested max yet — add a testing week (further up) to calculate one automatically, or enter a known number above.
+      </p>
     </div>
   );
 }

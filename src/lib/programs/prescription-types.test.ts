@@ -6,6 +6,8 @@ import {
   defaultCategoryForDiscipline,
   suggestedWeightFromPercent1RM,
   resolvePercent1RMRecord,
+  exerciseMaxRecordType,
+  parseExerciseIdFromRecordType,
 } from "./prescription-types";
 import type { PersonalRecord } from "@/lib/supabase/types";
 
@@ -46,10 +48,25 @@ describe("defaultCategoryForDiscipline", () => {
 });
 
 describe("defaultPrescriptionType", () => {
-  it("still points at each category's first listed type after the cardio addition", () => {
-    expect(defaultPrescriptionType("strength")).toBe("fixed_weight");
+  it("defaults strength to % of 1RM — the prescription that adapts to the athlete's own tested max, not a flat number a coach has to guess", () => {
+    expect(defaultPrescriptionType("strength")).toBe("percent_1rm");
+  });
+
+  it("still points at each other category's first listed type", () => {
     expect(defaultPrescriptionType("running")).toBe("distance");
     expect(defaultPrescriptionType("cardio")).toBe("time");
+  });
+});
+
+describe("parseExerciseIdFromRecordType", () => {
+  it("recovers the exercise id exerciseMaxRecordType encoded", () => {
+    expect(parseExerciseIdFromRecordType(exerciseMaxRecordType("barbell-back-squat"))).toBe("barbell-back-squat");
+  });
+
+  it("returns null for personal_records' 4 fixed lift strings and anything else unprefixed", () => {
+    expect(parseExerciseIdFromRecordType("squat")).toBeNull();
+    expect(parseExerciseIdFromRecordType("bench_press")).toBeNull();
+    expect(parseExerciseIdFromRecordType("run_5k")).toBeNull();
   });
 });
 
