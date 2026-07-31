@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Repeat, Trash2 } from "lucide-react";
+import { GripVertical, Info, Repeat, Trash2 } from "lucide-react";
 import type { BlockRow, ExerciseCategory, PrescriptionType, SetRow } from "@/lib/programs/types";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import type { BuilderMode } from "@/lib/programs/use-builder-mode";
@@ -200,18 +200,38 @@ export function ExerciseBlockCard({
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={onAddExerciseToBlock}
-        disabled={isAddingExercise}
-        className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        <Repeat className={cn("size-3.5", isAddingExercise && "animate-spin")} />
-        {/* "or circuit" only needs saying once, before there's a group at
-            all — once isGrouped, the header above already reads "Superset"
-            or "Circuit" depending on how many exercises are in it. */}
-        {isAddingExercise ? "Adding…" : isGrouped ? "Add another exercise" : "Make this a superset or circuit"}
-      </button>
+      <div className="flex flex-col gap-1 self-start">
+        <button
+          type="button"
+          onClick={onAddExerciseToBlock}
+          disabled={isAddingExercise}
+          className={cn(
+            "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60",
+            // Ungrouped: this is the only way to discover supersets/circuits
+            // exist at all, so it gets the same "colored CTA" treatment as
+            // "Know their max? Enter it" below, instead of blending in as
+            // muted chrome. Once grouped, "Add another exercise" is a
+            // routine follow-up action rather than a thing to discover, so
+            // it steps back down to the quieter muted style other block
+            // actions use.
+            isGrouped
+              ? "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
+              : "text-primary hover:underline"
+          )}
+        >
+          <Repeat className={cn("size-3.5", isAddingExercise && "animate-spin")} />
+          {/* "or circuit" only needs saying once, before there's a group at
+              all — once isGrouped, the header above already reads "Superset"
+              or "Circuit" depending on how many exercises are in it. */}
+          {isAddingExercise ? "Adding…" : isGrouped ? "Add another exercise" : "Make this a superset or circuit"}
+        </button>
+        {!isGrouped && (
+          <p className="flex items-start gap-1 text-xs text-muted-foreground">
+            <Info className="mt-0.5 size-3 shrink-0" />
+            Add exercises here to group them: 2 becomes a superset, 3 or more a circuit.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
