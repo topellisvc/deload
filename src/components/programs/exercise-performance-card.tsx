@@ -5,7 +5,7 @@ import { Plus, PersonStanding } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { createLoggedSet, deleteLoggedSet, updateLoggedSet } from "@/lib/logging/mutations";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
-import { exerciseMaxRecordType, getPrescriptionTypeDef, suggestedWeightFromPercent1RM } from "@/lib/programs/prescription-types";
+import { getPrescriptionTypeDef, resolvePercent1RMRecord, suggestedWeightFromPercent1RM } from "@/lib/programs/prescription-types";
 import type { BlockExerciseRow, LoggedSet } from "@/lib/programs/types";
 import type { PersonalRecord } from "@/lib/supabase/types";
 import { SetDetails } from "@/components/programs/set-details";
@@ -80,13 +80,9 @@ export function ExercisePerformanceCard({
     // of the field the athlete logs into.
     let performedWeight: number | null = null;
     if (matchingSet?.prescription_type === "percent_1rm" && matchingSet.percent_1rm_value != null) {
-      // pr_record_type is one of personal_records' 4 fixed lift strings
-      // when set (the generator's own testing-week flow); the manual
-      // builder's "Test max before" flow never sets it, so this falls back
-      // to this exercise's own exercise_max_records history instead — see
-      // exerciseMaxRecordType's doc comment.
-      const recordType = matchingSet.pr_record_type ?? exerciseMaxRecordType(exercise.exercise_id ?? "");
-      const pr = personalRecords.find((r) => r.record_type === recordType);
+      // See resolvePercent1RMRecord's doc comment for why the exercise's
+      // own tested max wins over pr_record_type when both exist.
+      const pr = resolvePercent1RMRecord(personalRecords, { exerciseId: exercise.exercise_id, prRecordType: matchingSet.pr_record_type });
       performedWeight = suggestedWeightFromPercent1RM(matchingSet.percent_1rm_value, pr?.value_number ?? null);
     }
 

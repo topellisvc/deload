@@ -1,4 +1,5 @@
 import type { CardioPrescriptionType, ExerciseCategory, PrescriptionType, ProgramDiscipline, RunningPrescriptionType, StrengthPrescriptionType } from "@/lib/programs/types";
+import type { PersonalRecord } from "@/lib/supabase/types";
 
 /**
  * The single declarative source of truth for "given this exercise category
@@ -337,6 +338,40 @@ export function suggestedWeightFromPercent1RM(percent: number | null, oneRepMax:
  */
 export function exerciseMaxRecordType(exerciseId: string): string {
   return `exercise:${exerciseId}`;
+}
+
+/**
+ * Resolves the PersonalRecord a percent_1rm set should suggest its weight
+ * from, given the set's own pr_record_type and the exercise it's on.
+ *
+ * ALWAYS prefers the exercise-scoped test (exerciseMaxRecordType) over the
+ * set's own pr_record_type when both exist. A set's pr_record_type is
+ * baked in at program-build time — the starter templates and the
+ * generator's 4-main-lift flow both still stamp it with one of
+ * personal_records' 4 fixed strings (squat/bench_press/deadlift/
+ * overhead_press) — but a coach's own logged max test almost always lands
+ * in exercise_max_records instead: the manual builder's "Test max before"
+ * flow (syncTestingWeek) never sets pr_record_type on the max-test set it
+ * creates, so saveMaxTestRecords only ever writes those tests to
+ * exercise_max_records, never to personal_records. Looking up
+ * pr_record_type FIRST — the previous behavior — meant a percent_1rm set
+ * built with an old-style pr_record_type could never resolve a weight at
+ * all once the athlete tested through the new flow: the exercise-specific
+ * test they'd just logged sat in exercise_max_records, unreachable, while
+ * the lookup kept checking personal_records for a "squat" entry nothing
+ * writes anymore (manual PR entry was removed from /profile). Falling back
+ * to pr_record_type only when there's no exercise-specific test yet keeps
+ * pre-existing personal_records-based programs working exactly as before.
+ */
+export function resolvePercent1RMRecord(
+  personalRecords: PersonalRecord[],
+  params: { exerciseId: string | null; prRecordType: string | null }
+): PersonalRecord | null {
+  const exerciseRecordType = exerciseMaxRecordType(params.exerciseId ?? "");
+  const exerciseRecord = personalRecords.find((r) => r.record_type === exerciseRecordType);
+  if (exerciseRecord) return exerciseRecord;
+  if (!params.prRecordType) return null;
+  return personalRecords.find((r) => r.record_type === params.prRecordType) ?? null;
 }
 
 // Referenced for exhaustiveness only — keeps ALL_TYPES from being flagged unused
