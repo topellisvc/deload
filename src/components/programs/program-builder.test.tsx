@@ -139,6 +139,7 @@ vi.mock("@/lib/programs/mutations", () => ({
   addSetRow: vi.fn(),
   updateSetRow: vi.fn(),
   deleteSetRow: vi.fn(),
+  syncTestingWeek: vi.fn(),
 }));
 
 import * as m from "@/lib/programs/mutations";
@@ -593,5 +594,54 @@ describe("ProgramBuilder 'Test max before' propagates across every appearance of
 
     await user.click(screen.getByRole("button", { name: "Testing Week" }));
     expect(await screen.findByText("not-flagged")).toBeInTheDocument();
+  });
+
+  /**
+   * Regression test: ticking "Test max before" and immediately clicking
+   * "Add testing week" used to race — syncTestingWeek's own getProgramTree
+   * refresh could run its SELECT before the checkbox's background write had
+   * actually committed, so the freshly-read program would show the
+   * checkbox reverted to false even though the testing week itself (built
+   * from the correct optimistic local state) included that exercise. Fixed
+   * by having handleSyncTestingWeek await flushPendingSaves() first.
+   */
+  it("waits for an in-flight 'Test max before' write to land before syncTestingWeek reads the program back", async () => {
+    const user = userEvent.setup();
+    let resolveWrite: ((result: { error: string | null }) => void) | undefined;
+    const pendingWrite = new Promise<{ error: string | null }>((resolve) => {
+      resolveWrite = resolve;
+    });
+    vi.mocked(m.updateBlockExercisesTestMaxBefore).mockReset().mockReturnValue(pendingWrite);
+    vi.mocked(m.syncTestingWeek).mockReset().mockResolvedValue({ program: null, error: "unused in this test" });
+
+    render(
+      <ProgramBuilder
+        initialProgram={makeProgram({
+          weeks: [
+            makeWeek({
+              id: "week-1",
+              position: 1,
+              label: "Week 1",
+              days: [
+                makeDay({
+                  id: "day-1",
+                  blocks: [makeBlock({ id: "block-1", exercises: [makeExercise({ id: "ex-1", exercise_id: "barbell-back-squat", test_max_before: false })] })],
+                }),
+              ],
+            }),
+          ],
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Toggle test max before" }));
+    await user.click(screen.getAllByRole("button", { name: "Add testing week" })[0]!);
+
+    // The checkbox's own write is still in flight — syncTestingWeek must
+    // not have run yet, or it'd read back the pre-write (false) value.
+    expect(m.syncTestingWeek).not.toHaveBeenCalled();
+
+    resolveWrite!({ error: null });
+    await waitFor(() => expect(m.syncTestingWeek).toHaveBeenCalledWith(expect.anything(), expect.anything()));
   });
 });

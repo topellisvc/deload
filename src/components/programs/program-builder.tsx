@@ -246,14 +246,36 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   // shouldn't force a re-render.
   const pendingSavesRef = useRef(0);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  // Every in-flight background write, so anything that reads fresh state
+  // back from the DB (syncTestingWeek's getProgramTree refresh, currently
+  // the only caller — see handleSyncTestingWeek) can wait for outstanding
+  // writes to actually land first. Without this, ticking "Test max before"
+  // and then immediately clicking "Add testing week" could race: the
+  // checkbox's PATCH is fired but not yet committed when syncTestingWeek's
+  // own SELECT runs, so the refreshed tree silently reverts the checkbox
+  // to its pre-write (false) value even though the testing week itself
+  // was correctly built from the up-to-date optimistic local state.
+  const pendingWritesRef = useRef<Set<Promise<unknown>>>(new Set());
 
   function track<T>(promise: Promise<T>): Promise<T> {
     pendingSavesRef.current += 1;
     setSaveStatus("saving");
-    return promise.finally(() => {
+    const tracked: Promise<T> = promise.finally(() => {
       pendingSavesRef.current -= 1;
       if (pendingSavesRef.current === 0) setSaveStatus("saved");
+      pendingWritesRef.current.delete(tracked);
     });
+    pendingWritesRef.current.add(tracked);
+    return tracked;
+  }
+
+  /** Waits for every currently in-flight track()ed write to settle
+   * (success or failure — a failed write shouldn't block the caller
+   * forever, its error is already surfaced via `fail` by its own
+   * `.then`). See pendingWritesRef's comment for why this exists. */
+  async function flushPendingSaves(): Promise<void> {
+    if (pendingWritesRef.current.size === 0) return;
+    await Promise.allSettled([...pendingWritesRef.current]);
   }
 
   // ---- immutable tree-update helpers ----
@@ -343,6 +365,10 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
   async function handleSyncTestingWeek() {
     setSyncingTestingWeek(true);
+    // Let any just-fired background write (most importantly a "Test max
+    // before" checkbox flip) actually land before syncTestingWeek reads the
+    // program back from the DB — see pendingWritesRef's comment.
+    await flushPendingSaves();
     const { program: updated, error } = await track(m.syncTestingWeek(supabase, program));
     setSyncingTestingWeek(false);
     if (error || !updated) {
