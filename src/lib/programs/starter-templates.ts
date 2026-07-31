@@ -69,13 +69,27 @@ function row(prescriptionType: PrescriptionType, overrides: Partial<SetRow> = {}
   };
 }
 
-function ex(name: string, category: ExerciseCategory, set: SetRow, notes: string | null = null): BlockExerciseRow {
+/**
+ * `exerciseId` links this row to a real public.exercises entry (its
+ * text-typed slug id, e.g. "barbell-back-squat") — same convention as the
+ * builder itself once you pick an exercise from the search dropdown
+ * (ExerciseSearchField's onChange always sets exercise_id and clears
+ * custom_name; there's no linked-and-custom-named hybrid state anywhere
+ * else in this app, so this helper follows suit rather than inventing one).
+ * `name` is only ever the display fallback for a genuinely unlinked
+ * (`exerciseId: null`) row now — every exercise across all 4 templates has
+ * a real id (audited and backfilled; 3 previously-missing library entries —
+ * Incline Dumbbell Press, Face Pull, Elliptical — were added rather than
+ * left dangling), so in practice `name` today is purely documentation for
+ * whoever's reading this file, not anything actually stored.
+ */
+function ex(name: string, exerciseId: string | null, category: ExerciseCategory, set: SetRow, notes: string | null = null): BlockExerciseRow {
   return {
     id: "",
     block_id: "",
     position: 1,
-    exercise_id: null,
-    custom_name: name,
+    exercise_id: exerciseId,
+    custom_name: exerciseId ? null : name,
     notes,
     exercise_category: category,
     sets: [{ ...set, position: 1 }],
@@ -131,18 +145,47 @@ const fullBodyStrength: StarterProgramTemplate = {
   progressionSteps: [3, 6, 9],
   week1: week1Of([
     day("Day 1", false, [
-      b(ex("Back Squat", "strength", row("percent_1rm", { sets: 3, reps: "5", percent_1rm_value: 65, pr_record_type: "squat", rest_seconds: 150 }))),
-      b(ex("Bench Press", "strength", row("percent_1rm", { sets: 3, reps: "5", percent_1rm_value: 65, pr_record_type: "bench_press", rest_seconds: 120 }))),
-      b(ex("Barbell Row", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 10, rest_seconds: 90 }))),
-      b(ex("Plank", "strength", row("coach_notes_only", { sets: 3, notes: "Hold 30-45 seconds.", rest_seconds: 45 }))),
+      b(
+        ex(
+          "Back Squat",
+          "barbell-back-squat",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "5", percent_1rm_value: 65, pr_record_type: "squat", rest_seconds: 150 })
+        )
+      ),
+      b(
+        ex(
+          "Bench Press",
+          "barbell-bench-press",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "5", percent_1rm_value: 65, pr_record_type: "bench_press", rest_seconds: 120 })
+        )
+      ),
+      b(ex("Barbell Row", "barbell-row", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 10, rest_seconds: 90 }))),
+      b(ex("Plank", "plank", "strength", row("coach_notes_only", { sets: 3, notes: "Hold 30-45 seconds.", rest_seconds: 45 }))),
     ]),
     day("Day 2", false, [
-      b(ex("Deadlift", "strength", row("percent_1rm", { sets: 3, reps: "5", percent_1rm_value: 70, pr_record_type: "deadlift", rest_seconds: 150 }))),
-      b(ex("Overhead Press", "strength", row("percent_1rm", { sets: 3, reps: "6", percent_1rm_value: 60, pr_record_type: "overhead_press", rest_seconds: 120 }))),
-      b(ex("Lat Pulldown", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 90 }))),
+      b(
+        ex(
+          "Deadlift",
+          "barbell-deadlift",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "5", percent_1rm_value: 70, pr_record_type: "deadlift", rest_seconds: 150 })
+        )
+      ),
+      b(
+        ex(
+          "Overhead Press",
+          "barbell-overhead-press",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "6", percent_1rm_value: 60, pr_record_type: "overhead_press", rest_seconds: 120 })
+        )
+      ),
+      b(ex("Lat Pulldown", "lat-pulldown", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 90 }))),
       b(
         ex(
           "Dumbbell Romanian Deadlift",
+          "dumbbell-rdl",
           "strength",
           row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 90 }),
           "Light-to-moderate load — this is about the hamstring stretch, not the weight on the bar."
@@ -150,10 +193,17 @@ const fullBodyStrength: StarterProgramTemplate = {
       ),
     ]),
     day("Day 3", false, [
-      b(ex("Back Squat", "strength", row("percent_1rm", { sets: 3, reps: "8", percent_1rm_value: 55, pr_record_type: "squat", rest_seconds: 120 }))),
-      b(ex("Incline Dumbbell Press", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 90 }))),
-      b(ex("Seated Cable Row", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 90 }))),
-      b(ex("Side Plank", "strength", row("coach_notes_only", { sets: 2, notes: "Hold 20-30 seconds each side.", rest_seconds: 30 }))),
+      b(
+        ex(
+          "Back Squat",
+          "barbell-back-squat",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "8", percent_1rm_value: 55, pr_record_type: "squat", rest_seconds: 120 })
+        )
+      ),
+      b(ex("Incline Dumbbell Press", "incline-dumbbell-press", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 90 }))),
+      b(ex("Seated Cable Row", "seated-cable-row", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 90 }))),
+      b(ex("Side Plank", "side-plank", "strength", row("coach_notes_only", { sets: 2, notes: "Hold 20-30 seconds each side.", rest_seconds: 30 }))),
     ]),
   ]),
 };
@@ -169,46 +219,110 @@ const pushPullLegs: StarterProgramTemplate = {
   progressionSteps: [3, 6, 9],
   week1: week1Of([
     day("Push", false, [
-      b(ex("Bench Press", "strength", row("percent_1rm", { sets: 4, reps: "6", percent_1rm_value: 70, pr_record_type: "bench_press", rest_seconds: 120 }))),
-      b(ex("Overhead Press", "strength", row("percent_1rm", { sets: 3, reps: "8", percent_1rm_value: 55, pr_record_type: "overhead_press", rest_seconds: 90 }))),
-      b(ex("Incline Dumbbell Press", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 75 }))),
-      b(ex("Cable Tricep Pushdown", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 15, rest_seconds: 60 }))),
-      b(ex("Assault Bike", "cardio", row("time", { sets: 1, duration_seconds: 300, rest_seconds: null }), "Steady, conversational pace.")),
+      b(
+        ex(
+          "Bench Press",
+          "barbell-bench-press",
+          "strength",
+          row("percent_1rm", { sets: 4, reps: "6", percent_1rm_value: 70, pr_record_type: "bench_press", rest_seconds: 120 })
+        )
+      ),
+      b(
+        ex(
+          "Overhead Press",
+          "barbell-overhead-press",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "8", percent_1rm_value: 55, pr_record_type: "overhead_press", rest_seconds: 90 })
+        )
+      ),
+      b(
+        ex("Incline Dumbbell Press", "incline-dumbbell-press", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 75 }))
+      ),
+      b(
+        ex("Cable Tricep Pushdown", "cable-triceps-pushdown", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 15, rest_seconds: 60 }))
+      ),
+      b(ex("Assault Bike", "assault-bike", "cardio", row("time", { sets: 1, duration_seconds: 300, rest_seconds: null }), "Steady, conversational pace.")),
     ]),
     day("Pull", false, [
-      b(ex("Deadlift", "strength", row("percent_1rm", { sets: 3, reps: "5", percent_1rm_value: 72.5, pr_record_type: "deadlift", rest_seconds: 150 }))),
-      b(ex("Lat Pulldown", "strength", row("rep_range", { sets: 4, min_reps: 6, max_reps: 10, rest_seconds: 90 }))),
-      b(ex("Barbell Row", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 10, rest_seconds: 90 }))),
-      b(ex("Face Pull", "strength", row("rep_range", { sets: 3, min_reps: 12, max_reps: 15, rest_seconds: 60 }))),
-      b(ex("Rowing Machine", "cardio", row("distance", { sets: 1, distance_meters: 1000, rest_seconds: null }), "Moderate effort, steady split.")),
+      b(
+        ex(
+          "Deadlift",
+          "barbell-deadlift",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "5", percent_1rm_value: 72.5, pr_record_type: "deadlift", rest_seconds: 150 })
+        )
+      ),
+      b(ex("Lat Pulldown", "lat-pulldown", "strength", row("rep_range", { sets: 4, min_reps: 6, max_reps: 10, rest_seconds: 90 }))),
+      b(ex("Barbell Row", "barbell-row", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 10, rest_seconds: 90 }))),
+      b(ex("Face Pull", "face-pull", "strength", row("rep_range", { sets: 3, min_reps: 12, max_reps: 15, rest_seconds: 60 }))),
+      b(ex("Rowing Machine", "rowing-erg", "cardio", row("distance", { sets: 1, distance_meters: 1000, rest_seconds: null }), "Moderate effort, steady split.")),
     ]),
     day("Legs", false, [
-      b(ex("Back Squat", "strength", row("percent_1rm", { sets: 4, reps: "6", percent_1rm_value: 67.5, pr_record_type: "squat", rest_seconds: 150 }))),
-      b(ex("Romanian Deadlift", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 10, rest_seconds: 90 }))),
-      b(ex("Walking Lunge", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 75 }), "Reps per leg.")),
-      b(ex("Standing Calf Raise", "strength", row("rep_range", { sets: 3, min_reps: 12, max_reps: 15, rest_seconds: 60 }))),
-      b(ex("Stationary Bike", "cardio", row("time", { sets: 1, duration_seconds: 300, rest_seconds: null }))),
+      b(
+        ex(
+          "Back Squat",
+          "barbell-back-squat",
+          "strength",
+          row("percent_1rm", { sets: 4, reps: "6", percent_1rm_value: 67.5, pr_record_type: "squat", rest_seconds: 150 })
+        )
+      ),
+      b(ex("Romanian Deadlift", "barbell-rdl", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 10, rest_seconds: 90 }))),
+      b(ex("Walking Lunge", "walking-lunge", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 75 }), "Reps per leg.")),
+      b(ex("Standing Calf Raise", "standing-calf-raise", "strength", row("rep_range", { sets: 3, min_reps: 12, max_reps: 15, rest_seconds: 60 }))),
+      b(ex("Stationary Bike", "stationary-bike", "cardio", row("time", { sets: 1, duration_seconds: 300, rest_seconds: null }))),
     ]),
     day("Push", false, [
-      b(ex("Overhead Press", "strength", row("percent_1rm", { sets: 4, reps: "6", percent_1rm_value: 62.5, pr_record_type: "overhead_press", rest_seconds: 120 }))),
-      b(ex("Bench Press", "strength", row("percent_1rm", { sets: 3, reps: "8", percent_1rm_value: 60, pr_record_type: "bench_press", rest_seconds: 90 }))),
-      b(ex("Dumbbell Lateral Raise", "strength", row("rep_range", { sets: 3, min_reps: 12, max_reps: 15, rest_seconds: 60 }))),
-      b(ex("Tricep Dip", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 75 }))),
-      b(ex("Assault Bike", "cardio", row("time", { sets: 1, duration_seconds: 300, rest_seconds: null }))),
+      b(
+        ex(
+          "Overhead Press",
+          "barbell-overhead-press",
+          "strength",
+          row("percent_1rm", { sets: 4, reps: "6", percent_1rm_value: 62.5, pr_record_type: "overhead_press", rest_seconds: 120 })
+        )
+      ),
+      b(
+        ex(
+          "Bench Press",
+          "barbell-bench-press",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "8", percent_1rm_value: 60, pr_record_type: "bench_press", rest_seconds: 90 })
+        )
+      ),
+      b(ex("Dumbbell Lateral Raise", "dumbbell-lateral-raise", "strength", row("rep_range", { sets: 3, min_reps: 12, max_reps: 15, rest_seconds: 60 }))),
+      // "Tricep Dip" renamed to the library's "Bench Dip" (bodyweight-bench-dip)
+      // during the exercise-linking audit — same movement, no equipment
+      // specified either way, and no separate weighted-dip entry exists in
+      // the library to distinguish from.
+      b(ex("Tricep Dip", "bodyweight-bench-dip", "strength", row("rep_range", { sets: 3, min_reps: 8, max_reps: 12, rest_seconds: 75 }))),
+      b(ex("Assault Bike", "assault-bike", "cardio", row("time", { sets: 1, duration_seconds: 300, rest_seconds: null }))),
     ]),
     day("Pull", false, [
-      b(ex("Barbell Row", "strength", row("rep_range", { sets: 4, min_reps: 6, max_reps: 10, rest_seconds: 90 }))),
-      b(ex("Deadlift", "strength", row("percent_1rm", { sets: 2, reps: "5", percent_1rm_value: 60, pr_record_type: "deadlift", rest_seconds: 120 }))),
-      b(ex("Lat Pulldown", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 75 }))),
-      b(ex("Barbell Curl", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 60 }))),
-      b(ex("Rowing Machine", "cardio", row("distance", { sets: 1, distance_meters: 1000, rest_seconds: null }))),
+      b(ex("Barbell Row", "barbell-row", "strength", row("rep_range", { sets: 4, min_reps: 6, max_reps: 10, rest_seconds: 90 }))),
+      b(
+        ex(
+          "Deadlift",
+          "barbell-deadlift",
+          "strength",
+          row("percent_1rm", { sets: 2, reps: "5", percent_1rm_value: 60, pr_record_type: "deadlift", rest_seconds: 120 })
+        )
+      ),
+      b(ex("Lat Pulldown", "lat-pulldown", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 75 }))),
+      b(ex("Barbell Curl", "barbell-biceps-curl", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 60 }))),
+      b(ex("Rowing Machine", "rowing-erg", "cardio", row("distance", { sets: 1, distance_meters: 1000, rest_seconds: null }))),
     ]),
     day("Legs", false, [
-      b(ex("Back Squat", "strength", row("percent_1rm", { sets: 3, reps: "10", percent_1rm_value: 55, pr_record_type: "squat", rest_seconds: 120 }))),
-      b(ex("Leg Press", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 90 }))),
-      b(ex("Leg Curl", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 75 }))),
-      b(ex("Standing Calf Raise", "strength", row("rep_range", { sets: 3, min_reps: 15, max_reps: 20, rest_seconds: 60 }))),
-      b(ex("Stationary Bike", "cardio", row("time", { sets: 1, duration_seconds: 300, rest_seconds: null }))),
+      b(
+        ex(
+          "Back Squat",
+          "barbell-back-squat",
+          "strength",
+          row("percent_1rm", { sets: 3, reps: "10", percent_1rm_value: 55, pr_record_type: "squat", rest_seconds: 120 })
+        )
+      ),
+      b(ex("Leg Press", "leg-press", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 90 }))),
+      b(ex("Leg Curl", "leg-curl-machine", "strength", row("rep_range", { sets: 3, min_reps: 10, max_reps: 12, rest_seconds: 75 }))),
+      b(ex("Standing Calf Raise", "standing-calf-raise", "strength", row("rep_range", { sets: 3, min_reps: 15, max_reps: 20, rest_seconds: 60 }))),
+      b(ex("Stationary Bike", "stationary-bike", "cardio", row("time", { sets: 1, duration_seconds: 300, rest_seconds: null }))),
     ]),
     day("Rest", true, []),
   ]),
@@ -228,6 +342,7 @@ const fiveKBaseBuilder: StarterProgramTemplate = {
       b(
         ex(
           "Easy Run",
+          "easy-run",
           "running",
           row("distance", { sets: 1, distance_meters: 3000, rest_seconds: null }),
           "Conversational pace — you should be able to talk in full sentences."
@@ -236,17 +351,29 @@ const fiveKBaseBuilder: StarterProgramTemplate = {
     ]),
     day("Rest", true, []),
     day("Steady Run", false, [
-      b(ex("Steady Run", "running", row("distance", { sets: 1, distance_meters: 4000, rest_seconds: null }), "Comfortably hard — about a 6 or 7 out of 10 effort.")),
+      // Renamed to the library's "Tempo Run" during the exercise-linking
+      // audit — the "comfortably hard" effort description here matches
+      // Tempo Run's own library description almost word for word.
+      b(
+        ex(
+          "Steady Run",
+          "tempo-run",
+          "running",
+          row("distance", { sets: 1, distance_meters: 4000, rest_seconds: null }),
+          "Comfortably hard — about a 6 or 7 out of 10 effort."
+        )
+      ),
     ]),
     day("Rest", true, []),
     day("Easy Run", false, [
-      b(ex("Easy Run", "running", row("distance", { sets: 1, distance_meters: 3000, rest_seconds: null }), "Easy, recovery-pace effort.")),
+      b(ex("Easy Run", "easy-run", "running", row("distance", { sets: 1, distance_meters: 3000, rest_seconds: null }), "Easy, recovery-pace effort.")),
     ]),
     day("Rest", true, []),
     day("Long Run", false, [
       b(
         ex(
           "Long Run",
+          "long-run",
           "running",
           row("distance", { sets: 1, distance_meters: 5000, rest_seconds: null }),
           "Slow and steady — this is about time on your feet, not pace."
@@ -274,6 +401,7 @@ const cardioConditioningBase: StarterProgramTemplate = {
       b(
         ex(
           "Stationary Bike",
+          "stationary-bike",
           "cardio",
           row("heart_rate_zone", { sets: 1, duration_seconds: 1200, heart_rate_zone: 2, rest_seconds: null }),
           "Comfortable, sustainable pace — you should be able to hold a conversation the whole time."
@@ -285,6 +413,7 @@ const cardioConditioningBase: StarterProgramTemplate = {
       b(
         ex(
           "Rowing Machine",
+          "rowing-erg",
           "cardio",
           row("distance", { sets: 1, distance_meters: 2500, rest_seconds: null }),
           "Faster than steady state — a pace you could hold for about 20 minutes, not an all-out effort."
@@ -296,6 +425,7 @@ const cardioConditioningBase: StarterProgramTemplate = {
       b(
         ex(
           "Elliptical",
+          "elliptical",
           "cardio",
           row("time", { sets: 1, duration_seconds: 1800, rest_seconds: null }),
           "Easy, steady effort — this is about time spent moving, not intensity."

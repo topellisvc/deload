@@ -52,6 +52,24 @@ describe("starter program templates", () => {
     }
   });
 
+  it.each(STARTER_PROGRAM_TEMPLATES)("$name: every exercise is linked to a real Exercise Library entry, not just a typed name", (template) => {
+    // Regression guard: every exercise in these templates used to be
+    // custom_name-only (exercise_id: null) — nothing here was actually
+    // linked to the shared Exercise Library, which silently broke anything
+    // that depends on a real exercise_id (the manual builder's "Test max
+    // before" checkbox, exercise detail pages, muscle-group filtering).
+    // Backfilled to link every entry; this keeps a future addition from
+    // reintroducing an unlinked custom_name-only row by mistake.
+    for (const day of template.week1.days) {
+      for (const block of day.blocks) {
+        for (const exercise of block.exercises) {
+          expect(exercise.exercise_id).not.toBeNull();
+          expect(exercise.custom_name).toBeNull();
+        }
+      }
+    }
+  });
+
   it.each(STARTER_PROGRAM_TEMPLATES)("$name: block/exercise/set positions are sequential starting at 1", (template) => {
     for (const day of template.week1.days) {
       day.blocks.forEach((block, i) => {
