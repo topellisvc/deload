@@ -389,9 +389,19 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       description: `Delete ${target.label || `Week ${target.position}`}? This can't be undone.`,
       confirmLabel: "Delete",
       onConfirm: async () => {
-        const remaining = program.weeks.filter((w) => w.id !== weekId);
-        setProgram((p) => ({ ...p, weeks: remaining }));
-        if (selectedWeekId === weekId) setSelectedWeekId(remaining[0]?.id ?? "");
+        // Untick every real exercise this testing week's tests came from
+        // FIRST — see untickTestMaxBefore's doc comment — then remove the
+        // week itself from whatever `p.weeks` looks like at that point
+        // (not a `remaining` snapshot taken before the untick, which would
+        // otherwise silently discard it).
+        if (target.is_testing_week) {
+          untickTestMaxBefore(target.days.flatMap((d) => d.blocks.flatMap((b) => b.exercises.map((ex) => ex.exercise_id))));
+        }
+        setProgram((p) => ({ ...p, weeks: p.weeks.filter((w) => w.id !== weekId) }));
+        if (selectedWeekId === weekId) {
+          const remaining = program.weeks.filter((w) => w.id !== weekId);
+          setSelectedWeekId(remaining[0]?.id ?? "");
+        }
         setPendingConfirm(null);
         const { error } = await track(m.deleteWeek(supabase, weekId));
         if (error) fail(error);
@@ -488,8 +498,10 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       description: `Delete ${target.label || `Day ${target.position}`}? This can't be undone.`,
       confirmLabel: "Delete",
       onConfirm: async () => {
-        const remaining = week.days.filter((d) => d.id !== dayId);
-        updateWeek(week.id, (w) => ({ ...w, days: remaining }));
+        if (week.is_testing_week) {
+          untickTestMaxBefore(target.blocks.flatMap((b) => b.exercises.map((ex) => ex.exercise_id)));
+        }
+        updateWeek(week.id, (w) => ({ ...w, days: w.days.filter((d) => d.id !== dayId) }));
         setPendingConfirm(null);
         const { error } = await track(m.deleteDay(supabase, dayId));
         if (error) fail(error);
@@ -591,6 +603,10 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   }
 
   function handleDeleteBlock(dayId: string, blockId: string) {
+    if (week.is_testing_week) {
+      const block = week.days.find((d) => d.id === dayId)?.blocks.find((b) => b.id === blockId);
+      if (block) untickTestMaxBefore(block.exercises.map((ex) => ex.exercise_id));
+    }
     updateDay(week.id, dayId, (d) => ({ ...d, blocks: d.blocks.filter((b) => b.id !== blockId) }));
     track(m.deleteBlock(supabase, blockId)).then(({ error }) => {
       if (error) fail(error);
@@ -642,6 +658,10 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     // instead (via the block's own delete button) — this button is
     // hidden in the UI until there are 2+ exercises, but guard here too.
     if (!block || block.exercises.length <= 1) return;
+    if (week.is_testing_week) {
+      const removed = block.exercises.find((ex) => ex.id === blockExerciseId);
+      if (removed) untickTestMaxBefore([removed.exercise_id]);
+    }
     const becomesUngrouped = block.exercises.length - 1 === 1;
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
@@ -707,6 +727,40 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
    * exercise (program_weeks.is_testing_week) is deliberately excluded:
    * that row's flag is never read by anything (syncTestingWeek already
    * skips its own week when scanning), so touching it would just be noise. */
+  /** Every real (non-testing-week) block_exercise id sharing one of the
+   * given exercise ids — computed from the current `program`, not from
+   * inside a setState updater (which must stay pure). Shared by
+   * handleTestMaxBeforeChange (propagating a tick to every appearance of
+   * an exercise) and untickTestMaxBefore (the reverse, when a testing-week
+   * day/exercise gets deleted — see its own doc comment below). */
+  function matchingBlockExerciseIds(exerciseIds: (string | null)[]): string[] {
+    const idSet = new Set(exerciseIds.filter((id): id is string => !!id));
+    if (idSet.size === 0) return [];
+    return program.weeks
+      .filter((w) => !w.is_testing_week)
+      .flatMap((w) => w.days)
+      .flatMap((d) => d.blocks)
+      .flatMap((b) => b.exercises)
+      .filter((ex) => ex.exercise_id && idSet.has(ex.exercise_id))
+      .map((ex) => ex.id);
+  }
+
+  /** "Test max before" checkbox (migration 0054) — see syncTestingWeek's own
+   * doc comment for what flipping this actually feeds into once the "Add
+   * testing week" button below is pressed.
+   *
+   * The same exercise (e.g. Back Squat) commonly appears more than once
+   * across a program — every day it's used, every week — and
+   * syncTestingWeek already treats "flagged anywhere" as "test it once,"
+   * deduping by exercise_id. Ticking the box on just one of those
+   * appearances but leaving the others unchecked would look like a bug
+   * (why is Back Squat ticked on Day 1 but not Day 3?), so this propagates
+   * the new value to every block_exercise sharing the same exercise_id
+   * across the whole program at once — not just the one row that was
+   * actually clicked. The generated testing week's own copy of the
+   * exercise (program_weeks.is_testing_week) is deliberately excluded:
+   * that row's flag is never read by anything (syncTestingWeek already
+   * skips its own week when scanning), so touching it would just be noise. */
   function handleTestMaxBeforeChange(dayId: string, blockId: string, blockExerciseId: string, testMaxBefore: boolean) {
     const toggled = week.days.find((d) => d.id === dayId)?.blocks.find((b) => b.id === blockId)?.exercises.find((e) => e.id === blockExerciseId);
     const exerciseId = toggled?.exercise_id ?? null;
@@ -725,16 +779,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       return;
     }
 
-    // Computed from the current `program` (not inside the setState updater
-    // below, which must stay a pure function of its previous state) — this
-    // is what actually decides which rows get a background write.
-    const matchingIds = program.weeks
-      .filter((w) => !w.is_testing_week)
-      .flatMap((w) => w.days)
-      .flatMap((d) => d.blocks)
-      .flatMap((b) => b.exercises)
-      .filter((ex) => ex.exercise_id === exerciseId)
-      .map((ex) => ex.id);
+    const matchingIds = matchingBlockExerciseIds([exerciseId]);
 
     setProgram((p) => ({
       ...p,
@@ -759,6 +804,51 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     // to trip the project's 8s statement_timeout (see
     // updateBlockExercisesTestMaxBefore's doc comment in mutations.ts).
     track(m.updateBlockExercisesTestMaxBefore(supabase, matchingIds, testMaxBefore)).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
+  /** The reverse of handleTestMaxBeforeChange's propagation: ticks
+   * test_max_before back to false, everywhere, for every given exercise id.
+   * Called whenever a day or exercise gets deleted FROM the testing week
+   * itself (handleDeleteWeek/handleDeleteDay/handleDeleteBlock/
+   * handleRemoveExerciseFromBlock, each gated on `week.is_testing_week` or
+   * the deleted week's own flag).
+   *
+   * Without this, deleting a testing day/exercise looked like it worked —
+   * the row disappeared — but the "Test max before" checkbox on the real
+   * exercise(s) elsewhere in the program stayed ticked, since nothing ever
+   * told them the test they were flagged for no longer exists. The next
+   * "Sync testing week" click would then silently recreate exactly what
+   * was just deleted (syncTestingWeek only ever looks at that flag — it
+   * has no way to know a matching testing-week row used to exist and was
+   * removed on purpose), which read as the deletion not having worked at
+   * all. */
+  function untickTestMaxBefore(exerciseIds: (string | null)[]) {
+    const idSet = new Set(exerciseIds.filter((id): id is string => !!id));
+    if (idSet.size === 0) return;
+    const ids = matchingBlockExerciseIds([...idSet]);
+    if (ids.length === 0) return;
+
+    setProgram((p) => ({
+      ...p,
+      weeks: p.weeks.map((w) =>
+        w.is_testing_week
+          ? w
+          : {
+              ...w,
+              days: w.days.map((d) => ({
+                ...d,
+                blocks: d.blocks.map((b) => ({
+                  ...b,
+                  exercises: b.exercises.map((ex) => (ex.exercise_id && idSet.has(ex.exercise_id) ? { ...ex, test_max_before: false } : ex)),
+                })),
+              })),
+            }
+      ),
+    }));
+
+    track(m.updateBlockExercisesTestMaxBefore(supabase, ids, false)).then(({ error }) => {
       if (error) fail(error);
     });
   }

@@ -30,6 +30,7 @@ vi.mock("@/components/programs/day-column", () => ({
     onAddExerciseToBlock,
     addingExerciseBlockId,
     onDeleteDay,
+    onDeleteBlock,
   }: {
     day: DayRow;
     onCategoryChange: (blockId: string, blockExerciseId: string, category: string) => void;
@@ -37,6 +38,7 @@ vi.mock("@/components/programs/day-column", () => ({
     onAddExerciseToBlock: (blockId: string) => void;
     addingExerciseBlockId: string | null;
     onDeleteDay?: () => void;
+    onDeleteBlock: (blockId: string) => void;
   }) => (
     <div>
       <span>{day.label}</span>
@@ -75,6 +77,9 @@ vi.mock("@/components/programs/day-column", () => ({
               : day.blocks[0].exercises.length > 1
                 ? "Add another exercise"
                 : "Make this a superset"}
+          </button>
+          <button type="button" onClick={() => onDeleteBlock(day.blocks[0]!.id)}>
+            Delete block on {day.label}
           </button>
         </>
       )}
@@ -643,5 +648,112 @@ describe("ProgramBuilder 'Test max before' propagates across every appearance of
 
     resolveWrite!({ error: null });
     await waitFor(() => expect(m.syncTestingWeek).toHaveBeenCalledWith(expect.anything(), expect.anything()));
+  });
+});
+
+/**
+ * The reverse direction: deleting a testing-week day or exercise used to
+ * leave the real exercise(s) it came from stuck "Test max before"-ticked
+ * forever, since nothing told them their test no longer exists. The next
+ * "Sync testing week" click would then silently recreate exactly what was
+ * just deleted, which read as the deletion not actually working. These
+ * cover the fix — untickTestMaxBefore, wired into both the day-delete and
+ * block-delete paths, gated on `week.is_testing_week`.
+ */
+describe("ProgramBuilder deleting from the testing week unticks 'Test max before' on the real exercise(s)", () => {
+  beforeEach(() => {
+    vi.mocked(m.updateBlockExercisesTestMaxBefore).mockReset().mockResolvedValue({ error: null });
+    vi.mocked(m.deleteDay).mockReset().mockResolvedValue({ error: null });
+    vi.mocked(m.deleteBlock).mockReset().mockResolvedValue({ error: null });
+  });
+
+  function renderWithTestingWeek() {
+    return render(
+      <ProgramBuilder
+        initialProgram={makeProgram({
+          weeks: [
+            makeWeek({
+              id: "week-1",
+              position: 1,
+              label: "Week 1",
+              days: [
+                makeDay({
+                  id: "day-1",
+                  blocks: [makeBlock({ id: "block-1", exercises: [makeExercise({ id: "ex-1", exercise_id: "barbell-back-squat", test_max_before: true })] })],
+                }),
+              ],
+            }),
+            makeWeek({
+              id: "testing-week",
+              position: 2,
+              label: "Testing Week",
+              is_testing_week: true,
+              days: [
+                makeDay({
+                  id: "testing-day-1",
+                  week_id: "testing-week",
+                  label: "Push — Test",
+                  position: 1,
+                  blocks: [
+                    makeBlock({
+                      id: "testing-block-1",
+                      day_id: "testing-day-1",
+                      exercises: [makeExercise({ id: "ex-testing", block_id: "testing-block-1", exercise_id: "barbell-back-squat", test_max_before: false })],
+                    }),
+                  ],
+                }),
+                // A second day purely so the day-delete button (hidden when
+                // a week has only one day) actually renders for the day
+                // deletion test below.
+                makeDay({ id: "testing-day-2", week_id: "testing-week", label: "Pull — Test", position: 2, blocks: [] }),
+              ],
+            }),
+          ],
+        })}
+      />
+    );
+  }
+
+  it("deleting the testing day unticks the real exercise it tested", async () => {
+    const user = userEvent.setup();
+    renderWithTestingWeek();
+
+    await user.click(screen.getByRole("button", { name: "Testing Week" }));
+    await user.click(screen.getByRole("button", { name: "Delete Push — Test" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(m.deleteDay).toHaveBeenCalledWith(expect.anything(), "testing-day-1");
+    await waitFor(() => expect(m.updateBlockExercisesTestMaxBefore).toHaveBeenCalledWith(expect.anything(), ["ex-1"], false));
+
+    await user.click(screen.getByRole("button", { name: "Week 1" }));
+    expect(await screen.findByText("not-flagged")).toBeInTheDocument();
+  });
+
+  it("deleting the testing block (single-exercise) unticks the real exercise it tested", async () => {
+    const user = userEvent.setup();
+    renderWithTestingWeek();
+
+    await user.click(screen.getByRole("button", { name: "Testing Week" }));
+    await user.click(screen.getByRole("button", { name: "Delete block on Push — Test" }));
+
+    expect(m.deleteBlock).toHaveBeenCalledWith(expect.anything(), "testing-block-1");
+    await waitFor(() => expect(m.updateBlockExercisesTestMaxBefore).toHaveBeenCalledWith(expect.anything(), ["ex-1"], false));
+
+    await user.click(screen.getByRole("button", { name: "Week 1" }));
+    expect(await screen.findByText("not-flagged")).toBeInTheDocument();
+  });
+
+  it("does NOT untick anything when deleting a day/block from a normal (non-testing) week", async () => {
+    const user = userEvent.setup();
+    renderWithTestingWeek();
+
+    // Week 1 has 2+ blocks? No — it has just one day, so the day-delete
+    // button isn't offered there; delete the block instead, which is
+    // always offered.
+    await user.click(screen.getByRole("button", { name: "Delete block on Day 1" }));
+
+    expect(m.deleteBlock).toHaveBeenCalledWith(expect.anything(), "block-1");
+    expect(m.updateBlockExercisesTestMaxBefore).not.toHaveBeenCalled();
   });
 });
