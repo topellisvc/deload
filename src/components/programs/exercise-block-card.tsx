@@ -96,6 +96,14 @@ export function ExerciseBlockCard({
   const style = { transform: CSS.Transform.toString(transform), transition };
 
   const isGrouped = block.exercises.length > 1;
+  // Same underlying block_type ("superset" in the DB — see this file's own
+  // doc comment above) either way, but coaches don't call a 3+ exercise
+  // group a "superset," they call it a "circuit." Labeling every grouped
+  // block "Superset" regardless of size was the actual complaint behind
+  // "there's no option to make a circuit" — the mechanism was always here
+  // (group exercises + set rounds), just never called by the name a coach
+  // would search the UI for once they'd added a third exercise.
+  const groupLabel = block.exercises.length >= 3 ? "Circuit" : "Superset";
   const [rounds, setRounds] = useState(String(block.rounds));
 
   useEffect(() => setRounds(String(block.rounds)), [block.rounds]);
@@ -128,7 +136,7 @@ export function ExerciseBlockCard({
         {isGrouped ? (
           <div className="flex flex-1 items-center gap-1.5 text-xs font-medium text-primary">
             <Repeat className="size-3.5" />
-            Superset ·
+            {groupLabel} ·
             <input
               aria-label="Rounds"
               value={rounds}
@@ -147,8 +155,8 @@ export function ExerciseBlockCard({
           <button
             type="button"
             onClick={onDeleteBlock}
-            aria-label="Delete whole superset"
-            title="Delete whole superset"
+            aria-label={`Delete whole ${groupLabel.toLowerCase()}`}
+            title={`Delete whole ${groupLabel.toLowerCase()}`}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-7 lg:w-7"
           >
             <Trash2 className="size-3.5" />
@@ -162,6 +170,7 @@ export function ExerciseBlockCard({
             key={exercise.id}
             exercise={exercise}
             isGrouped={isGrouped}
+            groupLabel={groupLabel}
             expanded={expandedExerciseId === exercise.id}
             onToggleExpand={() => onToggleExpand(exercise.id)}
             mode={mode}
@@ -198,7 +207,10 @@ export function ExerciseBlockCard({
         className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
       >
         <Repeat className={cn("size-3.5", isAddingExercise && "animate-spin")} />
-        {isAddingExercise ? "Adding…" : isGrouped ? "Add another exercise" : "Make this a superset"}
+        {/* "or circuit" only needs saying once, before there's a group at
+            all — once isGrouped, the header above already reads "Superset"
+            or "Circuit" depending on how many exercises are in it. */}
+        {isAddingExercise ? "Adding…" : isGrouped ? "Add another exercise" : "Make this a superset or circuit"}
       </button>
     </div>
   );

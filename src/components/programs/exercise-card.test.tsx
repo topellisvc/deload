@@ -143,6 +143,30 @@ describe("ExerciseCard collapsed state", () => {
     expect(screen.getByLabelText(/remove bench press from this superset/i)).toBeInTheDocument();
     expect(screen.queryByLabelText("Delete Bench Press")).not.toBeInTheDocument();
   });
+
+  it("uses the caller-supplied groupLabel (e.g. 'Circuit' for a 3+ exercise block) instead of always saying 'superset'", () => {
+    // ExerciseBlockCard is the one that actually decides Superset vs.
+    // Circuit (by exercise count) and passes the result down as
+    // groupLabel — this just proves ExerciseCard renders whatever it's
+    // given rather than hardcoding "superset", which was the direct cause
+    // of the user-reported complaint that there was "no option" to make a
+    // circuit: the mechanism existed, but every grouped block said
+    // "superset" regardless of size.
+    const onRemoveFromBlock = vi.fn();
+    render(
+      <ExerciseCard
+        exercise={makeExercise()}
+        expanded={false}
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+        isGrouped
+        groupLabel="Circuit"
+        onRemoveFromBlock={onRemoveFromBlock}
+      />
+    );
+    expect(screen.getByLabelText(/remove bench press from this circuit/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/from this superset/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("ExerciseCard expanded state", () => {

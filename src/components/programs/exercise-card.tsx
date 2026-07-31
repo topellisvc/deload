@@ -28,6 +28,12 @@ interface ExerciseCardProps {
    * least one other — changes what "delete" and "remove" mean (see
    * onDelete/onRemoveFromBlock) and shows the grouped left-border styling. */
   isGrouped: boolean;
+  /** "Superset" or "Circuit" (see ExerciseBlockCard's groupLabel — driven by
+   * exercise count) — only read when isGrouped, for the "Remove from
+   * superset/circuit" action below. Defaults to "Superset" so any other
+   * caller that hasn't been updated to pass this still renders the same
+   * text it always has. */
+  groupLabel?: string;
   expanded: boolean;
   onToggleExpand: () => void;
   /** "preview" never reaches this component — Athlete Preview renders a
@@ -86,6 +92,7 @@ interface ExerciseCardProps {
 export function ExerciseCard({
   exercise,
   isGrouped,
+  groupLabel = "Superset",
   expanded,
   onToggleExpand,
   mode,
@@ -192,8 +199,8 @@ export function ExerciseCard({
             <button
               type="button"
               onClick={onRemoveFromBlock}
-              aria-label={`Remove ${exerciseName} from this superset`}
-              title="Remove from superset"
+              aria-label={`Remove ${exerciseName} from this ${groupLabel.toLowerCase()}`}
+              title={`Remove from ${groupLabel.toLowerCase()}`}
               className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-7 lg:w-7"
             >
               <X className="size-3.5" />
