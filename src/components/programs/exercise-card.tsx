@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowRightLeft, BookMarked, Copy, Info, StickyNote, Trash2, X } from "lucide-react";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { summarizePrescriptionPrimary, summarizeRest } from "@/lib/programs/prescription-summary";
@@ -360,15 +360,29 @@ function KnownMaxControl({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // exercise_max_records is append-only (migration 0054, no upsert) —
+  // onSave fires a real INSERT every time it's called. commit() exits
+  // editing mode synchronously right after calling it, which closes the
+  // window for a second *click*, but not for a second *event* landing in
+  // the same tick before React flushes that state change — key-repeat
+  // sending several Enter keydowns, or a fast double-click on Save. A ref
+  // (not state, which batches) guards against re-entering commit() until
+  // the next real edit session starts.
+  const committingRef = useRef(false);
 
   function startEdit() {
+    committingRef.current = false;
     setDraft(knownMax ? String(knownMax.valueKg) : "");
     setEditing(true);
   }
 
   function commit() {
+    if (committingRef.current) return;
     const value = Number(draft.trim());
-    if (Number.isFinite(value) && value > 0) onSave(value);
+    if (Number.isFinite(value) && value > 0) {
+      committingRef.current = true;
+      onSave(value);
+    }
     setEditing(false);
   }
 

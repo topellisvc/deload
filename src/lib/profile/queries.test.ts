@@ -134,6 +134,38 @@ describe("getPersonalRecords — merging in exercise_max_records (migration 0054
     expect(records).toHaveLength(1);
     expect(records[0]!.record_type).toBe("run_5k");
   });
+
+  it("breaks ties on the same performed_on date by created_at, not just performed_on", async () => {
+    // performed_on is a date, not a timestamp, so two rows on the same day
+    // (e.g. a coach's manually-entered known max and a same-day logged
+    // test) are otherwise unordered. This asserts the query itself orders
+    // by created_at as a tiebreak, not that a fake in-memory sort works —
+    // the real ordering happens in Postgres, exactly like the existing
+    // getAthleteSummary tests assert on .eq()/.order() args rather than
+    // simulating a real query planner.
+    const exerciseMaxBuilder = makeBuilder({
+      data: [
+        // Already in the order Postgres would return given both ORDER BY
+        // clauses: same day, newest created_at first.
+        { exercise_id: "bulgarian-split-squat", estimated_1rm_kg: 65, performed_on: "2026-07-01", created_at: "2026-07-01T18:00:00Z" },
+        { exercise_id: "bulgarian-split-squat", estimated_1rm_kg: 60, performed_on: "2026-07-01", created_at: "2026-07-01T09:00:00Z" },
+      ],
+    });
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "personal_records") return makeBuilder({ data: [] });
+        if (table === "exercise_max_records") return exerciseMaxBuilder;
+        return makeBuilder({ data: [] });
+      }),
+    };
+
+    const records = await getPersonalRecords(supabase as never, "athlete-1");
+
+    expect(exerciseMaxBuilder.order).toHaveBeenNthCalledWith(1, "performed_on", { ascending: false });
+    expect(exerciseMaxBuilder.order).toHaveBeenNthCalledWith(2, "created_at", { ascending: false });
+    const exerciseRecord = records.find((r) => r.record_type === "exercise:bulgarian-split-squat");
+    expect(exerciseRecord).toMatchObject({ value_number: 65 });
+  });
 });
 
 describe("getExerciseMaxHistory", () => {
@@ -170,6 +202,21 @@ describe("getExerciseMaxHistory", () => {
     const history = await getExerciseMaxHistory(supabase as never, "athlete-1");
 
     expect(history.size).toBe(0);
+  });
+
+  it("also orders by created_at after performed_on, same tiebreak as getPersonalRecords", async () => {
+    const exerciseMaxBuilder = makeBuilder({ data: [] });
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "exercise_max_records") return exerciseMaxBuilder;
+        return makeBuilder({ data: [] });
+      }),
+    };
+
+    await getExerciseMaxHistory(supabase as never, "athlete-1");
+
+    expect(exerciseMaxBuilder.order).toHaveBeenNthCalledWith(1, "performed_on", { ascending: false });
+    expect(exerciseMaxBuilder.order).toHaveBeenNthCalledWith(2, "created_at", { ascending: false });
   });
 });
 

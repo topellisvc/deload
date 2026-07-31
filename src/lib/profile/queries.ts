@@ -347,10 +347,17 @@ export async function getAthleteSummary(supabase: SupabaseClient, userId: string
 async function getLatestExerciseMaxesAsRecords(supabase: SupabaseClient, userId: string): Promise<PersonalRecord[]> {
   const { data } = await supabase
     .from("exercise_max_records")
-    .select("exercise_id, estimated_1rm_kg, performed_on")
+    .select("exercise_id, estimated_1rm_kg, performed_on, created_at")
     .eq("athlete_id", userId)
-    .order("performed_on", { ascending: false });
-  const rows = (data ?? []) as { exercise_id: string; estimated_1rm_kg: number; performed_on: string }[];
+    // performed_on is a date, not a timestamp — two rows on the same day
+    // (e.g. a coach's manually-entered known max and a same-day logged
+    // test) would otherwise tie, and which one "wins" as the latest would
+    // depend on whatever order Postgres happened to return them in.
+    // created_at breaks that tie deterministically: whichever was actually
+    // written most recently.
+    .order("performed_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  const rows = (data ?? []) as { exercise_id: string; estimated_1rm_kg: number; performed_on: string; created_at: string }[];
 
   const latestByExercise = new Map<string, { estimated_1rm_kg: number; performed_on: string }>();
   for (const row of rows) {
@@ -396,10 +403,13 @@ export interface ExerciseMaxHistoryEntry {
 export async function getExerciseMaxHistory(supabase: SupabaseClient, athleteId: string): Promise<Map<string, ExerciseMaxHistoryEntry[]>> {
   const { data } = await supabase
     .from("exercise_max_records")
-    .select("exercise_id, estimated_1rm_kg, performed_on")
+    .select("exercise_id, estimated_1rm_kg, performed_on, created_at")
     .eq("athlete_id", athleteId)
-    .order("performed_on", { ascending: false });
-  const rows = (data ?? []) as { exercise_id: string; estimated_1rm_kg: number; performed_on: string }[];
+    // Same created_at tiebreak as getLatestExerciseMaxesAsRecords above —
+    // performed_on alone can't order two same-day rows.
+    .order("performed_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  const rows = (data ?? []) as { exercise_id: string; estimated_1rm_kg: number; performed_on: string; created_at: string }[];
   if (rows.length === 0) return new Map();
 
   const namesById = await getExerciseNamesByIds(supabase, rows.map((r) => r.exercise_id));

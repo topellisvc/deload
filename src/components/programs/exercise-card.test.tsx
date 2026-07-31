@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act } from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ExerciseCard } from "./exercise-card";
 import type { BlockExerciseRow, SetRow } from "@/lib/programs/types";
@@ -236,6 +237,43 @@ describe("ExerciseCard expanded state", () => {
     await user.type(screen.getByLabelText("Known 1RM"), "140");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
+    expect(onSaveKnownMax).toHaveBeenCalledWith(140);
+  });
+
+  it("guards against a second commit firing before React has unmounted the input (key-repeat/double-click), since each write is a real INSERT with no upsert", () => {
+    // exercise_max_records is append-only — a second commit in the same
+    // edit session would write a genuine duplicate row, not overwrite the
+    // first. Awaited user.type/user.click already let React flush a render
+    // between events, so they can't reproduce the race this guards
+    // against: two Enter keydowns (OS key-repeat) or two clicks landing
+    // before the first commit's setEditing(false) has actually removed the
+    // input from the tree. Wrapping both dispatches in one outer act(...)
+    // reproduces exactly that — both handlers run back to back before
+    // React commits either update, the same way the ref-based guard (not
+    // useState, which batches and wouldn't have updated yet either) has to
+    // survive.
+    const onSaveKnownMax = vi.fn();
+    render(
+      <ExerciseCard
+        exercise={makeExercise({ exercise_id: "bench-press" })}
+        expanded
+        onToggleExpand={vi.fn()}
+        {...baseProps}
+        knownMax={null}
+        onSaveKnownMax={onSaveKnownMax}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /know their max\? enter it/i }));
+    const input = screen.getByLabelText("Known 1RM");
+    fireEvent.change(input, { target: { value: "140" } });
+
+    act(() => {
+      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    expect(onSaveKnownMax).toHaveBeenCalledTimes(1);
     expect(onSaveKnownMax).toHaveBeenCalledWith(140);
   });
 
