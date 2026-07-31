@@ -35,6 +35,19 @@ export function NewProgramDialog({ open, onClose, userId, activeClients, default
   const [name, setName] = useState("");
   const [discipline, setDiscipline] = useState<ProgramDiscipline>("resistance");
   const [daysPerWeek, setDaysPerWeek] = useState(4);
+  // The field's own displayed text, kept separate from daysPerWeek (the
+  // clamped 1-7 number everything else in this component actually uses).
+  // Clamping on every keystroke — the previous approach — snaps an empty
+  // field straight to "1" the instant you backspace it, before you've
+  // typed your replacement digit. On a real keyboard that "1" is still
+  // there when the next digit lands (e.g. backspace then "3" produces
+  // "13", not "3"), which then clamps to the max of 7 — so a user trying
+  // to type any single digit 2-6 by clearing the field first only ever
+  // ends up at 1 or 7. Letting the text be freely, transiently invalid
+  // while typing (and only reconciling it back to daysPerWeek on blur)
+  // fixes that without losing the 1-7 guarantee for anything that reads
+  // daysPerWeek itself.
+  const [daysPerWeekInput, setDaysPerWeekInput] = useState("4");
   const [forClientId, setForClientId] = useState(defaultAthleteId ?? MYSELF);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +80,25 @@ export function NewProgramDialog({ open, onClose, userId, activeClients, default
     // A freshly-created program is empty — go straight to building it out
     // rather than the read-only view.
     router.push(`/programs/${program.id}/edit`);
+  }
+
+  function handleDaysPerWeekChange(raw: string) {
+    setDaysPerWeekInput(raw);
+    // Only commit to daysPerWeek (what handleSubmit actually reads) once
+    // the field holds a real, finite number — an empty or mid-edit string
+    // just updates the visible text and leaves the last good value alone,
+    // so submitting mid-keystroke still generates a sane number of days.
+    const parsed = Number(raw);
+    if (raw.trim() !== "" && Number.isFinite(parsed)) {
+      setDaysPerWeek(Math.min(7, Math.max(1, Math.round(parsed))));
+    }
+  }
+
+  function handleDaysPerWeekBlur() {
+    // Reconcile the visible text back to the clamped number once the user
+    // is done editing — covers leaving the field empty, "0", "12", "3.5",
+    // or anything else that never became a valid commit above.
+    setDaysPerWeekInput(String(daysPerWeek));
   }
 
   return (
@@ -125,10 +157,12 @@ export function NewProgramDialog({ open, onClose, userId, activeClients, default
           <Input
             id="days-per-week"
             type="number"
+            inputMode="numeric"
             min={1}
             max={7}
-            value={daysPerWeek}
-            onChange={(e) => setDaysPerWeek(Math.min(7, Math.max(1, Number(e.target.value) || 1)))}
+            value={daysPerWeekInput}
+            onChange={(e) => handleDaysPerWeekChange(e.target.value)}
+            onBlur={handleDaysPerWeekBlur}
           />
           <p className="text-xs text-muted-foreground">
             You can mark any of these as a rest day later, or rename them.
