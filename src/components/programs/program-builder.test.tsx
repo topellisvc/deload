@@ -26,12 +26,14 @@ vi.mock("@/components/programs/day-column", () => ({
   DayColumn: ({
     day,
     onCategoryChange,
+    onTestMaxBeforeChange,
     onAddExerciseToBlock,
     addingExerciseBlockId,
     onDeleteDay,
   }: {
     day: DayRow;
     onCategoryChange: (blockId: string, blockExerciseId: string, category: string) => void;
+    onTestMaxBeforeChange: (blockId: string, blockExerciseId: string, testMaxBefore: boolean) => void;
     onAddExerciseToBlock: (blockId: string) => void;
     addingExerciseBlockId: string | null;
     onDeleteDay?: () => void;
@@ -53,6 +55,20 @@ vi.mock("@/components/programs/day-column", () => ({
           >
             Switch to running
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              const block = day.blocks[0]!;
+              const exercise = block.exercises[0]!;
+              onTestMaxBeforeChange(block.id, exercise.id, !exercise.test_max_before);
+            }}
+          >
+            Toggle test max before
+          </button>
+          {/* Exposes the first exercise's current flag as text, purely so
+              tests can observe propagation to a week that isn't the one the
+              toggle button above was clicked in. */}
+          <span>{day.blocks[0].exercises[0]!.test_max_before ? "flagged" : "not-flagged"}</span>
           <button type="button" disabled={addingExerciseBlockId === day.blocks[0].id} onClick={() => onAddExerciseToBlock(day.blocks[0]!.id)}>
             {addingExerciseBlockId === day.blocks[0].id
               ? "Adding…"
@@ -451,5 +467,129 @@ describe("ProgramBuilder autosave status indicator", () => {
 
     resolveAdd({ exercise: makeExercise({ id: "ex-2" }), error: null });
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("All changes saved"));
+  });
+});
+
+/**
+ * Ticking "Test max before" on one appearance of an exercise (e.g. Back
+ * Squat on Day 1) used to only flag that one row — every other appearance
+ * of the same exercise elsewhere in the program (Day 3, other weeks) stayed
+ * unticked, which read as a bug ("why isn't it checked here too?"). These
+ * cover the fix: the same exercise_id gets flagged everywhere at once,
+ * except inside the generated testing week itself, whose own flag nothing
+ * ever reads.
+ */
+describe("ProgramBuilder 'Test max before' propagates across every appearance of the same exercise", () => {
+  beforeEach(() => {
+    vi.mocked(m.updateBlockExercise).mockReset().mockResolvedValue({ error: null });
+  });
+
+  it("flags every other block_exercise sharing the same exercise_id, across every week, and writes each one", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProgramBuilder
+        initialProgram={makeProgram({
+          weeks: [
+            makeWeek({
+              id: "week-1",
+              position: 1,
+              label: "Week 1",
+              days: [
+                makeDay({
+                  id: "day-1",
+                  blocks: [makeBlock({ id: "block-1", exercises: [makeExercise({ id: "ex-1", exercise_id: "barbell-back-squat", test_max_before: false })] })],
+                }),
+              ],
+            }),
+            makeWeek({
+              id: "week-2",
+              position: 2,
+              label: "Week 2",
+              days: [
+                makeDay({
+                  id: "day-2",
+                  week_id: "week-2",
+                  blocks: [
+                    makeBlock({
+                      id: "block-2",
+                      day_id: "day-2",
+                      exercises: [makeExercise({ id: "ex-2", block_id: "block-2", exercise_id: "barbell-back-squat", test_max_before: false })],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Toggle test max before" }));
+
+    await waitFor(() => {
+      expect(m.updateBlockExercise).toHaveBeenCalledWith(expect.anything(), "ex-1", { test_max_before: true });
+      expect(m.updateBlockExercise).toHaveBeenCalledWith(expect.anything(), "ex-2", { test_max_before: true });
+    });
+
+    await user.click(screen.getByRole("button", { name: "Week 2" }));
+    expect(await screen.findByText("flagged")).toBeInTheDocument();
+  });
+
+  it("never touches the generated testing week's own copy of the same exercise", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProgramBuilder
+        initialProgram={makeProgram({
+          weeks: [
+            makeWeek({
+              id: "testing-week",
+              position: 1,
+              label: "Testing Week",
+              is_testing_week: true,
+              days: [
+                makeDay({
+                  id: "testing-day",
+                  week_id: "testing-week",
+                  blocks: [
+                    makeBlock({
+                      id: "testing-block",
+                      day_id: "testing-day",
+                      exercises: [makeExercise({ id: "ex-testing", block_id: "testing-block", exercise_id: "barbell-back-squat", test_max_before: false })],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+            makeWeek({
+              id: "week-2",
+              position: 2,
+              label: "Week 2",
+              days: [
+                makeDay({
+                  id: "day-2",
+                  week_id: "week-2",
+                  blocks: [
+                    makeBlock({
+                      id: "block-2",
+                      day_id: "day-2",
+                      exercises: [makeExercise({ id: "ex-2", block_id: "block-2", exercise_id: "barbell-back-squat", test_max_before: false })],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Week 2" }));
+    await user.click(screen.getByRole("button", { name: "Toggle test max before" }));
+
+    await waitFor(() => expect(m.updateBlockExercise).toHaveBeenCalledWith(expect.anything(), "ex-2", { test_max_before: true }));
+    expect(m.updateBlockExercise).not.toHaveBeenCalledWith(expect.anything(), "ex-testing", expect.anything());
+
+    await user.click(screen.getByRole("button", { name: "Testing Week" }));
+    expect(await screen.findByText("not-flagged")).toBeInTheDocument();
   });
 });

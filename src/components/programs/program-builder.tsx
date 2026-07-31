@@ -667,15 +667,72 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
 
   /** "Test max before" checkbox (migration 0054) — see syncTestingWeek's own
    * doc comment for what flipping this actually feeds into once the "Add
-   * testing week" button below is pressed. */
+   * testing week" button below is pressed.
+   *
+   * The same exercise (e.g. Back Squat) commonly appears more than once
+   * across a program — every day it's used, every week — and
+   * syncTestingWeek already treats "flagged anywhere" as "test it once,"
+   * deduping by exercise_id. Ticking the box on just one of those
+   * appearances but leaving the others unchecked would look like a bug
+   * (why is Back Squat ticked on Day 1 but not Day 3?), so this propagates
+   * the new value to every block_exercise sharing the same exercise_id
+   * across the whole program at once — not just the one row that was
+   * actually clicked. The generated testing week's own copy of the
+   * exercise (program_weeks.is_testing_week) is deliberately excluded:
+   * that row's flag is never read by anything (syncTestingWeek already
+   * skips its own week when scanning), so touching it would just be noise. */
   function handleTestMaxBeforeChange(dayId: string, blockId: string, blockExerciseId: string, testMaxBefore: boolean) {
-    updateBlock(week.id, dayId, blockId, (b) => ({
-      ...b,
-      exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, test_max_before: testMaxBefore } : ex)),
+    const toggled = week.days.find((d) => d.id === dayId)?.blocks.find((b) => b.id === blockId)?.exercises.find((e) => e.id === blockExerciseId);
+    const exerciseId = toggled?.exercise_id ?? null;
+
+    if (!exerciseId) {
+      // Shouldn't happen — the checkbox only renders for a linked exercise
+      // — but fail safe to a single-row update rather than silently doing
+      // nothing.
+      updateBlock(week.id, dayId, blockId, (b) => ({
+        ...b,
+        exercises: b.exercises.map((ex) => (ex.id === blockExerciseId ? { ...ex, test_max_before: testMaxBefore } : ex)),
+      }));
+      track(m.updateBlockExercise(supabase, blockExerciseId, { test_max_before: testMaxBefore })).then(({ error }) => {
+        if (error) fail(error);
+      });
+      return;
+    }
+
+    // Computed from the current `program` (not inside the setState updater
+    // below, which must stay a pure function of its previous state) — this
+    // is what actually decides which rows get a background write.
+    const matchingIds = program.weeks
+      .filter((w) => !w.is_testing_week)
+      .flatMap((w) => w.days)
+      .flatMap((d) => d.blocks)
+      .flatMap((b) => b.exercises)
+      .filter((ex) => ex.exercise_id === exerciseId)
+      .map((ex) => ex.id);
+
+    setProgram((p) => ({
+      ...p,
+      weeks: p.weeks.map((w) =>
+        w.is_testing_week
+          ? w
+          : {
+              ...w,
+              days: w.days.map((d) => ({
+                ...d,
+                blocks: d.blocks.map((b) => ({
+                  ...b,
+                  exercises: b.exercises.map((ex) => (ex.exercise_id === exerciseId ? { ...ex, test_max_before: testMaxBefore } : ex)),
+                })),
+              })),
+            }
+      ),
     }));
-    track(m.updateBlockExercise(supabase, blockExerciseId, { test_max_before: testMaxBefore })).then(({ error }) => {
-      if (error) fail(error);
-    });
+
+    for (const id of matchingIds) {
+      track(m.updateBlockExercise(supabase, id, { test_max_before: testMaxBefore })).then(({ error }) => {
+        if (error) fail(error);
+      });
+    }
   }
 
   /** A name typed into the exercise search that didn't match anything
