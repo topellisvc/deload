@@ -1482,6 +1482,31 @@ export async function updateBlockExercise(
 }
 
 /**
+ * Sets test_max_before on every listed block_exercise row in ONE statement
+ * (`UPDATE ... WHERE id = ANY(...)`), instead of the caller firing one
+ * `updateBlockExercise` per row. That per-row approach is how the "Test
+ * max before" checkbox's cross-program propagation (program-builder.tsx's
+ * handleTestMaxBeforeChange, which can touch a dozen+ rows for an exercise
+ * reused across many days/weeks) used to work, and it was firing that many
+ * concurrent PATCH requests each re-evaluating block_exercises' 4-way-join
+ * RLS policy at once — which was enough concurrent write load to blow
+ * through the `authenticated` role's 8s statement_timeout on this
+ * project's compute tier (confirmed via Postgres logs: bursts of
+ * "canceling statement due to statement timeout" lining up exactly with
+ * these updates). A single batched UPDATE does the same RLS check once
+ * against the whole row set, not once per row.
+ */
+export async function updateBlockExercisesTestMaxBefore(
+  supabase: SupabaseClient,
+  blockExerciseIds: string[],
+  testMaxBefore: boolean
+): Promise<{ error: string | null }> {
+  if (blockExerciseIds.length === 0) return { error: null };
+  const { error } = await supabase.from("block_exercises").update({ test_max_before: testMaxBefore }).in("id", blockExerciseIds);
+  return { error: error?.message ?? null };
+}
+
+/**
  * Switches an exercise between categories (strength/running/cardio). The
  * three shapes don't share meaningful values — "3 sets of 8 reps" has no
  * equivalent as a distance — so this replaces all of the exercise's

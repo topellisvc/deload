@@ -133,6 +133,7 @@ vi.mock("@/lib/programs/mutations", () => ({
   updateBlockType: vi.fn(),
   swapBlockPositions: vi.fn(),
   updateBlockExercise: vi.fn(),
+  updateBlockExercisesTestMaxBefore: vi.fn(),
   switchExerciseCategory: vi.fn(),
   updatePrescriptionType: vi.fn(),
   addSetRow: vi.fn(),
@@ -481,10 +482,10 @@ describe("ProgramBuilder autosave status indicator", () => {
  */
 describe("ProgramBuilder 'Test max before' propagates across every appearance of the same exercise", () => {
   beforeEach(() => {
-    vi.mocked(m.updateBlockExercise).mockReset().mockResolvedValue({ error: null });
+    vi.mocked(m.updateBlockExercisesTestMaxBefore).mockReset().mockResolvedValue({ error: null });
   });
 
-  it("flags every other block_exercise sharing the same exercise_id, across every week, and writes each one", async () => {
+  it("flags every other block_exercise sharing the same exercise_id, across every week, and writes them in one batched call", async () => {
     const user = userEvent.setup();
     render(
       <ProgramBuilder
@@ -526,9 +527,11 @@ describe("ProgramBuilder 'Test max before' propagates across every appearance of
 
     await user.click(screen.getByRole("button", { name: "Toggle test max before" }));
 
+    // One batched statement covering both rows, not one PATCH per row —
+    // firing N concurrent single-row updates was enough concurrent write
+    // load to trip this project's statement_timeout in practice.
     await waitFor(() => {
-      expect(m.updateBlockExercise).toHaveBeenCalledWith(expect.anything(), "ex-1", { test_max_before: true });
-      expect(m.updateBlockExercise).toHaveBeenCalledWith(expect.anything(), "ex-2", { test_max_before: true });
+      expect(m.updateBlockExercisesTestMaxBefore).toHaveBeenCalledWith(expect.anything(), expect.arrayContaining(["ex-1", "ex-2"]), true);
     });
 
     await user.click(screen.getByRole("button", { name: "Week 2" }));
@@ -586,8 +589,7 @@ describe("ProgramBuilder 'Test max before' propagates across every appearance of
     await user.click(screen.getByRole("button", { name: "Week 2" }));
     await user.click(screen.getByRole("button", { name: "Toggle test max before" }));
 
-    await waitFor(() => expect(m.updateBlockExercise).toHaveBeenCalledWith(expect.anything(), "ex-2", { test_max_before: true }));
-    expect(m.updateBlockExercise).not.toHaveBeenCalledWith(expect.anything(), "ex-testing", expect.anything());
+    await waitFor(() => expect(m.updateBlockExercisesTestMaxBefore).toHaveBeenCalledWith(expect.anything(), ["ex-2"], true));
 
     await user.click(screen.getByRole("button", { name: "Testing Week" }));
     expect(await screen.findByText("not-flagged")).toBeInTheDocument();

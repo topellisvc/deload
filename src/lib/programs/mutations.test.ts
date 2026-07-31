@@ -19,6 +19,7 @@ import {
   reorderSets,
   saveProgramAsTemplate,
   syncTestingWeek,
+  updateBlockExercisesTestMaxBefore,
 } from "./mutations";
 import type { BlockExerciseRow, BlockRow, DayRow, DayTemplateRow, ExerciseTemplateRow, WeekRow } from "./types";
 import { getProgramTree } from "./queries";
@@ -1257,5 +1258,46 @@ describe("syncTestingWeek", () => {
     expect(inserted).toEqual({});
     expect(updated).toEqual([]);
     expect(getProgramTree).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateBlockExercisesTestMaxBefore", () => {
+  /** One batched `.update().in()` statement instead of the N single-row
+   * `.update().eq()` calls updateBlockExercise would need — see this
+   * function's doc comment in mutations.ts for why: firing that many
+   * concurrent PATCH requests from the builder's checkbox-propagation flow
+   * was enough concurrent write load to trip this project's 8s
+   * statement_timeout in practice (confirmed via Postgres logs). */
+  function makeInMock() {
+    const calls: { table: string; patch: Record<string, unknown>; column: string; values: unknown[] }[] = [];
+    const supabase = {
+      from: vi.fn((table: string) => ({
+        update: vi.fn((patch: Record<string, unknown>) => ({
+          in: vi.fn((column: string, values: unknown[]) => {
+            calls.push({ table, patch, column, values });
+            return Promise.resolve({ error: null });
+          }),
+        })),
+      })),
+    };
+    return { supabase, calls };
+  }
+
+  it("issues a single UPDATE ... WHERE id = ANY(...) covering every id, not one call per id", async () => {
+    const { supabase, calls } = makeInMock();
+
+    const { error } = await updateBlockExercisesTestMaxBefore(supabase as never, ["ex-1", "ex-2", "ex-3"], true);
+
+    expect(error).toBeNull();
+    expect(calls).toEqual([{ table: "block_exercises", patch: { test_max_before: true }, column: "id", values: ["ex-1", "ex-2", "ex-3"] }]);
+  });
+
+  it("skips the round trip entirely for an empty id list", async () => {
+    const { supabase, calls } = makeInMock();
+
+    const { error } = await updateBlockExercisesTestMaxBefore(supabase as never, [], false);
+
+    expect(error).toBeNull();
+    expect(calls).toEqual([]);
   });
 });

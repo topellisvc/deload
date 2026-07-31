@@ -728,11 +728,13 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       ),
     }));
 
-    for (const id of matchingIds) {
-      track(m.updateBlockExercise(supabase, id, { test_max_before: testMaxBefore })).then(({ error }) => {
-        if (error) fail(error);
-      });
-    }
+    // One batched statement rather than one PATCH per matching row — firing
+    // N concurrent single-row updates here was enough concurrent write load
+    // to trip the project's 8s statement_timeout (see
+    // updateBlockExercisesTestMaxBefore's doc comment in mutations.ts).
+    track(m.updateBlockExercisesTestMaxBefore(supabase, matchingIds, testMaxBefore)).then(({ error }) => {
+      if (error) fail(error);
+    });
   }
 
   /** A name typed into the exercise search that didn't match anything
