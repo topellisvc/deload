@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ArrowRightLeft, BookMarked, Copy, Info, StickyNote, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, BookMarked, ChevronRight, Copy, Info, StickyNote, Trash2, X } from "lucide-react";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { summarizePrescriptionPrimary, summarizeRest } from "@/lib/programs/prescription-summary";
 import { EXERCISE_CATEGORY_ACTIVE_CLASSES, EXERCISE_CATEGORY_LABELS, defaultPrescriptionType } from "@/lib/programs/prescription-types";
@@ -183,6 +183,16 @@ export function ExerciseCard({
               {noteSummary && <span className="italic">· {noteSummary}</span>}
             </span>
           </div>
+          {/* Nothing else in the collapsed row hinted this whole thing is a
+              button — hover:bg-surface-hover is invisible on touch, and a
+              plain row of text reads as a label, not a control. A rotating
+              chevron is the standard "this expands" affordance (same idea
+              as a native <details>/accordion disclosure triangle), and it
+              also doubles as a live expanded/collapsed indicator. */}
+          <ChevronRight
+            aria-hidden="true"
+            className={cn("size-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")}
+          />
         </button>
 
         <div className="flex shrink-0 items-center gap-0.5">
