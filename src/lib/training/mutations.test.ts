@@ -38,7 +38,7 @@ vi.mock("@/lib/profile/mutations", () => ({ upsertPersonalRecord: vi.fn() }));
 // tests can inspect after the call to assert what got written.
 function makeSupabase(
   existing: { id: string } | null,
-  maxTestRows: { id: string; pr_record_type: string | null }[] = [],
+  maxTestRows: { id: string; pr_record_type: string | null; rir_value?: number | null }[] = [],
   options: { blockExercises?: { id: string; exercise_id: string | null }[]; exerciseMaxInserts?: Record<string, unknown>[] } = {}
 ) {
   const blockExercises = options.blockExercises ?? [{ id: "ex-1", exercise_id: "exercise-1" }];
@@ -240,8 +240,8 @@ describe("finishWorkout — auto-saving a personal record from a logged max-test
     expect(upsertPersonalRecord).not.toHaveBeenCalled();
   });
 
-  it("skips the auto-save (fails open) when RIR wasn't logged for the max-test set", async () => {
-    const supabase = makeSupabase(null, [{ id: "set-1", pr_record_type: "squat" }]) as never;
+  it("skips the auto-save (fails open) when RIR wasn't logged AND the set has no prescribed rir_value either", async () => {
+    const supabase = makeSupabase(null, [{ id: "set-1", pr_record_type: "squat", rir_value: null }]) as never;
     await finishWorkout(supabase, {
       trainingDayId: "day-1",
       athleteId: "athlete-1",
@@ -253,6 +253,56 @@ describe("finishWorkout — auto-saving a personal record from a logged max-test
     });
 
     expect(upsertPersonalRecord).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regression test: Training Mode's own logger never asks for RIR at all
+   * (strength-set-logger.tsx has weight and reps inputs only), so every max
+   * test logged through it had performedRir: null — meaning the OLD guard
+   * here (skip whenever performedRir is null) silently skipped the
+   * auto-save for every single Training-Mode-logged test, no matter how
+   * many were logged. Falling back to the set's own prescribed rir_value
+   * (which syncTestingWeek/the generator always set, e.g. 1) is what makes
+   * this resolve at all.
+   */
+  it("falls back to the set's own prescribed rir_value when performedRir wasn't logged (Training Mode's case)", async () => {
+    const supabase = makeSupabase(null, [{ id: "set-1", pr_record_type: "squat", rir_value: 1 }]) as never;
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [makeDraftSet({ setPrescriptionId: "set-1", performedWeight: 100, performedReps: 5, performedRir: null })],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: null,
+      readiness: null,
+    });
+
+    expect(upsertPersonalRecord).toHaveBeenCalledWith(
+      supabase,
+      "athlete-1",
+      expect.objectContaining({ recordType: "squat", unit: "kg", achievedOn: "2026-07-27", valueNumber: expect.any(Number) })
+    );
+  });
+
+  it("prefers the athlete's own reported RIR over the prescribed rir_value when both are present", async () => {
+    // Prescribed rir_value is 1, but the athlete reported grinding it out at
+    // RIR 0 — the real report of what happened should win.
+    const supabase = makeSupabase(null, [{ id: "set-1", pr_record_type: "squat", rir_value: 1 }]) as never;
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [makeDraftSet({ setPrescriptionId: "set-1", performedWeight: 100, performedReps: 5, performedRir: 0 })],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: null,
+      readiness: null,
+    });
+
+    // RIR 0 at 5 reps -> 86% -> e1RM ~116.3, vs RIR 1 -> 84% -> ~119.0.
+    // Asserting the RIR-0 figure confirms the reported value was actually
+    // used, not silently ignored in favor of the prescribed one.
+    const call = vi.mocked(upsertPersonalRecord).mock.calls[0]!;
+    expect(call[2].valueNumber).toBeCloseTo(116.3, 1);
   });
 });
 
@@ -313,6 +363,27 @@ describe("finishWorkout — auto-saving to exercise_max_records (migration 0054'
     expect(upsertPersonalRecord).not.toHaveBeenCalled();
     expect(exerciseMaxInserts).toHaveLength(1);
     expect(exerciseMaxInserts[0]).toMatchObject({ athlete_id: "athlete-1", exercise_id: "bulgarian-split-squat" });
+  });
+
+  it("writes to exercise_max_records for a Training-Mode-logged test (no performedRir) via the prescribed rir_value fallback", async () => {
+    const exerciseMaxInserts: Record<string, unknown>[] = [];
+    const supabase = makeSupabase(null, [{ id: "set-1", pr_record_type: null, rir_value: 1 }], {
+      blockExercises: [{ id: "ex-1", exercise_id: "barbell-back-squat" }],
+      exerciseMaxInserts,
+    }) as never;
+
+    await finishWorkout(supabase, {
+      trainingDayId: "day-1",
+      athleteId: "athlete-1",
+      draftSets: [makeDraftSet({ setPrescriptionId: "set-1", blockExerciseId: "ex-1", performedWeight: 110, performedReps: 5, performedRir: null })],
+      exerciseNotes: {},
+      skippedExercises: {},
+      workoutNote: null,
+      readiness: null,
+    });
+
+    expect(exerciseMaxInserts).toHaveLength(1);
+    expect(exerciseMaxInserts[0]).toMatchObject({ athlete_id: "athlete-1", exercise_id: "barbell-back-squat" });
   });
 
   it("never writes to exercise_max_records for an ordinary (non-max-test) logged set", async () => {

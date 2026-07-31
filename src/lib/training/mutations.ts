@@ -235,18 +235,36 @@ export async function applyJointLadderStep(
  *
  * Best-effort and doesn't block or undo the workout log that already
  * landed if it fails — same rationale applyJointLadderStep's substitution
- * writes give for the same tradeoff. Skips (rather than guesses at) any
- * set missing weight/reps/rir, the same fails-open convention
+ * writes give for the same tradeoff. Skips (rather than guesses at) any set
+ * still missing weight or reps, the same fails-open convention
  * toPercent1RMPlan already uses when it can't read a usable target from a
- * plan.
+ * plan. RIR is the one exception: Training Mode's own logger never asks for
+ * it (weight and reps only — see strength-set-logger.tsx), so this falls
+ * back to the set's own prescribed rir_value when the athlete didn't report
+ * one, rather than skipping every Training-Mode-logged test outright. See
+ * the rir fallback's own comment below for why.
  */
 async function saveMaxTestRecords(supabase: SupabaseClient, athleteId: string, draftSets: DraftSet[], performedOn: string): Promise<void> {
   const candidateIds = draftSets.map((s) => s.setPrescriptionId).filter((id): id is string => id != null);
   if (candidateIds.length === 0) return;
 
-  const { data } = await supabase.from("set_prescriptions").select("id, pr_record_type").eq("is_max_test", true).in("id", candidateIds);
-  const maxTestRows = (data ?? []) as { id: string; pr_record_type: string | null }[];
+  const { data } = await supabase.from("set_prescriptions").select("id, pr_record_type, rir_value").eq("is_max_test", true).in("id", candidateIds);
+  const maxTestRows = (data ?? []) as { id: string; pr_record_type: string | null; rir_value: number | null }[];
   const recordTypeById = new Map(maxTestRows.map((row) => [row.id, row.pr_record_type]));
+  // Training Mode's own logger never asks for RIR at all (strength-set-
+  // logger.tsx: "No RPE input... deliberately narrower, input" — weight and
+  // reps only), so s.performedRir is always null for every set logged that
+  // way. Falling back to the set's own PRESCRIBED rir_value (the testing
+  // week's block/set always carries one — see syncTestingWeek/
+  // load-calculation.ts, "work up to one hard set of 5 reps ... about 1 rep
+  // left in the tank") is what makes a max test logged through Training
+  // Mode resolve to an e1RM at all; without this fallback estimate1RM never
+  // ran for a Training-Mode-logged test, so exercise_max_records/
+  // personal_records never got a row no matter how many tests were logged.
+  // The desktop Coach Review table *does* still let the athlete report an
+  // actual RIR, so that value — a real report of what happened — always
+  // wins over the prescribed target when it's present.
+  const prescribedRirById = new Map(maxTestRows.map((row) => [row.id, row.rir_value]));
   if (recordTypeById.size === 0) return;
 
   // exercise_max_records is keyed by exercise_id, which lives on
@@ -266,8 +284,9 @@ async function saveMaxTestRecords(supabase: SupabaseClient, athleteId: string, d
   await Promise.all(
     draftSets.map(async (s) => {
       if (!s.setPrescriptionId || !recordTypeById.has(s.setPrescriptionId)) return;
-      if (s.performedWeight == null || s.performedReps == null || s.performedRir == null) return;
-      const oneRepMax = estimate1RM({ loadKg: s.performedWeight, reps: s.performedReps, rir: s.performedRir });
+      const rir = s.performedRir ?? prescribedRirById.get(s.setPrescriptionId) ?? null;
+      if (s.performedWeight == null || s.performedReps == null || rir == null) return;
+      const oneRepMax = estimate1RM({ loadKg: s.performedWeight, reps: s.performedReps, rir });
       if (oneRepMax == null) return;
 
       const recordType = recordTypeById.get(s.setPrescriptionId);
