@@ -10,6 +10,7 @@ import type {
   DashboardStats,
   TodayWorkout,
   UpcomingSession,
+  WeeklyTrainingSummary,
 } from "@/lib/dashboard/types";
 
 // getCoachingDashboard moved to @/lib/coaching/queries — it's coaching
@@ -278,6 +279,102 @@ export async function getRecentSessionActivity(
 }
 
 // ============================================================
+// This week's real training numbers (stat cluster + volume chart)
+// ============================================================
+
+/**
+ * Powers the dashboard's "This Week" stat cards and Weekly Volume chart —
+ * see WeeklyTrainingSummary's own doc comment for why every field uses the
+ * same rolling-7-day window. Two queries: session_logs (which days, whether
+ * skipped) and logged_sets (what was actually performed) for those logs —
+ * same two tables getRecentActivity and getActiveProgramContext already
+ * read, just scoped to the last 7 days and joined down to the set level,
+ * which neither of those needed to do.
+ */
+export async function getWeeklyTrainingSummary(
+  supabase: SupabaseClient,
+  userId: string,
+  activeContext: ActiveProgramContext | null
+): Promise<WeeklyTrainingSummary> {
+  const today = todayDateString();
+  const windowStart = shiftDate(today, -6);
+
+  let workoutsScheduledThisWeek: number | null = null;
+  if (activeContext) {
+    const nonRestDayCount = activeContext.program.weeks.reduce(
+      (n, w) => n + w.days.filter((d) => !d.is_rest_day).length,
+      0
+    );
+    if (nonRestDayCount > 0) {
+      const avgNonRestPerWeek = nonRestDayCount / (activeContext.program.weeks.length || 1);
+      workoutsScheduledThisWeek = Math.round(avgNonRestPerWeek);
+    }
+  }
+
+  const { data: logsData } = await supabase
+    .from("session_logs")
+    .select("id, training_day_id, performed_on, skipped")
+    .eq("athlete_id", userId)
+    .gte("performed_on", windowStart)
+    .order("performed_on", { ascending: true });
+  const logs = (logsData ?? []) as { id: string; training_day_id: string; performed_on: string; skipped: boolean }[];
+  const trainedLogs = logs.filter((l) => !l.skipped);
+
+  const dailyVolume = new Map<string, number>();
+  for (let i = 0; i < 7; i++) dailyVolume.set(shiftDate(windowStart, i), 0);
+
+  const workoutsThisWeek = new Set(trainedLogs.map((l) => l.training_day_id)).size;
+
+  if (trainedLogs.length === 0) {
+    return {
+      workoutsThisWeek: 0,
+      workoutsScheduledThisWeek,
+      volumeThisWeekKg: 0,
+      avgRpeThisWeek: null,
+      dailyVolumeKg: Array.from(dailyVolume.entries()).map(([date, volumeKg]) => ({ date, volumeKg })),
+    };
+  }
+
+  const sessionLogIds = trainedLogs.map((l) => l.id);
+  const performedOnByLogId = new Map(trainedLogs.map((l) => [l.id, l.performed_on]));
+
+  const { data: setsData } = await supabase
+    .from("logged_sets")
+    .select("session_log_id, performed_weight, performed_reps, performed_rpe")
+    .in("session_log_id", sessionLogIds);
+  const sets = (setsData ?? []) as {
+    session_log_id: string;
+    performed_weight: number | null;
+    performed_reps: number | null;
+    performed_rpe: number | null;
+  }[];
+
+  let volumeThisWeekKg = 0;
+  let rpeSum = 0;
+  let rpeCount = 0;
+  for (const set of sets) {
+    if (set.performed_weight != null && set.performed_reps != null) {
+      const vol = set.performed_weight * set.performed_reps;
+      volumeThisWeekKg += vol;
+      const date = performedOnByLogId.get(set.session_log_id);
+      if (date && dailyVolume.has(date)) dailyVolume.set(date, (dailyVolume.get(date) ?? 0) + vol);
+    }
+    if (set.performed_rpe != null) {
+      rpeSum += set.performed_rpe;
+      rpeCount += 1;
+    }
+  }
+
+  return {
+    workoutsThisWeek,
+    workoutsScheduledThisWeek,
+    volumeThisWeekKg: Math.round(volumeThisWeekKg),
+    avgRpeThisWeek: rpeCount > 0 ? Math.round((rpeSum / rpeCount) * 10) / 10 : null,
+    dailyVolumeKg: Array.from(dailyVolume.entries()).map(([date, volumeKg]) => ({ date, volumeKg: Math.round(volumeKg) })),
+  };
+}
+
+// ============================================================
 // Recent activity (own logs + own coach relationships starting)
 // ============================================================
 
@@ -351,6 +448,35 @@ export async function getRecentActivity(supabase: SupabaseClient, userId: string
       occurredAt: rel.created_at,
       detail: `Started training with ${rel.coach_email}`,
     });
+  }
+
+  // New 1RM events — straight from exercise_max_records (migration 0054),
+  // the same append-only "library of maxes" table both a logged max-test
+  // set and a coach's manually-entered known max write to (see
+  // lib/programs/mutations.ts's saveKnownExerciseMax and
+  // lib/training/mutations.ts's saveMaxTestRecords). Either source shows up
+  // here identically — this is "a new max got recorded," not "a testing
+  // week set got logged."
+  const { data: maxTestsData } = await supabase
+    .from("exercise_max_records")
+    .select("id, exercise_id, estimated_1rm_kg, created_at")
+    .eq("athlete_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  const maxTests = (maxTestsData ?? []) as { id: string; exercise_id: string; estimated_1rm_kg: number; created_at: string }[];
+  if (maxTests.length > 0) {
+    const exerciseIds = Array.from(new Set(maxTests.map((m) => m.exercise_id)));
+    const { data: exercisesData } = await supabase.from("exercises").select("id, name").in("id", exerciseIds);
+    const exerciseNameById = new Map(((exercisesData ?? []) as { id: string; name: string }[]).map((e) => [e.id, e.name]));
+    for (const m of maxTests) {
+      events.push({
+        type: "max_test",
+        id: m.id,
+        occurredAt: m.created_at,
+        exerciseName: exerciseNameById.get(m.exercise_id) ?? "an exercise",
+        estimated1RMKg: m.estimated_1rm_kg,
+      });
+    }
   }
 
   events.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));

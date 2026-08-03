@@ -74,9 +74,39 @@ export interface DashboardStats {
 /**
  * Discriminated union so Recent Activity can grow new event types (program
  * edits, coach messages, PR hits) without changing the shape callers
- * already handle — only `session_log` and `coach_interaction` are actually
- * emitted today, since those are the only ones backed by real data.
+ * already handle — `session_log`, `coach_interaction`, and `max_test` are
+ * emitted today, all backed by real data (max_test straight from
+ * exercise_max_records, migration 0054 — see getRecentActivity).
  */
 export type ActivityEvent =
   | { type: "session_log"; id: string; occurredAt: string; dayLabel: string; programName: string; skipped: boolean }
-  | { type: "coach_interaction"; id: string; occurredAt: string; detail: string };
+  | { type: "coach_interaction"; id: string; occurredAt: string; detail: string }
+  | { type: "max_test"; id: string; occurredAt: string; exerciseName: string; estimated1RMKg: number };
+
+/**
+ * Real "this week" training numbers for the dashboard's stat cluster and
+ * volume chart — see getWeeklyTrainingSummary. Deliberately a rolling last
+ * 7 calendar days for every field (workouts, volume, avg RPE, the daily
+ * chart) rather than mixing that with the app's other "current program
+ * week" concept (completionPercent/consistencyPercent's week) — a program
+ * week isn't calendar-anchored, so a single consistent 7-day window is
+ * easier to reason about than two different "week"s on the same card.
+ */
+export interface WeeklyTrainingSummary {
+  /** Distinct non-rest training days logged (not skipped), last 7 days. */
+  workoutsThisWeek: number;
+  /** The active program's own average non-rest days per week, rounded —
+   * same cadence math consistencyPercent already derives (avgNonRestPerWeek
+   * in getActiveProgramContext), just read as "sessions a typical week
+   * calls for" instead of folded into a ratio. Null with no active program. */
+  workoutsScheduledThisWeek: number | null;
+  /** Sum of performed_weight * performed_reps across every logged set, last
+   * 7 days — the athlete's own reported performance (logged_sets, migration
+   * 0012), not an estimate. */
+  volumeThisWeekKg: number;
+  /** Average performed_rpe across sets that reported one, last 7 days. Null
+   * if nothing in the window reported an RPE (e.g. an all-RIR program). */
+  avgRpeThisWeek: number | null;
+  /** One entry per of the last 7 calendar days, oldest first. */
+  dailyVolumeKg: { date: string; volumeKg: number }[];
+}

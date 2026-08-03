@@ -8,17 +8,21 @@ import {
   getDashboardStats,
   getRecentActivity,
   getRecentSessionActivity,
+  getWeeklyTrainingSummary,
 } from "@/lib/dashboard/queries";
 import { computeInsights } from "@/lib/dashboard/insights";
 import { createProgramFromTemplate } from "@/lib/programs/mutations";
 import { getStarterTemplate } from "@/lib/programs/starter-templates";
 import { HeroSection } from "@/components/dashboard/hero-section";
 import { DashboardSnapshot } from "@/components/dashboard/dashboard-snapshot";
+import { ThisWeekStats } from "@/components/dashboard/this-week-stats";
 import { TodayWorkoutSection } from "@/components/dashboard/today-workout-section";
+import { WeeklyVolumeChart } from "@/components/dashboard/weekly-volume-chart";
 import { ProgressSection } from "@/components/dashboard/progress-section";
 import { EvidenceInsightsSection } from "@/components/dashboard/evidence-insights-section";
 import { GoalsSection } from "@/components/dashboard/goals-section";
 import { RecentActivitySection } from "@/components/dashboard/recent-activity-section";
+import { PersonalRecordsRow } from "@/components/dashboard/personal-records-row";
 import { UpcomingSection } from "@/components/dashboard/upcoming-section";
 import { CoachingDashboardSection } from "@/components/dashboard/coaching-dashboard-section";
 
@@ -80,12 +84,13 @@ export default async function DashboardPage({
     getActiveProgramContext(supabase, user.id, viewedDayId ?? null),
   ]);
 
-  const [stats, recentSessionActivity, records, recentActivity, coachingData] = await Promise.all([
+  const [stats, recentSessionActivity, records, recentActivity, coachingData, weeklySummary] = await Promise.all([
     getDashboardStats(supabase, user.id, profile.role, activeContext),
     getRecentSessionActivity(supabase, user.id),
     getPersonalRecords(supabase, user.id),
     getRecentActivity(supabase, user.id),
     profile.role === "coach" ? getCoachingDashboard(supabase, user.id) : Promise.resolve(null),
+    getWeeklyTrainingSummary(supabase, user.id, activeContext),
   ]);
 
   let upcomingWeekLabel: string | null = null;
@@ -105,12 +110,41 @@ export default async function DashboardPage({
   });
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-12">
-      <HeroSection displayName={profile.display_name} email={user.email ?? ""} athleteId={user.id} activeContext={activeContext} />
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8 lg:py-10">
+      {/* Desktop-only card grid (the mockups Ellis shared) — Active Program
+          beside This Week's real numbers, then Next Workout / Weekly Volume
+          / Recent Activity in a row, then the main-lift PRs. Hidden below
+          lg; the single-column stack right below renders the exact same
+          underlying data (activeContext, recentActivity, records) through
+          the ordinary mobile components instead — see the lg:hidden
+          wrappers there for which 4 sections this grid supersedes.
+          Progress/Evidence Insights/Goals/Upcoming/Coaching have no
+          desktop-specific equivalent, so they're not duplicated up here —
+          they stay in their one spot in the stack below at every width. */}
+      <div className="hidden lg:flex lg:flex-col lg:gap-4">
+        <div className="grid grid-cols-[2fr_1fr] items-start gap-4">
+          <HeroSection displayName={profile.display_name} email={user.email ?? ""} athleteId={user.id} activeContext={activeContext} />
+          <ThisWeekStats summary={weeklySummary} consistencyPercent={activeContext?.consistencyPercent ?? null} />
+        </div>
+        <div className="grid grid-cols-3 items-start gap-4">
+          <TodayWorkoutSection context={activeContext} />
+          <WeeklyVolumeChart data={weeklySummary.dailyVolumeKg} />
+          <RecentActivitySection events={recentActivity} />
+        </div>
+        <PersonalRecordsRow records={records} />
+      </div>
 
-      <DashboardSnapshot stats={stats} />
+      <div className="lg:hidden">
+        <HeroSection displayName={profile.display_name} email={user.email ?? ""} athleteId={user.id} activeContext={activeContext} />
+      </div>
 
-      <TodayWorkoutSection context={activeContext} />
+      <div className="lg:hidden">
+        <DashboardSnapshot stats={stats} />
+      </div>
+
+      <div className="lg:hidden">
+        <TodayWorkoutSection context={activeContext} />
+      </div>
 
       <ProgressSection stats={stats} records={records} profile={profile} />
 
@@ -118,7 +152,9 @@ export default async function DashboardPage({
 
       <GoalsSection goal={profile.goal} />
 
-      <RecentActivitySection events={recentActivity} />
+      <div className="lg:hidden">
+        <RecentActivitySection events={recentActivity} />
+      </div>
 
       <UpcomingSection sessions={activeContext?.upcoming ?? []} />
 

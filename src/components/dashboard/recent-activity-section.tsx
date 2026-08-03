@@ -1,4 +1,4 @@
-import { Dumbbell, SkipForward, Users } from "lucide-react";
+import { Dumbbell, SkipForward, TrendingUp, Users } from "lucide-react";
 import type { ActivityEvent } from "@/lib/dashboard/types";
 
 function formatWhen(iso: string): string {
@@ -6,9 +6,9 @@ function formatWhen(iso: string): string {
 }
 
 /**
- * Newest first (getRecentActivity already sorts). Only session_log and
- * coach_interaction events exist today; the ActivityEvent union has room
- * for program_change and richer coach events later without this component
+ * Newest first (getRecentActivity already sorts). session_log,
+ * coach_interaction, and max_test events exist today; the ActivityEvent
+ * union has room for program_change events later without this component
  * needing a rewrite — just another arm in the switch below. `title` is
  * overridable so the coaching hub's athlete detail page can label this
  * "Workout history" while /dashboard keeps "Recent activity" — same
@@ -38,11 +38,21 @@ export function RecentActivitySection({ events, title = "Recent activity" }: { e
                     <p className="text-xs text-muted-foreground">{formatWhen(event.occurredAt)}</p>
                   </div>
                 </>
-              ) : (
+              ) : event.type === "coach_interaction" ? (
                 <>
                   <Users className="mt-0.5 size-4 shrink-0 text-primary" />
                   <div className="flex-1">
                     <p className="text-sm text-foreground">{event.detail}</p>
+                    <p className="text-xs text-muted-foreground">{formatWhen(event.occurredAt)}</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <TrendingUp className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div className="flex-1">
+                    <p className="text-sm text-foreground">
+                      New 1RM — {event.exerciseName} <span className="tabular-nums">{event.estimated1RMKg}kg</span>
+                    </p>
                     <p className="text-xs text-muted-foreground">{formatWhen(event.occurredAt)}</p>
                   </div>
                 </>
