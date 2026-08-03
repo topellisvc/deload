@@ -10,28 +10,35 @@ import { AccountMenu } from "@/components/auth/account-menu";
 import { AuthNavLink } from "@/components/auth-nav-link";
 import { ExerciseLibraryNavLink } from "@/components/exercise-library-nav-link";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { useAuth } from "@/components/providers/auth-provider";
 import { isActivePath, navLinkActiveClassName, navLinkClassName } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 /**
- * Dashboard, Programs, History, Coaching, Exercises, Insights, Tools, plus
- * the bell and account menu — still a lot once everything's auth-gated in,
- * too many to stay inline once the viewport narrows. Collapses into a
- * hamburger below `lg` (1024px); at `lg` and above it's the same flat row
- * as before. Every link — auth-gated ones via AuthNavLink, the static ones
- * (Programs, Insights, Tools) inline here — highlights itself as the
- * current page via lib/nav.ts's isActivePath, so it's always clear where
- * you are.
+ * Two different jobs depending on who's looking and how wide the screen is:
  *
- * Desktop's email/Profile/sign-out/theme-toggle cluster lives behind
- * AccountMenu's single avatar trigger instead of four separate items (see
- * that file) — Profile and the email both pointed at the same page, so
- * showing both was redundant. The mobile hamburger panel below still uses
- * AuthStatus directly; it's a vertical list already, not a crowded row.
+ * - Signed IN, at `lg` and above (1024px+): renders nothing (`lg:hidden`
+ *   kicks in once `user` is set). AppSidebar (app-shell.tsx) is the real
+ *   navigation there now — a persistent left sidebar, not this horizontal
+ *   row — since Ellis asked for the sidebar to replace desktop nav entirely
+ *   ("site wide but only for desktop").
+ * - Everyone else — signed out at any width, or signed in below `lg` —
+ *   still gets this component exactly as before: the flat desktop row at
+ *   `lg`+, collapsing into the hamburger panel below it. Signed-out visitors
+ *   specifically still need this at desktop width too: AppSidebar renders
+ *   nothing for them (there's no account to navigate), and Programs/
+ *   Insights/Tools need to stay visible and crawlable for search engines
+ *   regardless of auth state — that requirement predates the sidebar and
+ *   isn't specific to signed-in users.
+ *
+ * Every link — auth-gated ones via AuthNavLink, the static ones (Programs,
+ * Insights, Tools) inline here — highlights itself as the current page via
+ * lib/nav.ts's isActivePath, so it's always clear where you are.
  */
 export function SiteHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const { user } = useAuth();
 
   const programsActive = isActivePath(pathname, "/programs");
   const insightsActive = isActivePath(pathname, "/insights");
@@ -39,7 +46,7 @@ export function SiteHeader() {
 
   return (
     <header
-      className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md"
+      className={cn("sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md", user && "lg:hidden")}
       style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
       {/* Only bites once wrapped by Capacitor with viewport-fit=cover

@@ -4,6 +4,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { BottomNav } from "@/components/bottom-nav";
+import { AppShell } from "@/components/app-shell";
 import { RoleOnboarding } from "@/components/onboarding/role-onboarding";
 import { WelcomeTour } from "@/components/onboarding/welcome-tour";
 import { ToastProvider } from "@/components/ui/toast";
@@ -115,7 +116,13 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <AuthProvider>
           <ToastProvider>
-            <div className="flex min-h-screen flex-col">
+            {/* AppShell renders the desktop sidebar (signed-in, lg+ only)
+                and offsets everything below with matching left padding, so
+                the two can never disagree about whether the sidebar is
+                showing — see app-shell.tsx. Below lg, or signed out, it's a
+                transparent passthrough and SiteHeader/BottomNav behave
+                exactly as before. */}
+            <AppShell>
               <SiteHeader />
               {/* Bottom padding clears the fixed BottomNav bar (h-16 plus
                   its own safe-area inset) on mobile only — lg:pb-0 cancels
@@ -123,7 +130,7 @@ export default function RootLayout({
                   breakpoint. */}
               <main className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</main>
               <SiteFooter />
-            </div>
+            </AppShell>
             <BottomNav />
             <RoleOnboarding />
             <WelcomeTour />

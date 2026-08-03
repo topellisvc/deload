@@ -10,12 +10,16 @@ import { SendFeedbackDialog } from "@/components/feedback/send-feedback-dialog";
 /**
  * Consolidates what used to be three separate desktop header items — the
  * user's email, a "Profile" nav link, and a standalone "Sign out" button —
- * plus the theme toggle, into one dropdown behind a single compact avatar
- * trigger. Profile and the email both pointed at the same page, so showing
- * both was pure redundancy; folding sign-out and the theme toggle in here
- * too keeps the nav row from competing with account controls for space.
- * Mobile keeps its own hamburger-panel AuthStatus/ThemeToggle — that's a
- * vertical list already, not a crowded single row, so it didn't need this.
+ * plus the theme toggle, into one dropdown. Mobile keeps its own
+ * hamburger-panel AuthStatus/ThemeToggle — that's a vertical list already,
+ * not a crowded single row, so it didn't need this.
+ *
+ * Lives at the bottom of AppSidebar (app-shell.tsx) — it used to be a
+ * compact circular trigger in SiteHeader's desktop nav row, but that row no
+ * longer renders at lg+ (the sidebar replaced it), so this is now styled as
+ * a wider list-item-style row (avatar + email) matching the sidebar's own
+ * nav links, and the dropdown opens upward (`bottom-full`) since the
+ * trigger sits at the very bottom of the viewport rather than the top.
  *
  * Follows the same click-outside/Escape/relative-container pattern as
  * NotificationBell.
@@ -89,13 +93,16 @@ export function AccountMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-label="Account menu"
         aria-expanded={open}
-        className="flex size-9 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
-        {initial}
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+          {initial}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{user.email}</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-border bg-surface shadow-lg">
+        <div className="absolute bottom-full left-0 z-50 mb-2 w-64 rounded-xl border border-border bg-surface shadow-lg">
           <div className="border-b border-border px-4 py-3">
             <p className="truncate text-sm font-medium text-foreground">{user.email}</p>
           </div>

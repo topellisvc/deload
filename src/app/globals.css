@@ -87,9 +87,14 @@
   --muted: oklch(0.95 0.004 247);
   --muted-foreground: oklch(0.48 0.01 260);
 
-  --primary: oklch(0.56 0.19 264);
+  /* Purple/indigo brand accent for light mode (was a plainer blue at hue
+     264) — matches the mockup Ellis picked for light mode. Same lightness/
+     foreground-contrast shape as before, just shifted hue toward violet
+     (291) and pushed chroma up slightly so it actually reads as "purple"
+     rather than blue-that-happens-to-lean-violet. */
+  --primary: oklch(0.58 0.21 291);
   --primary-foreground: oklch(0.99 0 0);
-  --primary-hover: oklch(0.51 0.19 264);
+  --primary-hover: oklch(0.52 0.21 291);
 
   --zone-strength: oklch(0.62 0.19 25);
   --zone-hypertrophy: oklch(0.68 0.16 145);
@@ -113,9 +118,16 @@
   --muted: oklch(0.2 0.006 260);
   --muted-foreground: oklch(0.65 0.01 260);
 
-  --primary: oklch(0.68 0.17 264);
-  --primary-foreground: oklch(0.14 0.01 264);
-  --primary-hover: oklch(0.74 0.16 264);
+  /* Green brand accent for dark mode (was the same blue family as light
+     mode at hue 264) — matches the mockup Ellis picked for dark mode.
+     Foreground stays dark-on-light-green, same contrast shape the old
+     dark-on-light-blue pair already used, just re-hued to 150 (the same
+     hue family --success already sits in, since a training app's dark
+     theme reading "green = go/on track" for its own brand color is a
+     reasonable coincidence rather than a clash). */
+  --primary: oklch(0.72 0.19 150);
+  --primary-foreground: oklch(0.14 0.03 150);
+  --primary-hover: oklch(0.78 0.18 150);
 
   --zone-strength: oklch(0.68 0.18 25);
   --zone-hypertrophy: oklch(0.74 0.15 145);
