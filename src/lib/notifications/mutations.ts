@@ -101,6 +101,46 @@ export async function notifyProgramAssigned(
 }
 
 /**
+ * Trigger 4: a coach assigns/sends a meal plan to an athlete — the
+ * Nutrition feature's counterpart to notifyProgramAssigned above. Called
+ * from lib/nutrition/mutations.ts's createMealPlan and cloneMealPlan
+ * whenever athlete_id differs from the acting owner. Same
+ * active-coach_clients-relationship gate for the email leg as
+ * notifyProgramAssigned; see migration 0059 for the type check-constraint
+ * change this relies on.
+ */
+export async function notifyMealPlanAssigned(
+  supabase: SupabaseClient,
+  params: { coachId: string; athleteId: string; planId: string; planName: string }
+): Promise<void> {
+  const { data: relationship } = await supabase
+    .from("coach_clients")
+    .select("id")
+    .eq("coach_id", params.coachId)
+    .eq("client_id", params.athleteId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  await notify(supabase, {
+    recipientId: params.athleteId,
+    actorId: params.coachId,
+    type: "meal_plan_assigned",
+    title: "New meal plan from your coach",
+    body: `"${params.planName}" was just added to your nutrition plans.`,
+    link: `/nutrition/${params.planId}`,
+    email: relationship
+      ? {
+          subject: "Your coach sent you a new meal plan",
+          heading: "New meal plan from your coach",
+          message: `"${params.planName}" was just added to your nutrition plans on Deload.`,
+          ctaLabel: "View meal plan",
+          ctaHref: `${siteOrigin()}/nutrition/${params.planId}`,
+        }
+      : undefined,
+  });
+}
+
+/**
  * Trigger 2 of 2: a pending coaching invite is accepted. Called from
  * lib/coaching/mutations.ts's acceptInvite. Unlike the invite-sent leg
  * (deliberately not a notification row — see migration 0019's comment),
