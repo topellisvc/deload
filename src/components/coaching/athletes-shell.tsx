@@ -85,7 +85,7 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
   const pagedClients = filteredClients.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8 lg:flex-row lg:items-start lg:py-10">
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-6 lg:flex-row lg:items-start lg:py-6">
       <div
         className={cn(
           "flex w-full flex-col gap-4 lg:sticky lg:top-6 lg:w-[380px] lg:max-h-[calc(100vh-3rem)] lg:shrink-0 lg:overflow-y-auto",
