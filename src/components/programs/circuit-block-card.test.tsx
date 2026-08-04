@@ -187,4 +187,21 @@ describe("CircuitBlockCard", () => {
     expect(onRemoveExerciseFromBlock).toHaveBeenCalledWith("ex-1");
     expect(onDeleteBlock).not.toHaveBeenCalled();
   });
+
+  /**
+   * The circuit's own Rounds setting already repeats each exercise once
+   * per round — a separate per-exercise "sets" count on top of that read
+   * as two independent multipliers stacked on each other (see
+   * exercise-card.test.tsx's own test on ExerciseCard's `inCircuit` prop
+   * for the full reasoning). This checks the wiring: every exercise
+   * rendered inside a circuit actually gets `inCircuit`, not just that the
+   * prop exists somewhere.
+   */
+  it("hides the sets field on every exercise it renders, since the circuit's Rounds already repeats them", async () => {
+    const user = userEvent.setup();
+    renderCard({ expandedExerciseId: "ex-1" });
+    await user.click(screen.getByRole("button", { name: /Metcon A/ }));
+    expect(screen.queryByLabelText("Number of sets")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add row/i })).not.toBeInTheDocument();
+  });
 });

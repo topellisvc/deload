@@ -304,6 +304,7 @@ export function CircuitBlockCard({
               onReorderSets={(orderedSets) => onReorderSets(exercise.id, orderedSets)}
               onSaveAsTemplate={() => onSaveAsTemplate(exercise.id)}
               onRemoveFromBlock={isGrouped ? () => onRemoveExerciseFromBlock(exercise.id) : undefined}
+              inCircuit
               onDuplicate={() => onDuplicateExercise(exercise.id)}
               onDelete={isGrouped ? () => onRemoveExerciseFromBlock(exercise.id) : onDeleteBlock}
               otherDays={otherDays}

@@ -716,6 +716,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
         blockId,
         position: nextPosition(block.exercises),
         category,
+        withinCircuit: block.block_type === "circuit",
       })
     );
     setAddingExerciseBlockId(null);

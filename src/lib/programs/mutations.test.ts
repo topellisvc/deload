@@ -91,6 +91,27 @@ describe("addExerciseBlock / addExerciseToBlock category default", () => {
     expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "time" });
   });
 
+  it("addExerciseToBlock defaults a strength exercise's set to 3 sets outside a circuit (original behavior)", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseToBlock(supabase as never, { blockId: "block-1", position: 2, category: "strength" });
+
+    expect(inserted.set_prescriptions![0]).toMatchObject({ sets: 3 });
+  });
+
+  /** A circuit's own Rounds setting already repeats the exercise once per
+   * round — see PrescriptionRowEditor's own doc comment on `hideSets`.
+   * Leaving the stored default at 3 while the builder hides the field that
+   * would let a coach notice or change it would silently mean "3 sets per
+   * round," not "1 set per round." */
+  it("addExerciseToBlock defaults to 1 set when withinCircuit is true, regardless of category", async () => {
+    const { supabase, inserted } = makeSupabaseMock();
+
+    await addExerciseToBlock(supabase as never, { blockId: "block-1", position: 2, category: "strength", withinCircuit: true });
+
+    expect(inserted.set_prescriptions![0]).toMatchObject({ sets: 1 });
+  });
+
   it("addExerciseBlock defaults to block_role 'main' when no role is passed", async () => {
     const { supabase, inserted } = makeSupabaseMock();
 

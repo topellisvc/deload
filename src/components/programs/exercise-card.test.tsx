@@ -400,4 +400,26 @@ describe("ExerciseCard expanded state", () => {
     await user.click(screen.getByRole("button", { name: /save as template/i }));
     expect(onSaveAsTemplate).toHaveBeenCalled();
   });
+
+  /**
+   * A circuit's own Rounds setting already repeats this exercise once per
+   * round — a separate editable "sets" count on top of that read as two
+   * independent multipliers stacked on each other (a 3-round circuit whose
+   * exercise still said "3 sets" implied 9 total sets, not 3). `inCircuit`
+   * hides both the sets input and "Add row" (a 2nd row is the same kind of
+   * redundant multiplier) for exactly that reason.
+   */
+  it("hides the sets field and Add row when inCircuit, but keeps everything else editable", () => {
+    render(<ExerciseCard exercise={makeExercise()} expanded onToggleExpand={vi.fn()} {...baseProps} inCircuit />);
+    expect(screen.queryByLabelText("Number of sets")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add row/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Reps")).toBeInTheDocument();
+    expect(screen.getByLabelText("Weight")).toBeInTheDocument();
+  });
+
+  it("shows the sets field and Add row when not inCircuit (the default)", () => {
+    render(<ExerciseCard exercise={makeExercise()} expanded onToggleExpand={vi.fn()} {...baseProps} />);
+    expect(screen.getByLabelText("Number of sets")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add row/i })).toBeInTheDocument();
+  });
 });

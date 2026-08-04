@@ -68,6 +68,11 @@ interface ExerciseCardProps {
   /** Only called when isGrouped — pulls this one exercise back out of a
    * superset without touching its block-mates. */
   onRemoveFromBlock?: () => void;
+  /** True for an exercise inside a `block_type: 'circuit'` block — hides
+   * the sets field and the "Add row" button (see PrescriptionRowEditor's
+   * own doc comment on hideSets for why: the circuit's Rounds setting
+   * already is the thing that repeats this exercise). */
+  inCircuit?: boolean;
   onDuplicate: () => void;
   /** Ungrouped: deletes the whole (single-exercise) block. Grouped: same
    * as onRemoveFromBlock — the caller decides which mutation that maps to,
@@ -113,6 +118,7 @@ export function ExerciseCard({
   onReorderSets,
   onSaveAsTemplate,
   onRemoveFromBlock,
+  inCircuit = false,
   onDuplicate,
   onDelete,
   otherDays,
@@ -279,17 +285,26 @@ export function ExerciseCard({
                     onChange={(patch) => onSetChange(set.id, patch)}
                     onDelete={() => onDeleteSet(set.id)}
                     advanced={mode === "advanced"}
+                    hideSets={inCircuit}
                   />
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={onAddSet}
-                className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                Add row
-              </button>
+              {/* A circuit's own Rounds setting is what repeats this
+                  exercise — a second row here would mean "do this whole
+                  prescription twice per round," which is a real but rare
+                  thing to actually want, and not what "Add row" reads as
+                  next to a hidden sets field. Left for a future "advanced"
+                  circuit affordance rather than offered by default. */}
+              {!inCircuit && (
+                <button
+                  type="button"
+                  onClick={onAddSet}
+                  className="flex items-center gap-1 self-start rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  Add row
+                </button>
+              )}
             </>
           )}
 

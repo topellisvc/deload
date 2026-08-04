@@ -1423,9 +1423,24 @@ export async function deleteBlock(supabase: SupabaseClient, blockId: string): Pr
  */
 export async function addExerciseToBlock(
   supabase: SupabaseClient,
-  /** `category` defaults to 'strength' when omitted — see
-   * addExerciseBlock's doc comment above for the same rationale. */
-  params: { blockId: string; position: number; category?: ExerciseCategory }
+  params: {
+    blockId: string;
+    position: number;
+    /** `category` defaults to 'strength' when omitted — see
+     * addExerciseBlock's doc comment above for the same rationale. */
+    category?: ExerciseCategory;
+    /** True when this exercise is being added to a `block_type: 'circuit'`
+     * block — overrides the new set row's default `sets` count to 1
+     * instead of the usual strength default of 3. Circuit exercises don't
+     * carry their own independent sets count: the circuit's own Rounds
+     * setting is what repeats the exercise, and PrescriptionRowEditor
+     * hides the (now-redundant) sets field for exactly this reason — see
+     * that component's own doc comment on `hideSets`. Leaving the stored
+     * default at 3 while hiding the field would silently mean "3 sets per
+     * round," not "1 set per round," even though the UI no longer shows
+     * any way to notice or fix that. */
+    withinCircuit?: boolean;
+  }
 ): Promise<{ exercise: BlockExerciseRow | null; error: string | null }> {
   const exerciseId = newId();
   const category: ExerciseCategory = params.category ?? "strength";
@@ -1442,7 +1457,7 @@ export async function addExerciseToBlock(
   });
   if (exerciseError) return { exercise: null, error: exerciseError.message };
 
-  const set = newSetRow(exerciseId, 1, category, prescriptionType);
+  const set = newSetRow(exerciseId, 1, category, prescriptionType, params.withinCircuit ? { sets: 1 } : undefined);
   const { error: setError } = await supabase.from("set_prescriptions").insert(setRowInsertPayload(set));
   if (setError) return { exercise: null, error: setError.message };
 

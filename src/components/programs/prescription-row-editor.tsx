@@ -24,6 +24,11 @@ interface PrescriptionRowEditorProps {
    * this row's advanced_config (migration 0030). Simple Mode never renders
    * it, matching the spec's "hide all advanced programming options." */
   advanced?: boolean;
+  /** True for an exercise inside a `block_type: 'circuit'` block — hides
+   * the "sets" field (see this component's own doc comment below for why:
+   * the circuit's own Rounds setting is what repeats this exercise, not a
+   * second, redundant sets count on top of it). */
+  hideSets?: boolean;
 }
 
 /**
@@ -34,15 +39,29 @@ interface PrescriptionRowEditorProps {
  * their own fixed field set and couldn't express e.g. RIR, rep ranges, or
  * anything cardio. Adding a new prescription type later is a config
  * change in prescription-types.ts, not a new editor component.
+ *
+ * `hideSets` exists because a circuit's own exercises (circuit-block-card.tsx)
+ * render through this same editor — each exercise still keeps its own
+ * independent prescription type — but "sets" doesn't mean the same thing
+ * there. Everywhere else, "sets" is the only thing saying how many times a
+ * prescription repeats. Inside a circuit, the block's own Rounds setting
+ * already is that: one round is one working pass through every exercise in
+ * it. Leaving "sets" editable alongside Rounds read as two independent
+ * multipliers stacked on each other — found live: a 3-round circuit whose
+ * Bench Press row still showed "3 sets," implying 9 total sets of it, not 3.
+ * Hiding the field here is the actual fix, not just a display tweak: the
+ * exercise's first set is also created with sets: 1 to begin with (see
+ * mutations.ts's addExerciseToBlock) rather than the usual strength default
+ * of 3, so the hidden value matches what a circuit exercise really means.
  */
-export function PrescriptionRowEditor({ category, set, onChange, onDelete, advanced = false }: PrescriptionRowEditorProps) {
+export function PrescriptionRowEditor({ category, set, onChange, onDelete, advanced = false, hideSets = false }: PrescriptionRowEditorProps) {
   const def = getPrescriptionTypeDef(category, set.prescription_type);
   const fields = new Set<PrescriptionField>(def?.prescriptionFields ?? []);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        {fields.has("sets") && <SetsField set={set} onChange={onChange} />}
+        {fields.has("sets") && !hideSets && <SetsField set={set} onChange={onChange} />}
         {fields.has("reps") && <RepsField set={set} onChange={onChange} />}
         {fields.has("rep_range") && <RepRangeField set={set} onChange={onChange} />}
         {fields.has("weight") && <InlineNumberField label="Weight" unit="kg" value={set.weight_value} onCommit={(v) => onChange({ weight_value: v })} width="w-16" />}
