@@ -122,6 +122,13 @@ function Primary({ set, category }: { set: SetRow; category: ExerciseCategory })
       );
     case "calories":
       return set.calories != null ? <Stat value={set.calories} label="cal" /> : dash;
+    case "reps":
+      return (
+        <span className="flex items-baseline gap-2.5">
+          <Stat value={set.sets} label="sets" />
+          <Stat value={set.reps || "?"} label="reps" />
+        </span>
+      );
     case "coach_notes":
       return dash;
     default:

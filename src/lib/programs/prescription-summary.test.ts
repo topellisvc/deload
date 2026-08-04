@@ -83,6 +83,10 @@ describe("summarizePrescriptionPrimary", () => {
   it("returns a dash when a numeric field required by the type hasn't been filled in", () => {
     expect(summarizePrescriptionPrimary(makeSet({ prescription_type: "distance", distance_meters: null }), "running")).toBe("—");
   });
+
+  it("formats a cardio 'reps' prescription the same sets-x-reps shape strength uses (e.g. burpies in a circuit)", () => {
+    expect(summarizePrescriptionPrimary(makeSet({ prescription_type: "reps", sets: 1, reps: "15" }), "cardio")).toBe("1 × 15");
+  });
 });
 
 describe("summarizeRest", () => {

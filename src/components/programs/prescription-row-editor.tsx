@@ -25,10 +25,14 @@ interface PrescriptionRowEditorProps {
    * it, matching the spec's "hide all advanced programming options." */
   advanced?: boolean;
   /** True for an exercise inside a `block_type: 'circuit'` block — hides
-   * the "sets" field (see this component's own doc comment below for why:
-   * the circuit's own Rounds setting is what repeats this exercise, not a
-   * second, redundant sets count on top of it). */
-  hideSets?: boolean;
+   * both the "sets" field and the "rest" field (see this component's own
+   * doc comment below for why: the circuit's own Rounds and Rest Between
+   * Exercises/Rounds settings already cover both, so a second, redundant
+   * copy of either on the exercise itself is misleading, not just extra
+   * clutter). Distance stays visible — an exercise's own programmed
+   * distance (e.g. "400m row") isn't something the circuit's settings
+   * express at all, so there's nothing redundant about it. */
+  inCircuit?: boolean;
 }
 
 /**
@@ -40,28 +44,33 @@ interface PrescriptionRowEditorProps {
  * anything cardio. Adding a new prescription type later is a config
  * change in prescription-types.ts, not a new editor component.
  *
- * `hideSets` exists because a circuit's own exercises (circuit-block-card.tsx)
+ * `inCircuit` exists because a circuit's own exercises (circuit-block-card.tsx)
  * render through this same editor — each exercise still keeps its own
- * independent prescription type — but "sets" doesn't mean the same thing
- * there. Everywhere else, "sets" is the only thing saying how many times a
- * prescription repeats. Inside a circuit, the block's own Rounds setting
- * already is that: one round is one working pass through every exercise in
- * it. Leaving "sets" editable alongside Rounds read as two independent
- * multipliers stacked on each other — found live: a 3-round circuit whose
- * Bench Press row still showed "3 sets," implying 9 total sets of it, not 3.
- * Hiding the field here is the actual fix, not just a display tweak: the
- * exercise's first set is also created with sets: 1 to begin with (see
- * mutations.ts's addExerciseToBlock) rather than the usual strength default
- * of 3, so the hidden value matches what a circuit exercise really means.
+ * independent prescription type — but "sets" and "rest" don't mean the same
+ * thing there. Everywhere else, "sets" is the only thing saying how many
+ * times a prescription repeats, and "rest" is the only rest an athlete
+ * gets. Inside a circuit, the block's own Rounds setting already is the
+ * repeat count (one round is one working pass through every exercise in
+ * it), and its Rest Between Exercises / Rest Between Rounds settings
+ * already are the rest. Leaving either editable per-exercise on top of the
+ * circuit's own settings read as duplicate, disagreeing sources of truth —
+ * found live: a 3-round circuit whose Bench Press row still showed "3
+ * sets," implying 9 total sets of it, not 3, and every exercise still
+ * carried its own "Rest 90s" chip alongside a completely separate
+ * Rest-Between-Exercises setting one panel up. Hiding both fields here is
+ * the actual fix, not just a display tweak: the exercise's first set is
+ * also created with sets: 1 to begin with (see mutations.ts's
+ * addExerciseToBlock) rather than the usual strength default of 3, so the
+ * hidden value matches what a circuit exercise really means.
  */
-export function PrescriptionRowEditor({ category, set, onChange, onDelete, advanced = false, hideSets = false }: PrescriptionRowEditorProps) {
+export function PrescriptionRowEditor({ category, set, onChange, onDelete, advanced = false, inCircuit = false }: PrescriptionRowEditorProps) {
   const def = getPrescriptionTypeDef(category, set.prescription_type);
   const fields = new Set<PrescriptionField>(def?.prescriptionFields ?? []);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        {fields.has("sets") && !hideSets && <SetsField set={set} onChange={onChange} />}
+        {fields.has("sets") && !inCircuit && <SetsField set={set} onChange={onChange} />}
         {fields.has("reps") && <RepsField set={set} onChange={onChange} />}
         {fields.has("rep_range") && <RepRangeField set={set} onChange={onChange} />}
         {fields.has("weight") && <InlineNumberField label="Weight" unit="kg" value={set.weight_value} onCommit={(v) => onChange({ weight_value: v })} width="w-16" />}
@@ -90,7 +99,7 @@ export function PrescriptionRowEditor({ category, set, onChange, onDelete, advan
           "smarter inputs" fields, and a 5-preset chip row is too wide to
           share a line with sets/reps/weight without wrapping mid-word. */}
       {fields.has("distance") && <DistancePresetField value={set.distance_meters} onCommit={(v) => onChange({ distance_meters: v })} />}
-      {fields.has("rest") && <RestPresetField value={set.rest_seconds} onCommit={(v) => onChange({ rest_seconds: v })} />}
+      {fields.has("rest") && !inCircuit && <RestPresetField value={set.rest_seconds} onCommit={(v) => onChange({ rest_seconds: v })} />}
 
       {advanced && <AdvancedFieldsEditor value={set.advanced_config} onChange={(v) => onChange({ advanced_config: v })} />}
     </div>

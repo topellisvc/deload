@@ -69,9 +69,10 @@ interface ExerciseCardProps {
    * superset without touching its block-mates. */
   onRemoveFromBlock?: () => void;
   /** True for an exercise inside a `block_type: 'circuit'` block — hides
-   * the sets field and the "Add row" button (see PrescriptionRowEditor's
-   * own doc comment on hideSets for why: the circuit's Rounds setting
-   * already is the thing that repeats this exercise). */
+   * the sets field, the rest field, and the "Add row" button (see
+   * PrescriptionRowEditor's own doc comment on `inCircuit` for why: the
+   * circuit's own Rounds and Rest Between Exercises/Rounds settings
+   * already cover both). */
   inCircuit?: boolean;
   onDuplicate: () => void;
   /** Ungrouped: deletes the whole (single-exercise) block. Grouped: same
@@ -285,7 +286,7 @@ export function ExerciseCard({
                     onChange={(patch) => onSetChange(set.id, patch)}
                     onDelete={() => onDeleteSet(set.id)}
                     advanced={mode === "advanced"}
-                    hideSets={inCircuit}
+                    inCircuit={inCircuit}
                   />
                 ))}
               </div>
@@ -294,8 +295,9 @@ export function ExerciseCard({
                   exercise — a second row here would mean "do this whole
                   prescription twice per round," which is a real but rare
                   thing to actually want, and not what "Add row" reads as
-                  next to a hidden sets field. Left for a future "advanced"
-                  circuit affordance rather than offered by default. */}
+                  next to a hidden sets/rest field. Left for a future
+                  "advanced" circuit affordance rather than offered by
+                  default. */}
               {!inCircuit && (
                 <button
                   type="button"

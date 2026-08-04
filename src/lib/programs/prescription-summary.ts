@@ -75,6 +75,8 @@ export function summarizePrescriptionPrimary(set: SetRow, category: ExerciseCate
       ]);
     case "calories":
       return set.calories != null ? `${set.calories} cal` : "—";
+    case "reps":
+      return setsReps(set);
     default:
       return "—";
   }

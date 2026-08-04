@@ -409,17 +409,21 @@ describe("ExerciseCard expanded state", () => {
    * hides both the sets input and "Add row" (a 2nd row is the same kind of
    * redundant multiplier) for exactly that reason.
    */
-  it("hides the sets field and Add row when inCircuit, but keeps everything else editable", () => {
+  it("hides the sets field, the rest field, and Add row when inCircuit, but keeps everything else editable", () => {
     render(<ExerciseCard exercise={makeExercise()} expanded onToggleExpand={vi.fn()} {...baseProps} inCircuit />);
     expect(screen.queryByLabelText("Number of sets")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /add row/i })).not.toBeInTheDocument();
+    // RestPresetField's own field label — its preset chips (30 sec, 2 min,
+    // etc.) don't render at all when the field itself is hidden.
+    expect(screen.queryByText("Rest")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Reps")).toBeInTheDocument();
     expect(screen.getByLabelText("Weight")).toBeInTheDocument();
   });
 
-  it("shows the sets field and Add row when not inCircuit (the default)", () => {
+  it("shows the sets field, rest field, and Add row when not inCircuit (the default)", () => {
     render(<ExerciseCard exercise={makeExercise()} expanded onToggleExpand={vi.fn()} {...baseProps} />);
     expect(screen.getByLabelText("Number of sets")).toBeInTheDocument();
+    expect(screen.getByText("Rest")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add row/i })).toBeInTheDocument();
   });
 });

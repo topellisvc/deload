@@ -219,6 +219,21 @@ const CARDIO_TYPES: PrescriptionTypeDef[] = [
     prescriptionFields: ["sets", "duration", "distance", "rest"],
     performanceFields: ["duration", "distance", "calories", "heart_rate", "pace", "rpe", "notes"],
   },
+  // Cardio's other 6 types all assume something timed/measured/paced —
+  // burpies, mountain climbers, jumping jacks and the rest of the bodyweight
+  // movements that actually make up most circuits don't have a duration or
+  // distance of their own, they have a rep count, same as a strength
+  // exercise's reps but without weight attached to it. Not placed first —
+  // that would make it defaultPrescriptionType's pick (index 0) for every
+  // cardio exercise, standalone ones included, where "Time" is still the
+  // more common starting point.
+  {
+    value: "reps",
+    label: "Reps",
+    example: "15 burpies",
+    prescriptionFields: ["sets", "reps", "rest"],
+    performanceFields: ["reps", "rpe", "notes"],
+  },
   {
     value: "coach_notes",
     label: "Coach Notes",

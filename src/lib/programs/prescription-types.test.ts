@@ -35,6 +35,33 @@ describe("cardio 'intervals' prescription type", () => {
   });
 });
 
+describe("cardio 'reps' prescription type", () => {
+  /** Bodyweight circuit movements (burpies, mountain climbers) are counted,
+   * not timed/measured/paced — cardio's other 7 types all assume one of
+   * those, so 'reps' fills the gap. Shares its string value with
+   * mobility's own 'reps' type (same concept, different category) — see
+   * migration 0057 for the per-category allow-list that keeps that legal. */
+  it("is available for the cardio category, with sets/reps/rest fields", () => {
+    const def = getPrescriptionTypeDef("cardio", "reps");
+    expect(def).toBeDefined();
+    expect(def?.prescriptionFields).toEqual(["sets", "reps", "rest"]);
+  });
+
+  it("is not cardio's default type — 'time' still is, for standalone cardio work outside a circuit", () => {
+    expect(defaultPrescriptionType("cardio")).toBe("time");
+  });
+
+  it("resolves independently from mobility's own 'reps' entry (same value, different category)", () => {
+    const cardio = getPrescriptionTypeDef("cardio", "reps");
+    const mobility = getPrescriptionTypeDef("mobility", "reps");
+    expect(cardio).toBeDefined();
+    expect(mobility).toBeDefined();
+    expect(PRESCRIPTION_TYPES_BY_CATEGORY.cardio).toContain(cardio);
+    expect(PRESCRIPTION_TYPES_BY_CATEGORY.mobility).toContain(mobility);
+    expect(PRESCRIPTION_TYPES_BY_CATEGORY.cardio).not.toContain(mobility);
+  });
+});
+
 describe("defaultCategoryForDiscipline", () => {
   it("maps each discipline onto the right starting exercise category", () => {
     expect(defaultCategoryForDiscipline("resistance")).toBe("strength");

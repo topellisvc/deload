@@ -356,7 +356,16 @@ export type RunningPrescriptionType =
   | "distance_time"
   | "coach_notes";
 
-export type CardioPrescriptionType = "time" | "distance" | "calories" | "heart_rate_zone" | "rpe" | "intervals" | "coach_notes";
+/** 'reps' added for cardio-category movements that are naturally counted
+ * rather than timed/measured — a circuit's "15 burpies" or "20 mountain
+ * climbers" has no meaningful duration/distance/calorie target of its own
+ * (that's the whole circuit's job — see completion-methods.ts), it just
+ * needs a rep count like any bodyweight movement would. Shares the exact
+ * string value with MobilityPrescriptionType's own 'reps' below — same
+ * concept (a plain rep count), just valid for a different exercise_category
+ * — not a collision; see the enforce_valid_prescription_type() trigger
+ * (migration 0057) for the per-category allow-list this still respects. */
+export type CardioPrescriptionType = "time" | "distance" | "calories" | "heart_rate_zone" | "rpe" | "intervals" | "coach_notes" | "reps";
 
 /** Migration 0056 — a Mobility block's exercises (stretches, activation
  * drills, band work) don't fit strength/running/cardio's prescription
