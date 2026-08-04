@@ -86,7 +86,12 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8 lg:flex-row lg:items-start lg:py-10">
-      <div className={cn("flex w-full flex-col gap-4 lg:w-[380px] lg:shrink-0", hasSelection && "hidden lg:flex")}>
+      <div
+        className={cn(
+          "flex w-full flex-col gap-4 lg:sticky lg:top-6 lg:w-[380px] lg:max-h-[calc(100vh-3rem)] lg:shrink-0 lg:overflow-y-auto",
+          hasSelection && "hidden lg:flex"
+        )}
+      >
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Coach</h1>
           <Button size="sm" onClick={() => setInviteOpen((v) => !v)} aria-expanded={inviteOpen}>
