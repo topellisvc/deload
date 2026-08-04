@@ -4,6 +4,7 @@ import type {
   BlockRole,
   BlockRow,
   BlockType,
+  CompletionMethod,
   DayRow,
   DayTemplateRow,
   ExerciseCategory,
@@ -809,7 +810,7 @@ export async function syncTestingWeek(supabase: SupabaseClient, program: Program
       id: blockId,
       day_id: dayId,
       position,
-      block_type: "straight",
+      block_type: "single",
       block_role: "main",
       rounds: 1,
     });
@@ -1138,7 +1139,7 @@ export async function duplicateExercise(
     id: blockId,
     day_id: params.dayId,
     position: params.position,
-    block_type: "straight",
+    block_type: "single",
     block_role: blockRole,
     rounds: 1,
   });
@@ -1171,9 +1172,17 @@ export async function duplicateExercise(
     id: blockId,
     day_id: params.dayId,
     position: params.position,
-    block_type: "straight",
+    block_type: "single",
     block_role: blockRole,
     rounds: 1,
+    custom_name: null,
+    notes: null,
+    goal: null,
+    completion_method: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    duration_seconds: null,
+    interval_seconds: null,
     exercises: [
       {
         ...params.exercise,
@@ -1257,28 +1266,61 @@ export async function moveExerciseToDay(
 // Exercise blocks + exercises
 // ============================================================
 
+/** Which exercise_category a freshly-created block's first exercise should
+ * default to, purely from the block_type the coach picked in the "+ Add
+ * Block" type picker — a Cardio Session block's exercises should default
+ * to 'cardio', a Mobility block's to 'mobility', same reasoning
+ * defaultCategoryForDiscipline already applies at the program level.
+ * `explicitCategory` (an actual param.category, when the caller passed
+ * one) always wins over this — the block type is just a starting point,
+ * not a constraint, same as every other default in this file. */
+function defaultCategoryForBlockType(blockType: BlockType, explicitCategory?: ExerciseCategory): ExerciseCategory {
+  if (explicitCategory) return explicitCategory;
+  switch (blockType) {
+    case "cardio_session":
+      return "cardio";
+    case "mobility":
+      return "mobility";
+    default:
+      return "strength";
+  }
+}
+
 export async function addExerciseBlock(
   supabase: SupabaseClient,
-  /** `category` defaults to 'strength' when omitted (the original,
-   * always-strength behavior) — callers that know the program's
-   * discipline should pass `defaultCategoryForDiscipline(program.discipline)`
-   * (lib/programs/prescription-types.ts) instead, so a Running or Cardio
-   * program's new blocks don't all need switching by hand before they're
-   * usable. Either way this is only ever a starting point:
-   * switchExerciseCategory changes it same as before. */
-  params: { dayId: string; position: number; category?: ExerciseCategory; role?: BlockRole }
+  params: {
+    dayId: string;
+    position: number;
+    category?: ExerciseCategory;
+    role?: BlockRole;
+    /** The block type chosen in the "+ Add Block" picker — defaults to
+     * 'single' (one plain exercise), the same behavior every call site
+     * had before the Workout Blocks picker existed. 'superset'/'circuit'
+     * both start as an empty single-exercise block exactly like 'single'
+     * does; what makes a circuit a circuit is its settings and having 2+
+     * exercises, not anything different about how this function creates
+     * it — addExerciseToBlock (unchanged) is still what adds the 2nd+
+     * exercise. */
+    blockType?: BlockType;
+  }
 ): Promise<{ block: BlockRow | null; error: string | null }> {
   const blockId = newId();
   const exerciseId = newId();
-  const category: ExerciseCategory = params.category ?? "strength";
-  const role: BlockRole = params.role ?? "main";
+  const blockType: BlockType = params.blockType ?? "single";
+  const category: ExerciseCategory = defaultCategoryForBlockType(blockType, params.category);
+  // A block_type of 'warmup'/'conditioning' also places it in the
+  // matching block_role section by default (still just a starting point —
+  // the block can be dragged to a different section same as any other) so
+  // picking "Warm-up" from the type picker doesn't also require manually
+  // choosing the Warm-up section right after.
+  const role: BlockRole = params.role ?? (blockType === "warmup" || blockType === "conditioning" ? blockType : "main");
   const prescriptionType = defaultPrescriptionType(category);
 
   const { error: blockError } = await supabase.from("exercise_blocks").insert({
     id: blockId,
     day_id: params.dayId,
     position: params.position,
-    block_type: "straight",
+    block_type: blockType,
     block_role: role,
     rounds: 1,
   });
@@ -1304,9 +1346,17 @@ export async function addExerciseBlock(
       id: blockId,
       day_id: params.dayId,
       position: params.position,
-      block_type: "straight",
+      block_type: blockType,
       block_role: role,
       rounds: 1,
+      custom_name: null,
+      notes: null,
+      goal: null,
+      completion_method: null,
+      rest_between_exercises_seconds: null,
+      rest_between_rounds_seconds: null,
+      duration_seconds: null,
+      interval_seconds: null,
       exercises: [
         {
           id: exerciseId,
@@ -1322,6 +1372,33 @@ export async function addExerciseBlock(
     },
     error: null,
   };
+}
+
+/**
+ * Updates a block's own settings — Circuit Name, Coach Notes, Goal,
+ * Completion Method, Rest Between Exercises/Rounds, and the Timed Circuit/
+ * AMRAP/EMOM duration+interval fields (migration 0056). A plain partial
+ * update, same shape as updateSetRow: only the keys actually passed are
+ * written, so the circuit settings editor can save one field at a time
+ * (e.g. just the name, on blur) without needing to resend the whole
+ * settings object.
+ */
+export async function updateBlockSettings(
+  supabase: SupabaseClient,
+  blockId: string,
+  patch: Partial<{
+    custom_name: string | null;
+    notes: string | null;
+    goal: string | null;
+    completion_method: CompletionMethod | null;
+    rest_between_exercises_seconds: number | null;
+    rest_between_rounds_seconds: number | null;
+    duration_seconds: number | null;
+    interval_seconds: number | null;
+  }>
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("exercise_blocks").update(patch).eq("id", blockId);
+  return { error: error?.message ?? null };
 }
 
 export async function deleteBlock(supabase: SupabaseClient, blockId: string): Promise<{ error: string | null }> {

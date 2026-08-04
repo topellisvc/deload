@@ -38,16 +38,23 @@ const PRESCRIPTION_TYPE_VALUES = [
  * doesn't actually belong to that category (e.g. "fixed_weight" for a
  * running exercise) — keeps a mismatched response usable instead of
  * rejecting the whole parse. */
+// The "Describe a program" LLM parse doesn't offer 'mobility' as a
+// category the model can return (see ParsedExerciseSchema's category enum
+// below, deliberately unchanged) — these two maps still need a 'mobility'
+// entry to satisfy Record<ExerciseCategory, ...>'s exhaustiveness, but it
+// can never actually be read through this file's own parse path.
 const CATEGORY_FALLBACK_TYPE: Record<ExerciseCategory, PrescriptionType> = {
   strength: "coach_notes_only",
   running: "coach_notes",
   cardio: "coach_notes",
+  mobility: "coach_notes_only",
 };
 
 const VALID_TYPES_BY_CATEGORY: Record<ExerciseCategory, Set<PrescriptionType>> = {
   strength: new Set(["fixed_weight", "percent_1rm", "rpe", "rir", "rep_range", "athlete_chooses_weight", "coach_notes_only"]),
   running: new Set(["distance", "time", "distance_time", "pace", "heart_rate_zone", "rpe", "intervals", "coach_notes"]),
   cardio: new Set(["time", "distance", "calories", "heart_rate_zone", "rpe", "intervals", "coach_notes"]),
+  mobility: new Set(["hold_time", "reps", "coach_notes_only"]),
 };
 
 const ParsedSetSchema = z.object({
@@ -234,9 +241,17 @@ export function parsedProgramToWeeks(parsed: ParsedProgram): WeekRow[] {
               id: "",
               day_id: "",
               position: exerciseIndex + 1,
-              block_type: "straight",
+              block_type: "single",
               block_role: exercise.role ?? "main",
               rounds: 1,
+              custom_name: null,
+              notes: null,
+              goal: null,
+              completion_method: null,
+              rest_between_exercises_seconds: null,
+              rest_between_rounds_seconds: null,
+              duration_seconds: null,
+              interval_seconds: null,
               exercises: [blockExercise],
             };
           });

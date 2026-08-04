@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent, type SensorDescriptor, type SensorOptions } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { BookMarked, Copy, Files, Flame, Plus, Sunrise, Trash2 } from "lucide-react";
-import type { BlockRole, BlockRow, DayRow, DayTemplateRow, ExerciseCategory, ExerciseTemplateRow, PrescriptionType, SetRow } from "@/lib/programs/types";
+import { BookMarked, Copy, Files, Flame, Sunrise, Trash2 } from "lucide-react";
+import type { BlockRole, BlockRow, BlockType, DayRow, DayTemplateRow, ExerciseCategory, ExerciseTemplateRow, PrescriptionType, SetRow } from "@/lib/programs/types";
 import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import type { BuilderMode } from "@/lib/programs/use-builder-mode";
 import { buildExerciseList } from "@/lib/training/sequence";
 import { ExerciseBlockCard } from "@/components/programs/exercise-block-card";
 import { WorkoutSummaryBar } from "@/components/programs/workout-summary-bar";
+import { AddBlockMenu } from "@/components/programs/add-block-menu";
 import { cn } from "@/lib/utils";
 
 interface DayColumnProps {
@@ -33,7 +34,7 @@ interface DayColumnProps {
    * disable it" pattern the week-tabs row already uses for "can't delete
    * the last week." */
   onDeleteDay?: () => void;
-  onAddBlock: (role: BlockRole) => void;
+  onAddBlock: (role: BlockRole, blockType: BlockType) => void;
   onDeleteBlock: (blockId: string) => void;
   onReorderBlocks: (role: BlockRole, orderedBlocks: { id: string; position: number }[]) => void;
   onAddExerciseToBlock: (blockId: string) => void;
@@ -453,7 +454,7 @@ interface BlockSectionProps {
    * single ghost "+" button while empty, so a day using neither still
    * looks exactly like a plain workout. */
   emptyAddLabel?: string;
-  onAddBlock: (role: BlockRole) => void;
+  onAddBlock: (role: BlockRole, blockType: BlockType) => void;
   sensors: SensorDescriptor<SensorOptions>[];
   mode: Exclude<BuilderMode, "preview">;
   library: ExerciseSearchResult[];
@@ -546,14 +547,7 @@ function BlockSection({
   if (blocks.length === 0 && emptyAddLabel) {
     return (
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onAddBlock(role)}
-          className="flex items-center gap-1.5 self-start rounded-md px-1 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        >
-          <Plus className="size-3.5" />
-          {emptyAddLabel}
-        </button>
+        <AddBlockMenu role={role} label={emptyAddLabel} onAddBlock={onAddBlock} />
         <TemplateInsertSelect role={role} templates={exerciseTemplates} onInsert={onInsertExerciseTemplate} />
       </div>
     );
@@ -612,17 +606,7 @@ function BlockSection({
       </DndContext>
 
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onAddBlock(role)}
-          className={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-            sectionLabel ? "border border-dashed border-border text-xs" : "border border-dashed border-border-strong"
-          )}
-        >
-          <Plus className="size-4" />
-          {addLabel}
-        </button>
+        <AddBlockMenu role={role} label={addLabel} fullWidth onAddBlock={onAddBlock} />
         <TemplateInsertSelect role={role} templates={exerciseTemplates} onInsert={onInsertExerciseTemplate} />
       </div>
     </div>

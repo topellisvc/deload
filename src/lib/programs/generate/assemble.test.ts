@@ -103,7 +103,7 @@ describe("assembleWeeks — week shape", () => {
     const result = assembleWeeks({ template: simpleTemplate([day]), totalWeeks: 1, exercises: pool, selection: baseSelection() });
     const block = result.weeks[0]!.days[0]!.blocks[0]!;
     expect(block.block_role).toBe("warmup");
-    expect(block.block_type).toBe("straight");
+    expect(block.block_type).toBe("single");
     expect(block.exercises).toHaveLength(1);
   });
 });

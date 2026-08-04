@@ -96,11 +96,27 @@ function ex(name: string, exerciseId: string | null, category: ExerciseCategory,
   };
 }
 
-/** Every exercise below gets its own straight (non-superset) block — none
- * of these templates use supersets, keeping a first program as simple to
- * read (and to later edit in the builder) as possible. */
+/** Every exercise below gets its own single-exercise (non-superset) block —
+ * none of these templates use supersets, keeping a first program as simple
+ * to read (and to later edit in the builder) as possible. */
 function b(exercise: BlockExerciseRow): BlockRow {
-  return { id: "", day_id: "", position: 1, block_type: "straight", block_role: "main", rounds: 1, exercises: [exercise] };
+  return {
+    id: "",
+    day_id: "",
+    position: 1,
+    block_type: "single",
+    block_role: "main",
+    rounds: 1,
+    custom_name: null,
+    notes: null,
+    goal: null,
+    completion_method: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    duration_seconds: null,
+    interval_seconds: null,
+    exercises: [exercise],
+  };
 }
 
 function day(label: string, isRestDay: boolean, blocks: BlockRow[] = []): DayRow {

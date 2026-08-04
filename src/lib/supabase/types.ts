@@ -199,7 +199,38 @@ export interface TrainingDay {
   is_rest_day: boolean;
 }
 
-export type BlockType = "straight" | "superset" | "circuit" | "dropset";
+/**
+ * What kind of block this is — the Workout Blocks architecture (migration
+ * 0056). 'single' (renamed from the old 'straight') is one exercise;
+ * 'superset' is an ad-hoc 2-exercise pairing with no round-based settings
+ * of its own; 'circuit' is the fully-specified version of the same
+ * grouping idea — name, rounds, rest-between-exercises/-rounds, goal,
+ * completion method, notes (see ExerciseBlock's own fields below).
+ * 'cardio_session'/'warmup'/'mobility'/'conditioning' are purpose-based
+ * types the "+ Add Block" picker offers as their own first-class choices
+ * rather than something inferred from exercise_category or block_role —
+ * each still combines with those (a 'warmup'-typed block still defaults
+ * into the 'warmup' block_role section; a 'cardio_session'-typed block's
+ * exercises still default to exercise_category 'cardio') rather than
+ * duplicating what those already handle. 'dropset' predates this
+ * migration and stays valid but unused (see block_exercises' own
+ * "multiple set_prescriptions rows on one exercise" pattern for how drop
+ * sets are actually modeled today). Not yet selectable in the picker but
+ * already legal at the database level for forward-compat: 'tri_set',
+ * 'giant_set', 'complex', 'contrast_set', 'plyometric', 'olympic_lifting',
+ * 'partner', 'relay' — adding real support for any of these later is a
+ * check-constraint change plus a new entry in this union and
+ * lib/programs/block-types.ts, not a schema redesign.
+ */
+export type BlockType =
+  | "single"
+  | "superset"
+  | "circuit"
+  | "cardio_session"
+  | "warmup"
+  | "mobility"
+  | "conditioning"
+  | "dropset";
 
 /**
  * Which section of the day a block belongs to (migration 0032) — the
@@ -210,8 +241,22 @@ export type BlockType = "straight" | "superset" | "circuit" | "dropset";
  * position), not just (day_id, position) — each section manages its own
  * independent ordering, the same way block_exercises are scoped to their
  * block and set_prescriptions to their block_exercise.
+ *
+ * Deliberately orthogonal to BlockType (migration 0056): block_role
+ * answers "which section does this render in," block_type answers "what
+ * kind of block is this." A block_type of 'warmup' sets a sensible
+ * block_role default when first created, but the two are never forced to
+ * agree — a coach can still drag a 'warmup'-typed block into the Main
+ * section if that's genuinely where they want it to sit.
  */
 export type BlockRole = "warmup" | "main" | "conditioning";
+
+/** Circuit Completion Method (migration 0056) — each value changes which
+ * of ExerciseBlock's timing fields are actually shown/used; see
+ * lib/programs/completion-methods.ts, the declarative field map (same
+ * pattern lib/programs/prescription-types.ts already uses for
+ * PrescriptionType). Only meaningful for 'circuit'/'superset' blocks. */
+export type CompletionMethod = "traditional_rounds" | "timed" | "amrap" | "emom" | "for_time" | "quality";
 
 export interface ExerciseBlock {
   id: string;
@@ -220,6 +265,29 @@ export interface ExerciseBlock {
   block_type: BlockType;
   block_role: BlockRole;
   rounds: number;
+  /** Circuit Name, e.g. "Circuit A", "Upper Body Circuit" — also usable as
+   * a plain label for any block type. Null for a block the coach hasn't
+   * named. */
+  custom_name: string | null;
+  /** Coach Notes for the whole block ("Move continuously..."), shown to
+   * the athlete before they start it — distinct from any one exercise's
+   * own block_exercises.notes. */
+  notes: string | null;
+  /** Circuit Goal (Strength/Hypertrophy/Conditioning/Mobility/
+   * Rehabilitation/Warm-up/Power/Endurance) — free text, primarily
+   * organisational (spec's own framing), not a hard enum. */
+  goal: string | null;
+  completion_method: CompletionMethod | null;
+  /** The circuit-level default; an individual exercise's own
+   * set_prescriptions.rest_seconds can still override it — "rest
+   * inherited from circuit" when that's left null. */
+  rest_between_exercises_seconds: number | null;
+  rest_between_rounds_seconds: number | null;
+  /** Total time cap — Timed Circuit (run for this long), AMRAP (as many
+   * rounds as possible in this long), or an optional For Time cap. */
+  duration_seconds: number | null;
+  /** EMOM's "every N seconds" interval. */
+  interval_seconds: number | null;
 }
 
 /**
@@ -231,7 +299,7 @@ export interface ExerciseBlock {
  * (bike, row, ski erg, carries...) without either mislabeling it as a
  * run or bolting on a third ad-hoc flag.
  */
-export type ExerciseCategory = "strength" | "running" | "cardio";
+export type ExerciseCategory = "strength" | "running" | "cardio" | "mobility";
 
 export interface BlockExercise {
   id: string;
@@ -290,7 +358,12 @@ export type RunningPrescriptionType =
 
 export type CardioPrescriptionType = "time" | "distance" | "calories" | "heart_rate_zone" | "rpe" | "intervals" | "coach_notes";
 
-export type PrescriptionType = StrengthPrescriptionType | RunningPrescriptionType | CardioPrescriptionType;
+/** Migration 0056 — a Mobility block's exercises (stretches, activation
+ * drills, band work) don't fit strength/running/cardio's prescription
+ * shapes, which all assume load, pace, or a heart-rate target. */
+export type MobilityPrescriptionType = "hold_time" | "reps" | "coach_notes_only";
+
+export type PrescriptionType = StrengthPrescriptionType | RunningPrescriptionType | CardioPrescriptionType | MobilityPrescriptionType;
 
 /**
  * One planned set/segment — never mutated by what actually happened (see
@@ -428,6 +501,10 @@ export interface LoggedSet {
    * populated for an autoregulation-eligible slot's final working set (see
    * lib/training/autoregulation.ts). */
   performed_rir: number | null;
+  /** Which round of a circuit/superset this set belonged to (migration
+   * 0056) — forward-compat for Training Mode's circuit-round sequencing,
+   * not yet written by anything; null for every set logged today. */
+  round_number: number | null;
   notes: string | null;
   created_at: string;
 }

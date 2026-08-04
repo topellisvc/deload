@@ -228,20 +228,46 @@ const CARDIO_TYPES: PrescriptionTypeDef[] = [
   },
 ];
 
+const MOBILITY_TYPES: PrescriptionTypeDef[] = [
+  {
+    value: "hold_time",
+    label: "Hold Time",
+    example: "60 sec each side",
+    prescriptionFields: ["duration", "rest"],
+    performanceFields: ["duration", "notes"],
+  },
+  {
+    value: "reps",
+    label: "Reps",
+    example: "10 reps each side",
+    prescriptionFields: ["sets", "reps", "rest"],
+    performanceFields: ["reps", "notes"],
+  },
+  {
+    value: "coach_notes_only",
+    label: "Coach Notes Only",
+    example: "“Full range of motion, no bouncing.”",
+    prescriptionFields: ["notes_primary"],
+    performanceFields: ["notes"],
+  },
+];
+
 /**
  * Category -> its allowed prescription types, in the order shown in the
  * builder's type picker. Mirrors the check enforced server-side by the
- * `set_prescriptions_valid_type` trigger (migration 0012) — that trigger
- * is the real guarantee, this is what keeps the UI from ever offering a
- * combination the database would reject.
+ * `set_prescriptions_valid_type` trigger (migration 0012, extended for
+ * 'mobility' by 0056) — that trigger is the real guarantee, this is what
+ * keeps the UI from ever offering a combination the database would
+ * reject.
  */
 export const PRESCRIPTION_TYPES_BY_CATEGORY: Record<ExerciseCategory, PrescriptionTypeDef[]> = {
   strength: STRENGTH_TYPES,
   running: RUNNING_TYPES,
   cardio: CARDIO_TYPES,
+  mobility: MOBILITY_TYPES,
 };
 
-const ALL_TYPES = [...STRENGTH_TYPES, ...RUNNING_TYPES, ...CARDIO_TYPES];
+const ALL_TYPES = [...STRENGTH_TYPES, ...RUNNING_TYPES, ...CARDIO_TYPES, ...MOBILITY_TYPES];
 
 /** Dedupe by value for cross-category lookups below — 'rpe' and
  * 'coach_notes'/'coach_notes_only' each appear in more than one category's
@@ -289,6 +315,7 @@ export const EXERCISE_CATEGORY_LABELS: Record<ExerciseCategory, string> = {
   strength: "Strength",
   running: "Running",
   cardio: "Cardio",
+  mobility: "Mobility",
 };
 
 /**
@@ -311,6 +338,7 @@ export const EXERCISE_CATEGORY_ACTIVE_CLASSES: Record<ExerciseCategory, string> 
   strength: "bg-zone-strength/15 text-zone-strength shadow-sm",
   running: "bg-zone-endurance/15 text-zone-endurance shadow-sm",
   cardio: "bg-zone-cardio/15 text-zone-cardio shadow-sm",
+  mobility: "bg-zone-mobility/15 text-zone-mobility shadow-sm",
 };
 
 export type { StrengthPrescriptionType, RunningPrescriptionType, CardioPrescriptionType };

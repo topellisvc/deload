@@ -56,7 +56,7 @@ describe("parsedProgramToWeeks", () => {
     const weeks = parsedProgramToWeeks(baseParsed());
     const day1 = weeks[0]!.days[0]!;
     expect(day1.blocks).toHaveLength(1);
-    expect(day1.blocks[0]!.block_type).toBe("straight");
+    expect(day1.blocks[0]!.block_type).toBe("single");
     expect(day1.blocks[0]!.block_role).toBe("main");
     expect(day1.blocks[0]!.exercises[0]!.custom_name).toBe("Back Squat");
     expect(day1.blocks[0]!.exercises[0]!.exercise_category).toBe("strength");

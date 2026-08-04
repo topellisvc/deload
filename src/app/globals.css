@@ -29,6 +29,7 @@
   --color-zone-hypertrophy: var(--zone-hypertrophy);
   --color-zone-endurance: var(--zone-endurance);
   --color-zone-cardio: var(--zone-cardio);
+  --color-zone-mobility: var(--zone-mobility);
 
   --color-success: var(--success);
   --color-warning: var(--warning);
@@ -100,6 +101,10 @@
   --zone-hypertrophy: oklch(0.68 0.16 145);
   --zone-endurance: oklch(0.7 0.14 230);
   --zone-cardio: oklch(0.6 0.19 300);
+  /* Workout Blocks' new 'mobility' exercise category — a distinct teal hue
+     between hypertrophy's green (145) and endurance's blue (230) so a
+     mobility block never reads as either of those at a glance. */
+  --zone-mobility: oklch(0.65 0.14 190);
 
   --success: oklch(0.65 0.15 150);
   --warning: oklch(0.75 0.15 75);
@@ -133,6 +138,7 @@
   --zone-hypertrophy: oklch(0.74 0.15 145);
   --zone-endurance: oklch(0.75 0.13 230);
   --zone-cardio: oklch(0.72 0.17 300);
+  --zone-mobility: oklch(0.74 0.13 190);
 
   --success: oklch(0.7 0.15 150);
   --warning: oklch(0.8 0.15 85);

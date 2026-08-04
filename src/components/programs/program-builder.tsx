@@ -9,6 +9,7 @@ import type {
   BlockExerciseRow,
   BlockRole,
   BlockRow,
+  BlockType,
   DayRow,
   DayTemplateRow,
   ExerciseCategory,
@@ -636,15 +637,29 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
   }
 
   // ---- blocks ----
-  async function handleAddBlock(dayId: string, role: BlockRole = "main") {
+  /** `blockType` comes from the "+ Add Block" type picker (AddBlockMenu) —
+   * defaults to 'single' for call sites that don't offer a choice
+   * (template insertion goes through addExerciseBlockFromTemplate/
+   * duplicateExercise instead, which are unaffected by this). A
+   * 'cardio_session'/'mobility' blockType is left to addExerciseBlock's
+   * own defaultCategoryForBlockType rather than overridden with the
+   * program's discipline-based default here — a Mobility block inside an
+   * otherwise-strength program should still start its exercise as
+   * 'mobility', not 'strength'. `role` still wins when the caller passes
+   * one explicitly (BlockSection always does); otherwise a 'warmup'/
+   * 'conditioning' blockType places itself in the matching section, same
+   * default addExerciseBlock itself falls back to. */
+  async function handleAddBlock(dayId: string, role: BlockRole = "main", blockType: BlockType = "single") {
     const day = week.days.find((d) => d.id === dayId);
     if (!day) return;
+    const category = blockType === "cardio_session" || blockType === "mobility" ? undefined : defaultCategoryForDiscipline(program.discipline);
     const { block, error } = await track(
       m.addExerciseBlock(supabase, {
         dayId,
         position: nextPosition(day.blocks.filter((b) => b.block_role === role)),
-        category: defaultCategoryForDiscipline(program.discipline),
+        category,
         role,
+        blockType,
       })
     );
     if (error || !block) {
@@ -708,7 +723,12 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       fail(error ?? "Couldn't add exercise.");
       return;
     }
-    const becomesGrouped = block.exercises.length + 1 === 2;
+    // Only a plain 'single' block auto-promotes to 'superset' on gaining
+    // its 2nd exercise — a 'circuit' (or any other purpose-based type)
+    // block was already explicitly chosen as that type via the Add Block
+    // picker, so adding exercises to it should never silently overwrite
+    // that choice back down to 'superset'.
+    const becomesGrouped = block.block_type === "single" && block.exercises.length + 1 === 2;
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
       exercises: [...b.exercises, exercise],
@@ -732,17 +752,22 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
       const removed = block.exercises.find((ex) => ex.id === blockExerciseId);
       if (removed) untickTestMaxBefore([removed.exercise_id]);
     }
-    const becomesUngrouped = block.exercises.length - 1 === 1;
+    // Dropping to 1 exercise reverts back to 'single' regardless of
+    // whether the block was a 'superset' or an explicitly-chosen
+    // 'circuit' — a group of one isn't a group of anything any more, same
+    // "least surprising result" reasoning duplicateExercise's own doc
+    // comment already uses.
+    const becomesUngrouped = block.exercises.length - 1 === 1 && (block.block_type === "superset" || block.block_type === "circuit");
     updateBlock(week.id, dayId, blockId, (b) => ({
       ...b,
       exercises: b.exercises.filter((ex) => ex.id !== blockExerciseId),
-      block_type: becomesUngrouped ? "straight" : b.block_type,
+      block_type: becomesUngrouped ? "single" : b.block_type,
     }));
     track(m.removeExerciseFromBlock(supabase, blockExerciseId)).then(({ error }) => {
       if (error) fail(error);
     });
     if (becomesUngrouped) {
-      track(m.updateBlockType(supabase, blockId, "straight")).then(({ error }) => {
+      track(m.updateBlockType(supabase, blockId, "single")).then(({ error }) => {
         if (error) fail(error);
       });
     }
@@ -1285,7 +1310,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 onCopyTo={(targetDayId) => handleCopyDayTo(day, targetDayId)}
                 onDuplicateDay={() => handleDuplicateDay(day.id)}
                 onDeleteDay={week.days.length > 1 ? () => handleDeleteDay(day.id) : undefined}
-                onAddBlock={(role) => handleAddBlock(day.id, role)}
+                onAddBlock={(role, blockType) => handleAddBlock(day.id, role, blockType)}
                 onDeleteBlock={(blockId) => handleDeleteBlock(day.id, blockId)}
                 onReorderBlocks={(_role, orderedBlocks) => handleReorderBlocks(day.id, orderedBlocks)}
                 onAddExerciseToBlock={(blockId) => handleAddExerciseToBlock(day.id, blockId)}

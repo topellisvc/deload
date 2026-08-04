@@ -570,8 +570,16 @@ describe("copyDayContents", () => {
   function makeBlock(overrides: Partial<BlockRow> & Pick<BlockRow, "id" | "position" | "block_role">): BlockRow {
     return {
       day_id: "source-day",
-      block_type: "straight",
+      block_type: "single",
       rounds: 1,
+      custom_name: null,
+      notes: null,
+      goal: null,
+      completion_method: null,
+      rest_between_exercises_seconds: null,
+      rest_between_rounds_seconds: null,
+      duration_seconds: null,
+      interval_seconds: null,
       exercises: [
         { id: `${overrides.id}-ex`, block_id: overrides.id, position: 1, exercise_id: null, custom_name: "Exercise", notes: null, exercise_category: "strength", sets: [] },
       ],
@@ -663,7 +671,7 @@ describe("duplicateExercise", () => {
 
     expect(result.error).toBeNull();
     expect(inserted.exercise_blocks).toEqual([
-      { id: expect.any(String), day_id: "day-1", position: 2, block_type: "straight", block_role: "main", rounds: 1 },
+      { id: expect.any(String), day_id: "day-1", position: 2, block_type: "single", block_role: "main", rounds: 1 },
     ]);
     expect(inserted.block_exercises![0]).toMatchObject({ custom_name: "Bench Press", notes: "Control the eccentric", exercise_category: "strength" });
     expect(inserted.set_prescriptions![0]).toMatchObject({ prescription_type: "fixed_weight", sets: 4, reps: "6", weight_value: 100, rest_seconds: 120 });
@@ -768,9 +776,17 @@ describe("insertDayTemplate", () => {
           id: "stale-block-id",
           day_id: "stale-day-id",
           position: 1,
-          block_type: "straight",
+          block_type: "single",
           block_role: "main",
           rounds: 1,
+          custom_name: null,
+          notes: null,
+          goal: null,
+          completion_method: null,
+          rest_between_exercises_seconds: null,
+          rest_between_rounds_seconds: null,
+          duration_seconds: null,
+          interval_seconds: null,
           exercises: [
             { id: "stale-ex-id", block_id: "stale-block-id", position: 1, exercise_id: null, custom_name: "Bench Press", notes: null, exercise_category: "strength", sets: [] },
           ],
@@ -806,9 +822,17 @@ describe("duplicateDay", () => {
         id: "src-block",
         day_id: "source-day",
         position: 1,
-        block_type: "straight",
+        block_type: "single",
         block_role: "main",
         rounds: 1,
+        custom_name: null,
+        notes: null,
+        goal: null,
+        completion_method: null,
+        rest_between_exercises_seconds: null,
+        rest_between_rounds_seconds: null,
+        duration_seconds: null,
+        interval_seconds: null,
         exercises: [
           { id: "src-ex", block_id: "src-block", position: 1, exercise_id: null, custom_name: "Bench Press", notes: null, exercise_category: "strength", sets: [] },
         ],
@@ -1011,7 +1035,24 @@ function makeTestExercise(overrides: Partial<BlockExerciseRow> = {}): BlockExerc
 }
 
 function makeTestBlock(exercises: BlockExerciseRow[], overrides: Partial<BlockRow> = {}): BlockRow {
-  return { id: "block-1", day_id: "day-1", position: 1, block_type: "straight", block_role: "main", rounds: 1, exercises, ...overrides };
+  return {
+    id: "block-1",
+    day_id: "day-1",
+    position: 1,
+    block_type: "single",
+    block_role: "main",
+    rounds: 1,
+    custom_name: null,
+    notes: null,
+    goal: null,
+    completion_method: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    duration_seconds: null,
+    interval_seconds: null,
+    exercises,
+    ...overrides,
+  };
 }
 
 function makeTestDay(blocks: BlockRow[], overrides: Partial<DayRow> = {}): DayRow {

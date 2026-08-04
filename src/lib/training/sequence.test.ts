@@ -27,7 +27,20 @@ function makeSet(overrides: Partial<SetPrescription> & Pick<SetPrescription, "id
 }
 
 function makeBlock(overrides: Partial<BlockRow> & Pick<BlockRow, "id" | "day_id" | "position" | "exercises">): BlockRow {
-  return { block_type: "straight", block_role: "main", rounds: 1, ...overrides };
+  return {
+    block_type: "single",
+    block_role: "main",
+    rounds: 1,
+    custom_name: null,
+    notes: null,
+    goal: null,
+    completion_method: null,
+    rest_between_exercises_seconds: null,
+    rest_between_rounds_seconds: null,
+    duration_seconds: null,
+    interval_seconds: null,
+    ...overrides,
+  };
 }
 
 describe("buildExerciseList", () => {
