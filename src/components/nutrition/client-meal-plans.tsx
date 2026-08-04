@@ -10,7 +10,7 @@ import { MealPlanCard } from "@/components/nutrition/meal-plan-card";
 import { NewMealPlanDialog } from "@/components/nutrition/new-meal-plan-dialog";
 import { SendMealPlanDialog } from "@/components/nutrition/send-meal-plan-dialog";
 import { createClient } from "@/lib/supabase/client";
-import { deleteMealPlan } from "@/lib/nutrition/mutations";
+import { deleteMealPlan, setActiveMealPlan } from "@/lib/nutrition/mutations";
 import { getMealPlanTree } from "@/lib/nutrition/queries";
 import type { NutritionPlanSummary, NutritionPlanTree } from "@/lib/nutrition/types";
 import type { CoachClient } from "@/lib/supabase/types";
@@ -24,20 +24,43 @@ interface ClientMealPlansProps {
 
 /**
  * One client's own meal plans — the Nutrition tab on AthleteDetailPanel.
- * Mirrors ClientDetail (programs) exactly, minus the "set active" control
- * ClientDetail has — see MealPlanCard's own doc comment for why (no
- * setActiveMealPlan yet, nothing reads nutrition_plans.is_active).
+ * Mirrors ClientDetail (programs) exactly, including the "set active"
+ * control.
  */
 export function ClientMealPlans({ coachId, client, plans: initialPlans, activeClients }: ClientMealPlansProps) {
   const router = useRouter();
   const [plans, setPlans] = useState(initialPlans);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
+  const [settingActiveId, setSettingActiveId] = useState<string | null>(null);
+  const [activeError, setActiveError] = useState<string | null>(null);
   const [loadingSendId, setLoadingSendId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendTarget, setSendTarget] = useState<NutritionPlanTree | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<NutritionPlanSummary | null>(null);
+
+  async function handleSetActive(planId: string) {
+    const target = plans.find((p) => p.id === planId);
+    if (!target) return;
+
+    const previous = plans;
+    setActiveError(null);
+    setSettingActiveId(planId);
+    setPlans((current) =>
+      current.map((p) => (p.id === planId ? { ...p, is_active: true } : p.athlete_id === target.athlete_id ? { ...p, is_active: false } : p))
+    );
+
+    const supabase = createClient();
+    const { error } = await setActiveMealPlan(supabase, planId);
+    setSettingActiveId(null);
+    if (error) {
+      setPlans(previous);
+      setActiveError(error);
+      return;
+    }
+    router.refresh();
+  }
 
   async function handleSend(planId: string) {
     setSendError(null);
@@ -86,10 +109,10 @@ export function ClientMealPlans({ coachId, client, plans: initialPlans, activeCl
         </Button>
       </div>
 
-      {(sendError || deleteError) && (
+      {(activeError || sendError || deleteError) && (
         <div className="mb-6 flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-          <p className="text-sm text-foreground">{sendError || deleteError}</p>
+          <p className="text-sm text-foreground">{activeError || sendError || deleteError}</p>
         </div>
       )}
 
@@ -107,6 +130,13 @@ export function ClientMealPlans({ coachId, client, plans: initialPlans, activeCl
             <MealPlanCard
               key={plan.id}
               plan={plan}
+              // A client who removed their assigned copy is no longer
+              // using it — reactivating it for them without their say-so
+              // would be surprising, same guard ClientDetail's own
+              // ProgramCard usage applies.
+              canSetActive={!plan.removed_by_athlete_at}
+              settingActive={settingActiveId === plan.id}
+              onSetActive={handleSetActive}
               canSend
               sendingCopy={loadingSendId === plan.id}
               onSend={handleSend}

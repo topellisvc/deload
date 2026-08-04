@@ -223,13 +223,53 @@ export async function updateMealPlan(
 }
 
 /** Deletes a plan row outright — RLS restricts this to the plan's owner,
- * same as deleteProgram. There's no athlete-side soft-remove equivalent to
- * removeAssignedProgram yet (that one goes through a SECURITY DEFINER RPC
- * migration 0018 introduced specifically for programs) — worth adding the
- * same way if athletes need to hide a meal plan without the coach losing
- * visibility into it. */
+ * same as deleteProgram. Call sites should route the athlete's own
+ * "delete/remove" action through removeAssignedMealPlan instead — this
+ * one's for the owner clearing out a plan (theirs, or a leftover removed
+ * client copy) for real. */
 export async function deleteMealPlan(supabase: SupabaseClient, planId: string): Promise<{ error: string | null }> {
   const { error } = await supabase.from("nutrition_plans").delete().eq("id", planId);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * The athlete-side counterpart to deleteMealPlan: soft-removes their own
+ * copy of a coach-assigned meal plan (migration 0060's
+ * remove_assigned_meal_plan function) instead of deleting the row. Since
+ * it's a SECURITY DEFINER function with its own auth.uid() = athlete_id
+ * check (same pattern as set_active_meal_plan below), this can only ever
+ * touch the caller's own assigned copy — never the coach's original or
+ * another client's copy, same guarantee deleteMealPlan had, just without
+ * erasing the coach's visibility into the assignment. Mirrors
+ * removeAssignedProgram exactly.
+ */
+export async function removeAssignedMealPlan(supabase: SupabaseClient, planId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc("remove_assigned_meal_plan", { p_plan_id: planId });
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Makes `planId` the athlete's one active meal plan, deactivating whatever
+ * was active before it. Goes through the `set_active_meal_plan` Postgres
+ * function (migration 0060) rather than two separate client updates, so
+ * there's never a window with zero or two active plans for the same
+ * athlete — mirrors setActiveProgram exactly, including that either the
+ * plan's owner (a coach) or its assigned athlete may call this.
+ */
+export async function setActiveMealPlan(supabase: SupabaseClient, planId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc("set_active_meal_plan", { p_plan_id: planId });
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Turns off a meal plan's active flag without making another one active —
+ * "I don't want a dashboard right now" rather than "switch to a different
+ * plan." No RPC needed: unlike activating, deactivating can't collide with
+ * the one-active-per-athlete invariant, so a plain RLS-scoped update is
+ * enough — mirrors deactivateProgram.
+ */
+export async function deactivateMealPlan(supabase: SupabaseClient, planId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("nutrition_plans").update({ is_active: false }).eq("id", planId);
   return { error: error?.message ?? null };
 }
 

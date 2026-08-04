@@ -3,13 +3,14 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Pencil, Send, Star, UserRound, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Pencil, Send, Star, Trash2, UserRound, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { NutritionPlanTree } from "@/lib/nutrition/types";
 import { daySummary, itemMacros, resolvedMealOption, sumMacros } from "@/lib/nutrition/macros";
-import { selectMealOption } from "@/lib/nutrition/mutations";
+import { deleteMealPlan, removeAssignedMealPlan, selectMealOption, setActiveMealPlan } from "@/lib/nutrition/mutations";
 import { SendMealPlanDialog } from "@/components/nutrition/send-meal-plan-dialog";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { CoachClient } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +48,21 @@ export function MealPlanViewer({ plan: initialPlan, assignedByEmail, currentUser
 
   const isOwner = plan.owner_id === currentUserId;
   const isAthlete = plan.athlete_id === currentUserId;
+  const removedByAthlete = Boolean(plan.removed_by_athlete_at);
+  // Either side of a coach-assigned plan can activate/remove it (mirrors
+  // ProgramViewer's own canManage) — a coach manages anything they built,
+  // and an athlete manages their own copy. Once the athlete has removed
+  // their copy, reaching this page again (e.g. a stale link) shouldn't
+  // offer to manage it further; the coach can still fully delete their own
+  // row regardless.
+  const canManage = isOwner || (isAthlete && !removedByAthlete);
+
+  const [settingActive, setSettingActive] = useState(false);
+  const [activeError, setActiveError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   const day = plan.days.find((d) => d.id === selectedDayId) ?? plan.days[0];
 
   function handleSelectOption(mealId: string, optionId: string) {
@@ -59,43 +75,104 @@ export function MealPlanViewer({ plan: initialPlan, assignedByEmail, currentUser
     });
   }
 
+  async function handleSetActive() {
+    setSettingActive(true);
+    setActiveError(null);
+    const { error: e } = await setActiveMealPlan(supabase, plan.id);
+    setSettingActive(false);
+    if (e) {
+      setActiveError(e);
+      return;
+    }
+    setPlan((p) => ({ ...p, is_active: true }));
+    // Bypasses Server Actions (a direct Supabase RPC), so the meal plans
+    // list and dashboard need an explicit refresh to stop showing stale
+    // is_active state — same reasoning as ProgramViewer's own handleSetActive.
+    router.refresh();
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    // Owner: a real delete — every day and meal in the plan is gone.
+    // Athlete: soft — removeAssignedMealPlan just marks this row as removed
+    // and deactivates it, so the coach still sees it (with a "removed by
+    // client" note) instead of it silently disappearing from their side.
+    const { error: e } = isOwner ? await deleteMealPlan(supabase, plan.id) : await removeAssignedMealPlan(supabase, plan.id);
+    setConfirmDeleteOpen(false);
+    if (e) {
+      setDeleting(false);
+      setDeleteError(e);
+      return;
+    }
+    router.refresh();
+    router.push("/nutrition");
+  }
+
   if (!day) return null;
   const summary = daySummary(day, plan);
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-16">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-1 flex-col gap-2">
           <Link href="/nutrition" className="text-sm text-muted-foreground hover:text-foreground">
             ← Nutrition
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{plan.name}</h1>
+          {plan.is_active && (
+            <span className="flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+              <CheckCircle2 className="size-3.5" />
+              Active meal plan
+            </span>
+          )}
         </div>
-        {isOwner && (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setSendOpen(true)}>
-              <Send className="size-4" />
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          {canManage && !plan.is_active && !removedByAthlete && (
+            <Button variant="outline" size="sm" disabled={settingActive} onClick={handleSetActive}>
+              {settingActive ? "Setting active…" : "Set as active"}
+            </Button>
+          )}
+          {isOwner && (
+            <Button variant="outline" size="sm" onClick={() => setSendOpen(true)}>
+              <Send className="size-3.5" />
               Send a copy
             </Button>
-            <Button onClick={() => router.push(`/nutrition/${plan.id}/edit`)}>
-              <Pencil className="size-4" />
+          )}
+          {isOwner && (
+            <Button size="sm" onClick={() => router.push(`/nutrition/${plan.id}/edit`)}>
+              <Pencil className="size-3.5" />
               Edit
             </Button>
-          </div>
-        )}
+          )}
+          {canManage && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={deleting}
+              className="border-danger/30 text-danger hover:border-danger hover:bg-danger/10"
+              onClick={() => setConfirmDeleteOpen(true)}
+            >
+              <Trash2 className="size-3.5" />
+              {deleting ? "Removing…" : isOwner ? "Delete" : "Remove"}
+            </Button>
+          )}
+        </div>
       </div>
 
-      {error && (
+      {(error || activeError || deleteError) && (
         <div className="flex items-start gap-3 rounded-lg border border-danger/30 bg-danger/10 p-3">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-          <p className="text-sm text-foreground">{error}</p>
+          <p className="text-sm text-foreground">{error || activeError || deleteError}</p>
         </div>
       )}
 
       {!isOwner && isAthlete && (
         <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
           <UserRound className="mt-0.5 size-4 shrink-0 text-primary" />
-          <p className="text-sm text-foreground">Assigned by {assignedByEmail ?? "your coach"} — only they can edit its days and meals.</p>
+          <p className="text-sm text-foreground">
+            Assigned by {assignedByEmail ?? "your coach"} — you can set it active or remove your own copy, but only they can edit its days and meals.
+          </p>
         </div>
       )}
 
@@ -103,6 +180,16 @@ export function MealPlanViewer({ plan: initialPlan, assignedByEmail, currentUser
         <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-4">
           <UserRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <p className="text-sm text-foreground">Viewing as admin — read-only, no changes can be made from here.</p>
+        </div>
+      )}
+
+      {isOwner && removedByAthlete && (
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 p-4">
+          <UserRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <p className="text-sm text-foreground">
+            The assigned athlete removed this from their own list on {new Date(plan.removed_by_athlete_at!).toLocaleDateString()} — they&apos;re no
+            longer using it. This copy is still yours; delete it to clean it up, or send a fresh copy if they should pick it back up.
+          </p>
         </div>
       )}
 
@@ -201,6 +288,19 @@ export function MealPlanViewer({ plan: initialPlan, assignedByEmail, currentUser
       {sendOpen && (
         <SendMealPlanDialog open onClose={() => setSendOpen(false)} plan={plan} currentUserId={currentUserId} activeClients={activeClients} />
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title={isOwner ? "Delete meal plan?" : "Remove meal plan?"}
+        description={
+          isOwner
+            ? `Delete "${plan.name}"? This removes every day and meal in it — this can't be undone.`
+            : `Remove "${plan.name}"? This only removes your own copy — it won't affect your coach's original.`
+        }
+        confirmLabel={isOwner ? "Delete" : "Remove"}
+      />
     </div>
   );
 }

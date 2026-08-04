@@ -19,9 +19,9 @@ vi.mock("next/link", () => ({
     </a>
   ),
 }));
-vi.mock("@/lib/nutrition/mutations", () => ({ deleteMealPlan: vi.fn() }));
+vi.mock("@/lib/nutrition/mutations", () => ({ deleteMealPlan: vi.fn(), setActiveMealPlan: vi.fn() }));
 
-import { deleteMealPlan } from "@/lib/nutrition/mutations";
+import { deleteMealPlan, setActiveMealPlan } from "@/lib/nutrition/mutations";
 
 function makeClient(overrides: Partial<CoachClient> = {}): CoachClient {
   return {
@@ -63,6 +63,7 @@ function makePlan(overrides: Partial<NutritionPlanSummary> = {}): NutritionPlanS
 describe("ClientMealPlans", () => {
   beforeEach(() => {
     vi.mocked(deleteMealPlan).mockReset();
+    vi.mocked(setActiveMealPlan).mockReset();
     routerMock.push.mockClear();
     routerMock.refresh.mockClear();
   });
@@ -85,5 +86,23 @@ describe("ClientMealPlans", () => {
 
     expect(deleteMealPlan).toHaveBeenCalledWith({}, "plan-1");
     expect(routerMock.refresh).toHaveBeenCalled();
+  });
+
+  it("calls setActiveMealPlan and refreshes on success", async () => {
+    vi.mocked(setActiveMealPlan).mockResolvedValue({ error: null });
+    const user = userEvent.setup();
+    render(<ClientMealPlans coachId="coach-1" client={makeClient()} plans={[makePlan({ is_active: false })]} activeClients={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /set as active/i }));
+
+    expect(setActiveMealPlan).toHaveBeenCalledWith({}, "plan-1");
+    expect(routerMock.refresh).toHaveBeenCalled();
+  });
+
+  it("hides Set as active for a plan the client already removed their own copy of", () => {
+    render(
+      <ClientMealPlans coachId="coach-1" client={makeClient()} plans={[makePlan({ removed_by_athlete_at: "2026-07-25T10:00:00.000Z" })]} activeClients={[]} />
+    );
+    expect(screen.queryByRole("button", { name: /set as active/i })).not.toBeInTheDocument();
   });
 });
