@@ -517,3 +517,127 @@ export interface LoggedSet {
   notes: string | null;
   created_at: string;
 }
+
+// ============================================================
+// Nutrition (migration 0058) — meal plans built and sent to athletes the
+// same way programs are. See that migration's own header comment for the
+// full design rationale (flatter tree than programs, swappable meal
+// options, foods catalog). Types here mirror the Program/TrainingDay/
+// ExerciseBlock/BlockExercise/SetPrescription shapes above as closely as
+// the two domains actually match.
+// ============================================================
+
+/** A food catalog entry — either a global USDA-seeded row (owner_id null,
+ * source 'usda') or a coach's own custom food (owner_id set, source
+ * 'custom'). All macro/nutrient fields are per 100g; meal_items.quantity_g
+ * is what actually scales them for a given plan. */
+export interface Food {
+  id: string;
+  name: string;
+  brand: string | null;
+  source: "usda" | "custom";
+  /** USDA's own identifier for this food when source is 'usda' (SR28's NDB
+   * number, not necessarily a literal FoodData Central fdc_id — see
+   * scripts/import-usda-foods.py). Null for custom foods. */
+  fdc_id: number | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  sodium_mg: number | null;
+  /** UI convenience only — pre-fills a sensible quantity_g when a coach adds
+   * this food to a meal ("1 medium egg (50g)"). Never used to compute
+   * macros; quantity_g always is. */
+  default_serving_g: number | null;
+  default_serving_label: string | null;
+  owner_id: string | null;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Same owner/athlete shape as Program — owner_id is always the coach (or
+ * the self-programming athlete, when athlete_id = owner_id). */
+export interface NutritionPlan {
+  id: string;
+  owner_id: string;
+  athlete_id: string;
+  name: string;
+  notes: string | null;
+  /** Plan-wide default macro targets; any nutrition_days row can override
+   * one or more, falling back to these when its own value is null. All
+   * nullable — a coach can build a plan with no numeric targets at all. */
+  daily_calories_target: number | null;
+  daily_protein_target_g: number | null;
+  daily_carbs_target_g: number | null;
+  daily_fat_target_g: number | null;
+  is_active: boolean;
+  removed_by_athlete_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One day in a plan's flat, coach-ordered list (no weeks layer — see
+ * migration 0058's header for why). Target overrides fall back to the
+ * parent NutritionPlan's own value when null. */
+export interface NutritionDay {
+  id: string;
+  plan_id: string;
+  position: number;
+  label: string | null;
+  notes: string | null;
+  calories_target: number | null;
+  protein_target_g: number | null;
+  carbs_target_g: number | null;
+  fat_target_g: number | null;
+  created_at: string;
+}
+
+/** One meal slot ("Breakfast", "Lunch", "Snack 1" — coach free text). Always
+ * has at least one MealOption; allow_athlete_swap gates whether the athlete
+ * may change selected_option_id themselves (enforced by
+ * enforce_meal_update_permissions — RLS alone can't express "only this one
+ * column," see the migration). */
+export interface Meal {
+  id: string;
+  day_id: string;
+  position: number;
+  name: string;
+  notes: string | null;
+  allow_athlete_swap: boolean;
+  /** Which MealOption is currently "the" version of this meal. Null means
+   * "use the option at position 1" — the default before anyone (coach or
+   * athlete) has explicitly chosen one. Only ever athlete-writable when
+   * allow_athlete_swap is true; always coach-writable regardless. */
+  selected_option_id: string | null;
+  created_at: string;
+}
+
+/** One coach-defined alternative for a meal — "Option A"/"Option B", roughly
+ * macro-equivalent by convention, not by any DB-enforced constraint. A meal
+ * with only one option (the common case) just never surfaces a swap UI. */
+export interface MealOption {
+  id: string;
+  meal_id: string;
+  position: number;
+  label: string;
+  notes: string | null;
+  created_at: string;
+}
+
+/** One food line item within a MealOption. quantity_g is grams — the only
+ * unit macros are ever computed from. display_label is a purely cosmetic
+ * override ("2 eggs", "1 scoop") so a coach can build naturally without the
+ * athlete needing to think in grams. */
+export interface MealItem {
+  id: string;
+  meal_option_id: string;
+  position: number;
+  food_id: string;
+  quantity_g: number;
+  display_label: string | null;
+  notes: string | null;
+  created_at: string;
+}
