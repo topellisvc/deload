@@ -8,11 +8,9 @@ import { getProgramsForClient } from "@/lib/programs/queries";
 import { getConversationMessages } from "@/lib/messaging/queries";
 import { getSessionHistory, getLoggedSets, groupLoggedSetsByExercise } from "@/lib/logging/queries";
 import { listExercises } from "@/lib/exercises/queries";
-import { ClientDetail } from "@/components/clients/client-detail";
-import { ClientHistorySection } from "@/components/coaching/client-history-section";
-import { ExerciseHistoryLookup } from "@/components/coaching/exercise-history-lookup";
-import { NotesSection } from "@/components/coaching/notes-section";
-import { MessageThread } from "@/components/coaching/message-thread";
+import { getActiveProgramContext, getWeeklyTrainingSummary } from "@/lib/dashboard/queries";
+import { getMyStats } from "@/lib/profile/queries";
+import { AthleteDetailPanel } from "@/components/coaching/athlete-detail-panel";
 
 export const metadata: Metadata = {
   title: "Athlete",
@@ -24,15 +22,18 @@ interface AthletePageProps {
 }
 
 /**
- * The full per-athlete workspace the Coaching hub links out to: profile
- * summary + programs (ClientDetail, moved here unchanged from the old
- * /clients/[id] route), full per-set workout history (ClientHistorySection
- * — previously just a coarse "logged/skipped + program name" strip via
- * RecentActivitySection; getSessionHistory already accepts any athleteId
- * and RLS already permits reading it via program ownership, so this was a
- * wiring change, not a new capability), messages, and a notes placeholder
- * — everything the spec's "Client Detail" section calls for, on one page
- * instead of scattered across /clients and /programs.
+ * The detail panel athletes/layout.tsx's roster links out to — same
+ * data/components as the pre-redesign page (ClientDetail's program
+ * management, ClientHistorySection's full per-set history,
+ * ExerciseHistoryLookup, MessageThread, NotesSection), now assembled by
+ * AthleteDetailPanel into the mockup's identity-header + stats + sub-tabs
+ * layout instead of one long stack, plus real This-Week/streak numbers
+ * (getWeeklyTrainingSummary/getMyStats — the exact same queries the
+ * athlete's own dashboard runs on themselves, just pointed at `id`).
+ * No outer max-width wrapper or "back to Coaching" chrome here — the
+ * layout's AthletesShell owns the page frame and the roster panel; the
+ * ArrowLeft link below only shows on mobile, where the roster is hidden
+ * once an athlete's selected (see AthletesShell's own doc comment).
  * `id` is the athlete's user id (coach_clients.client_id), not the
  * coach_clients row id.
  */
@@ -59,12 +60,18 @@ export default async function AthletePage({ params }: AthletePageProps) {
   // still pending" (no linked user yet, so there's nothing here to show).
   if (!client) notFound();
 
-  const [programs, lastActivityOn, historyEntries, messages, exercises] = await Promise.all([
+  // weeklySummary needs activeContext (for workoutsScheduledThisWeek), so
+  // this can't join the Promise.all below.
+  const activeContext = await getActiveProgramContext(supabase, id, null);
+
+  const [programs, lastActivityOn, historyEntries, messages, exercises, weeklySummary, athleteStats] = await Promise.all([
     getProgramsForClient(supabase, user.id, id),
     getClientLastActivity(supabase, id),
     getSessionHistory(supabase, id),
     getConversationMessages(supabase, client.id),
     listExercises(supabase, {}),
+    getWeeklyTrainingSummary(supabase, id, activeContext),
+    getMyStats(supabase, id, "athlete"),
   ]);
   // Depends on historyEntries' log ids, so it can't join the Promise.all
   // above — same two-step shape /history's own page uses for itself.
@@ -74,32 +81,30 @@ export default async function AthletePage({ params }: AthletePageProps) {
   const activeClients = clients.filter((c) => c.status === "active");
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-16">
+    <div className="flex flex-col gap-4">
       <Link
-        href="/coaching"
-        className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        href="/coaching/athletes"
+        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground lg:hidden"
       >
         <ArrowLeft className="size-4" />
-        Coaching
+        Athletes
       </Link>
 
-      <div className="flex flex-col gap-8">
-        <ClientDetail coachId={user.id} client={client} programs={programs} lastActivityOn={lastActivityOn} activeClients={activeClients} />
-
-        <ClientHistorySection entries={historyEntries} loggedSetsByExercise={loggedSetsByExercise} />
-
-        <ExerciseHistoryLookup athleteId={id} exercises={exercises} />
-
-        <MessageThread
-          coachClientId={client.id}
-          currentUserId={user.id}
-          otherPartyId={id}
-          otherPartyLabel={client.client_email}
-          initialMessages={messages}
-        />
-
-        <NotesSection />
-      </div>
+      <AthleteDetailPanel
+        coachId={user.id}
+        athleteId={id}
+        client={client}
+        programs={programs}
+        lastActivityOn={lastActivityOn}
+        activeClients={activeClients}
+        weeklySummary={weeklySummary}
+        consistencyPercent={activeContext?.consistencyPercent ?? null}
+        currentStreak={athleteStats.currentStreak}
+        historyEntries={historyEntries}
+        loggedSetsByExercise={loggedSetsByExercise}
+        exercises={exercises}
+        messages={messages}
+      />
     </div>
   );
 }

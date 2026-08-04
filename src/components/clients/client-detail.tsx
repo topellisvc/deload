@@ -23,6 +23,11 @@ interface ClientDetailProps {
   /** Full active-client list (not just this one) so the "Send a copy"
    * dialog can also send elsewhere from this page, not only here. */
   activeClients: CoachClient[];
+  /** False when the caller (AthleteDetailPanel) already renders its own
+   * identity header above this component — avoids showing the athlete's
+   * email twice on the redesigned /coaching/athletes/[id] detail panel.
+   * Defaults true so every other/older caller is unaffected. */
+  showHeader?: boolean;
 }
 
 function formatDate(iso: string): string {
@@ -41,7 +46,14 @@ function formatDate(iso: string): string {
  * messages, and notes sections that round out the athlete detail page,
  * all inside one shared max-width container.
  */
-export function ClientDetail({ coachId, client, programs: initialPrograms, lastActivityOn, activeClients }: ClientDetailProps) {
+export function ClientDetail({
+  coachId,
+  client,
+  programs: initialPrograms,
+  lastActivityOn,
+  activeClients,
+  showHeader = true,
+}: ClientDetailProps) {
   const router = useRouter();
   const [programs, setPrograms] = useState(initialPrograms);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
@@ -122,27 +134,36 @@ export function ClientDetail({ coachId, client, programs: initialPrograms, lastA
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">{client.client_email}</h1>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <Mail className="size-4" />
-              {client.client_email}
-            </span>
-            {lastActivityOn && (
+      {showHeader ? (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-2">
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">{client.client_email}</h1>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <CalendarClock className="size-4" />
-                Last trained {formatDate(lastActivityOn)}
+                <Mail className="size-4" />
+                {client.client_email}
               </span>
-            )}
+              {lastActivityOn && (
+                <span className="flex items-center gap-1.5">
+                  <CalendarClock className="size-4" />
+                  Last trained {formatDate(lastActivityOn)}
+                </span>
+              )}
+            </div>
           </div>
+          <Button onClick={() => setNewDialogOpen(true)} className="self-start sm:self-auto">
+            <Plus className="size-4" />
+            New program
+          </Button>
         </div>
-        <Button onClick={() => setNewDialogOpen(true)} className="self-start sm:self-auto">
-          <Plus className="size-4" />
-          New program
-        </Button>
-      </div>
+      ) : (
+        <div className="flex justify-end">
+          <Button onClick={() => setNewDialogOpen(true)}>
+            <Plus className="size-4" />
+            New program
+          </Button>
+        </div>
+      )}
 
       {(activeError || sendError || deleteError) && (
         <div className="mb-6 flex gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4">

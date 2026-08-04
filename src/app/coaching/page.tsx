@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getMyProfileDetails } from "@/lib/profile/queries";
-import { getCoachingDashboard, getLinkedProfile, getMyClients, getMyCoaches, getPendingInvitesForMe } from "@/lib/coaching/queries";
+import { getCoachingDashboard, getLinkedProfile, getMyCoaches, getPendingInvitesForMe } from "@/lib/coaching/queries";
 import { getProgramSummaries } from "@/lib/programs/queries";
 import { getConversationMessages } from "@/lib/messaging/queries";
 import { PendingInvitations } from "@/components/coaching/pending-invitations";
@@ -51,6 +51,16 @@ export default async function CoachingPage() {
   const activeCoaches = myCoaches.filter((c) => c.status === "active" && c.client_id);
   const hasActiveCoaches = activeCoaches.length > 0;
 
+  // A coach with no active coaches of their own and no pending invite has
+  // nothing else on this page to see — send them straight into the real
+  // athlete-management workspace instead of a near-empty stopover. A coach
+  // who's also being coached (or has an invite awaiting response) stays
+  // here so those sections still show, with a compact link into
+  // /coaching/athletes standing in for the old inline roster below.
+  if (isCoach && !hasActiveCoaches && pendingInvites.length === 0) {
+    redirect("/coaching/athletes");
+  }
+
   // Per-relationship profile + conversation lookups, fetched together
   // rather than sequentially — each relationship's card is independent of
   // the others.
@@ -59,15 +69,7 @@ export default async function CoachingPage() {
     Promise.all(activeCoaches.map((c) => getConversationMessages(supabase, c.id))),
   ]);
 
-  let coachDashboard: Awaited<ReturnType<typeof getCoachingDashboard>> | null = null;
-  let sentPendingInvites: Awaited<ReturnType<typeof getMyClients>> = [];
-  let knownEmails: string[] = [];
-  if (isCoach) {
-    const [dashboard, clients] = await Promise.all([getCoachingDashboard(supabase, user.id), getMyClients(supabase, user.id)]);
-    coachDashboard = dashboard;
-    sentPendingInvites = clients.filter((c) => c.status === "pending");
-    knownEmails = clients.map((c) => c.client_email);
-  }
+  const coachDashboard = isCoach ? await getCoachingDashboard(supabase, user.id) : null;
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-8 px-6 py-12">
@@ -114,17 +116,7 @@ export default async function CoachingPage() {
         </div>
       )}
 
-      {isCoach && coachDashboard ? (
-        <CoachingCoachView
-          coachId={user.id}
-          coachEmail={user.email ?? null}
-          dashboard={coachDashboard}
-          sentPendingInvites={sentPendingInvites}
-          knownEmails={knownEmails}
-        />
-      ) : (
-        <BecomeCoachCta userId={user.id} />
-      )}
+      {isCoach && coachDashboard ? <CoachingCoachView dashboard={coachDashboard} /> : !isCoach ? <BecomeCoachCta userId={user.id} /> : null}
     </div>
   );
 }

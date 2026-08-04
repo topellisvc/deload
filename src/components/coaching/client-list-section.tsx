@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, ChevronRight } from "lucide-react";
 import { getInitials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { CoachingClientSummary } from "@/lib/coaching/types";
 
 function formatDate(iso: string): string {
@@ -8,33 +9,35 @@ function formatDate(iso: string): string {
 }
 
 /**
- * Every active athlete, as cards — name (email; no separate display name
- * reliably set across the app), last workout logged, current active
- * program (from this coach, if any — see getCoachingDashboard's comment
- * on why it's null otherwise), a "needs attention" flag standing in for
- * "training status," and that program's consistency % if there is one.
- * Already sorted most-overdue-first by getCoachingDashboard, so a coach
- * managing several clients sees whoever needs a nudge at the top rather
- * than having to scan the whole list. Selecting one opens
- * /coaching/athletes/[id].
+ * One page of "Your athletes" rows for AthletesShell's Clients tab — a
+ * single-column list (not the old 2-up grid) now that this lives in a
+ * ~380px sidebar rather than a full-width card, and `selectedId` picks out
+ * whichever athlete's detail panel is currently open beside it, mirroring
+ * how a mail client highlights the open thread in its list. Pagination,
+ * search, and the tab bar around this all live in AthletesShell — this
+ * component only ever renders the one page of clients it's handed.
  */
-export function ClientListSection({ clients }: { clients: CoachingClientSummary[] }) {
+export function ClientListSection({ clients, selectedId }: { clients: CoachingClientSummary[]; selectedId?: string | null }) {
+  if (clients.length === 0) {
+    return <p className="px-1 py-6 text-center text-sm text-muted-foreground">No athletes match.</p>;
+  }
+
   return (
-    <div className="rounded-2xl border border-border bg-surface p-6">
-      <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">Your athletes</h2>
-      {clients.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No athletes yet. Invite one to get started.</p>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {clients.map((client) => (
+    <ul className="flex flex-col gap-2">
+      {clients.map((client) => {
+        const selected = client.clientId === selectedId;
+        return (
+          <li key={client.id}>
             <Link
-              key={client.id}
               href={`/coaching/athletes/${client.clientId}`}
-              className="flex items-center gap-3 rounded-xl border border-border bg-background p-4 transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className={cn(
+                "flex items-center gap-3 rounded-xl border p-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                selected ? "border-primary bg-primary/5" : "border-border bg-background hover:border-primary"
+              )}
             >
               <div
                 aria-hidden="true"
-                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
+                className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
               >
                 {getInitials(null, client.email)}
               </div>
@@ -54,9 +57,9 @@ export function ClientListSection({ clients }: { clients: CoachingClientSummary[
               )}
               <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
             </Link>
-          ))}
-        </div>
-      )}
-    </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
