@@ -221,4 +221,116 @@ describe("AthletePreviewDay", () => {
     expect(screen.queryByText("Warm-up")).not.toBeInTheDocument();
     expect(screen.queryByText("Conditioning / Finisher")).not.toBeInTheDocument();
   });
+
+  it("renders a circuit block as its own round-by-round card — name, round count, exercise list, and rest — instead of numbered standalone exercises", () => {
+    const day = makeDay({
+      blocks: [
+        {
+          id: "block-circuit",
+          day_id: "day-1",
+          position: 1,
+          block_type: "circuit",
+          block_role: "main",
+          rounds: 3,
+          custom_name: "Metcon A",
+          notes: "Move continuously.",
+          goal: "Conditioning",
+          completion_method: "traditional_rounds",
+          rest_between_exercises_seconds: 15,
+          rest_between_rounds_seconds: 90,
+          duration_seconds: null,
+          interval_seconds: null,
+          exercises: [
+            { id: "ex-kb", block_id: "block-circuit", position: 1, exercise_id: null, custom_name: "Kettlebell Swing", notes: null, exercise_category: "strength", sets: [makeSet({ id: "s-kb" })] },
+            { id: "ex-box", block_id: "block-circuit", position: 2, exercise_id: null, custom_name: "Box Jump", notes: null, exercise_category: "strength", sets: [makeSet({ id: "s-box" })] },
+          ],
+        },
+      ],
+    });
+    render(<AthletePreviewDay day={day} />);
+
+    expect(screen.getByText("Metcon A")).toBeInTheDocument();
+    expect(screen.getByText("Round 1 of 3")).toBeInTheDocument();
+    expect(screen.getByText(/Traditional Rounds/)).toBeInTheDocument();
+    expect(screen.getByText("Kettlebell Swing")).toBeInTheDocument();
+    expect(screen.getByText("Box Jump")).toBeInTheDocument();
+    expect(screen.getByText(/15s between exercises/)).toBeInTheDocument();
+    expect(screen.getByText(/90s between rounds/)).toBeInTheDocument();
+    expect(screen.getByText("Move continuously.")).toBeInTheDocument();
+    // The circuit's own exercises aren't numbered against the day's
+    // standalone-exercise count — a circuit is one structural unit, not two
+    // separately-numbered exercises.
+    expect(screen.queryByText(/Exercise \d+ of \d+/)).not.toBeInTheDocument();
+  });
+
+  it("numbers standalone exercises correctly around a circuit block sitting between them", () => {
+    const day = makeDay({
+      blocks: [
+        {
+          id: "block-1",
+          day_id: "day-1",
+          position: 1,
+          block_type: "single",
+          block_role: "main",
+          rounds: 1,
+          custom_name: null,
+          notes: null,
+          goal: null,
+          completion_method: null,
+          rest_between_exercises_seconds: null,
+          rest_between_rounds_seconds: null,
+          duration_seconds: null,
+          interval_seconds: null,
+          exercises: [
+            { id: "ex-1", block_id: "block-1", position: 1, exercise_id: null, custom_name: "Squat", notes: null, exercise_category: "strength", sets: [makeSet({ id: "s1" })] },
+          ],
+        },
+        {
+          id: "block-circuit",
+          day_id: "day-1",
+          position: 2,
+          block_type: "circuit",
+          block_role: "main",
+          rounds: 2,
+          custom_name: null,
+          notes: null,
+          goal: null,
+          completion_method: "amrap",
+          rest_between_exercises_seconds: null,
+          rest_between_rounds_seconds: null,
+          duration_seconds: 600,
+          interval_seconds: null,
+          exercises: [
+            { id: "ex-mid", block_id: "block-circuit", position: 1, exercise_id: null, custom_name: "Burpee", notes: null, exercise_category: "strength", sets: [makeSet({ id: "s-mid" })] },
+          ],
+        },
+        {
+          id: "block-2",
+          day_id: "day-1",
+          position: 3,
+          block_type: "single",
+          block_role: "main",
+          rounds: 1,
+          custom_name: null,
+          notes: null,
+          goal: null,
+          completion_method: null,
+          rest_between_exercises_seconds: null,
+          rest_between_rounds_seconds: null,
+          duration_seconds: null,
+          interval_seconds: null,
+          exercises: [
+            { id: "ex-2", block_id: "block-2", position: 1, exercise_id: null, custom_name: "Row", notes: null, exercise_category: "strength", sets: [makeSet({ id: "s2" })] },
+          ],
+        },
+      ],
+    });
+    render(<AthletePreviewDay day={day} />);
+
+    expect(screen.getByText("Exercise 1 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Exercise 2 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Burpee")).toBeInTheDocument();
+    // Falls back to the generic "Circuit" label when custom_name is null.
+    expect(screen.getByText("Circuit")).toBeInTheDocument();
+  });
 });

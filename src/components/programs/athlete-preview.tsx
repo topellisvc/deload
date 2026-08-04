@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { Flame, Moon, MessageSquareText, PersonStanding, Sunrise } from "lucide-react";
+import { Flame, Moon, MessageSquareText, PersonStanding, RotateCw, Sunrise } from "lucide-react";
 import { getExerciseDisplayName } from "@/lib/programs/exercise-catalog";
 import { EXERCISE_CATEGORY_LABELS } from "@/lib/programs/prescription-types";
+import { getCompletionMethodDef } from "@/lib/programs/completion-methods";
 import { SetDetails } from "@/components/programs/set-details";
 import { WorkoutSummaryBar } from "@/components/programs/workout-summary-bar";
 import type { BlockExerciseRow, BlockRow, DayRow } from "@/lib/programs/types";
@@ -49,42 +50,80 @@ export function AthletePreviewDay({ day }: AthletePreviewDayProps) {
   const mainBlocks = day.blocks.filter((b) => b.block_role === "main");
   const conditioningBlocks = day.blocks.filter((b) => b.block_role === "conditioning");
 
-  const warmupExercises = flattenExercises(warmupBlocks);
-  const mainExercises = flattenExercises(mainBlocks);
-  const conditioningExercises = flattenExercises(conditioningBlocks);
-
-  if (warmupExercises.length === 0 && mainExercises.length === 0 && conditioningExercises.length === 0) {
+  if (day.blocks.length === 0) {
     return <p className="rounded-2xl border border-dashed border-border-strong p-8 text-center text-sm text-muted-foreground">Nothing added to this day yet.</p>;
   }
 
+  const warmupItems = previewItemsForBlocks(warmupBlocks);
+  const { items: mainItems, exerciseCount: mainExerciseCount } = numberedPreviewItemsForBlocks(mainBlocks);
+  const conditioningItems = previewItemsForBlocks(conditioningBlocks);
+
   return (
     <div className="flex flex-col gap-3">
-      {warmupExercises.length > 0 && (
+      {warmupItems.length > 0 && (
         <PreviewSection label="Warm-up" icon={<Sunrise className="size-3.5" />}>
-          {warmupExercises.map((exercise) => (
-            <ExercisePreviewCard key={exercise.id} exercise={exercise} />
-          ))}
+          {warmupItems.map((item) => renderPreviewItem(item))}
         </PreviewSection>
       )}
 
       <WorkoutSummaryBar blocks={mainBlocks} />
-      {mainExercises.map((exercise, i) => (
-        <ExercisePreviewCard key={exercise.id} exercise={exercise} index={i} total={mainExercises.length} />
-      ))}
+      {mainItems.map((item) => renderPreviewItem(item, mainExerciseCount))}
 
-      {conditioningExercises.length > 0 && (
+      {conditioningItems.length > 0 && (
         <PreviewSection label="Conditioning / Finisher" icon={<Flame className="size-3.5" />}>
-          {conditioningExercises.map((exercise) => (
-            <ExercisePreviewCard key={exercise.id} exercise={exercise} />
-          ))}
+          {conditioningItems.map((item) => renderPreviewItem(item))}
         </PreviewSection>
       )}
     </div>
   );
 }
 
-function flattenExercises(blocks: BlockRow[]): BlockExerciseRow[] {
-  return [...blocks].sort((a, b) => a.position - b.position).flatMap((block) => [...block.exercises].sort((a, b) => a.position - b.position));
+/** Either a standalone exercise (single/superset block) or a whole circuit,
+ * in the day's real block order — a circuit's exercises are never flattened
+ * out into this section's plain exercise list the way single/superset
+ * blocks' exercises are, since a circuit is a single structural unit to the
+ * athlete (see CircuitPreviewCard), not N separate numbered exercises. */
+type PreviewItem = { kind: "exercise"; exercise: BlockExerciseRow; index?: number } | { kind: "circuit"; block: BlockRow };
+
+function previewItemsForBlocks(blocks: BlockRow[]): PreviewItem[] {
+  const items: PreviewItem[] = [];
+  for (const block of [...blocks].sort((a, b) => a.position - b.position)) {
+    if (block.block_type === "circuit") {
+      items.push({ kind: "circuit", block });
+      continue;
+    }
+    for (const exercise of [...block.exercises].sort((a, b) => a.position - b.position)) {
+      items.push({ kind: "exercise", exercise });
+    }
+  }
+  return items;
+}
+
+/** Same walk as previewItemsForBlocks, but also assigns each standalone
+ * exercise its 0-based position in the "Exercise X of Y" count — a circuit
+ * block doesn't consume a number itself (it's shown as its own card, see
+ * renderPreviewItem) and its own exercises aren't numbered against the rest
+ * of the day's exercises either, matching how warm-up/conditioning
+ * exercises already sit outside this count entirely. */
+function numberedPreviewItemsForBlocks(blocks: BlockRow[]): { items: PreviewItem[]; exerciseCount: number } {
+  const items: PreviewItem[] = [];
+  let index = 0;
+  for (const block of [...blocks].sort((a, b) => a.position - b.position)) {
+    if (block.block_type === "circuit") {
+      items.push({ kind: "circuit", block });
+      continue;
+    }
+    for (const exercise of [...block.exercises].sort((a, b) => a.position - b.position)) {
+      items.push({ kind: "exercise", exercise, index: index });
+      index++;
+    }
+  }
+  return { items, exerciseCount: index };
+}
+
+function renderPreviewItem(item: PreviewItem, total?: number): ReactNode {
+  if (item.kind === "circuit") return <CircuitPreviewCard key={item.block.id} block={item.block} />;
+  return <ExercisePreviewCard key={item.exercise.id} exercise={item.exercise} index={item.index} total={item.index !== undefined ? total : undefined} />;
 }
 
 function PreviewSection({ label, icon, children }: { label: string; icon: ReactNode; children: ReactNode }) {
@@ -136,6 +175,82 @@ function ExercisePreviewCard({ exercise, index, total }: { exercise: BlockExerci
         <div className="flex items-start gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3">
           <MessageSquareText className="mt-0.5 size-4 shrink-0 text-primary" />
           <p className="text-sm italic text-foreground">{exercise.notes}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatSeconds(s: number): string {
+  if (s === 0) return "0s";
+  if (s % 60 === 0) return `${s / 60}min`;
+  return `${s}s`;
+}
+
+/**
+ * A `block_type: 'circuit'` block's own read-only preview — the spec's
+ * "round-by-round structure": a "Round 1 of N" header (one pass through is
+ * enough to show the athlete what repeats; this isn't a full N-times
+ * simulation), the exercise list they work through each round, then the
+ * circuit's own rest — reusing SetDetails per exercise exactly like
+ * ExercisePreviewCard, so a circuit's prescriptions read identically to any
+ * other exercise's. Sits outside the main section's "Exercise X of Y" count
+ * (see numberedPreviewItemsForBlocks) since the whole circuit is one
+ * structural unit, not N separately-numbered exercises.
+ */
+function CircuitPreviewCard({ block }: { block: BlockRow }) {
+  const methodDef = block.completion_method ? getCompletionMethodDef(block.completion_method) : undefined;
+  const exercises = [...block.exercises].sort((a, b) => a.position - b.position);
+
+  const restParts: string[] = [];
+  if (block.rest_between_exercises_seconds != null) restParts.push(`${formatSeconds(block.rest_between_exercises_seconds)} between exercises`);
+  if (block.rest_between_rounds_seconds != null) restParts.push(`${formatSeconds(block.rest_between_rounds_seconds)} between rounds`);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-primary/30 bg-surface p-4">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1.5">
+          <RotateCw className="size-4 text-primary" />
+          <h3 className="text-base font-semibold text-foreground">{block.custom_name || "Circuit"}</h3>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <span>Round 1 of {block.rounds}</span>
+          {methodDef && <span>· {methodDef.label}</span>}
+          {block.goal && <span>· {block.goal}</span>}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {exercises.map((exercise) => {
+          const category = exercise.exercise_category;
+          return (
+            <div key={exercise.id} className="flex flex-col gap-1.5 rounded-xl border border-border bg-background p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-foreground">{getExerciseDisplayName(exercise)}</span>
+                <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {category !== "strength" && <PersonStanding className="size-3" />}
+                  {EXERCISE_CATEGORY_LABELS[category]}
+                </span>
+              </div>
+              <ul className="flex flex-col gap-1">
+                {exercise.sets.map((set) => (
+                  <li key={set.id}>
+                    <SetDetails set={set} category={category} />
+                  </li>
+                ))}
+              </ul>
+              {exercise.notes && <p className="text-xs italic text-muted-foreground">{exercise.notes}</p>}
+            </div>
+          );
+        })}
+      </div>
+
+      {restParts.length > 0 && <p className="text-xs text-muted-foreground">Rest: {restParts.join(", ")}</p>}
+
+      {block.notes && (
+        <div className="flex items-start gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3">
+          <MessageSquareText className="mt-0.5 size-4 shrink-0 text-primary" />
+          <p className="text-sm italic text-foreground">{block.notes}</p>
         </div>
       )}
     </div>
