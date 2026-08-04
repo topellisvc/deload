@@ -5,6 +5,7 @@ import { Flame, Mail, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UnderlineTabs, type UnderlineTabOption } from "@/components/ui/underline-tabs";
 import { ClientDetail } from "@/components/clients/client-detail";
+import { ClientMealPlans } from "@/components/nutrition/client-meal-plans";
 import { ClientHistorySection } from "@/components/coaching/client-history-section";
 import { ExerciseHistoryLookup } from "@/components/coaching/exercise-history-lookup";
 import { NotesSection } from "@/components/coaching/notes-section";
@@ -12,15 +13,17 @@ import { MessageThread } from "@/components/coaching/message-thread";
 import { ThisWeekStats } from "@/components/dashboard/this-week-stats";
 import { getInitials } from "@/lib/utils";
 import type { ProgramSummary } from "@/lib/programs/types";
+import type { NutritionPlanSummary } from "@/lib/nutrition/types";
 import type { CoachClient, LoggedSet, Message } from "@/lib/supabase/types";
 import type { SessionHistoryEntry } from "@/lib/logging/queries";
 import type { Exercise } from "@/lib/exercises/types";
 import type { WeeklyTrainingSummary } from "@/lib/dashboard/types";
 
-type DetailTab = "programs" | "activity" | "notes";
+type DetailTab = "programs" | "nutrition" | "activity" | "notes";
 
 const TABS: UnderlineTabOption<DetailTab>[] = [
   { value: "programs", label: "Programs" },
+  { value: "nutrition", label: "Nutrition" },
   { value: "activity", label: "Activity" },
   { value: "notes", label: "Notes" },
 ];
@@ -34,6 +37,7 @@ interface AthleteDetailPanelProps {
   athleteId: string;
   client: CoachClient;
   programs: ProgramSummary[];
+  mealPlans: NutritionPlanSummary[];
   lastActivityOn: string | null;
   activeClients: CoachClient[];
   weeklySummary: WeeklyTrainingSummary;
@@ -66,6 +70,7 @@ export function AthleteDetailPanel({
   athleteId,
   client,
   programs,
+  mealPlans,
   lastActivityOn,
   activeClients,
   weeklySummary,
@@ -141,6 +146,8 @@ export function AthleteDetailPanel({
           showHeader={false}
         />
       )}
+
+      {tab === "nutrition" && <ClientMealPlans coachId={coachId} client={client} plans={mealPlans} activeClients={activeClients} />}
 
       {tab === "activity" && (
         <div className="flex flex-col gap-6">

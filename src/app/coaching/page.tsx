@@ -5,10 +5,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getMyProfileDetails } from "@/lib/profile/queries";
 import { getCoachingDashboard, getLinkedProfile, getMyCoaches, getPendingInvitesForMe } from "@/lib/coaching/queries";
 import { getProgramSummaries } from "@/lib/programs/queries";
+import { getMealPlanSummaries } from "@/lib/nutrition/queries";
 import { getConversationMessages } from "@/lib/messaging/queries";
 import { PendingInvitations } from "@/components/coaching/pending-invitations";
 import { YourCoachCard } from "@/components/coaching/your-coach-card";
 import { SharedProgramsSection } from "@/components/coaching/shared-programs-section";
+import { SharedMealPlansSection } from "@/components/nutrition/shared-meal-plans-section";
 import { RecentFeedbackSection } from "@/components/coaching/recent-feedback-section";
 import { MessageThread } from "@/components/coaching/message-thread";
 import { CoachingCoachView } from "@/components/coaching/coaching-coach-view";
@@ -40,11 +42,12 @@ export default async function CoachingPage() {
 
   // profile doesn't gate any of these three (isCoach is only checked
   // further down) — run all four concurrently instead of profile first.
-  const [profile, pendingInvites, myCoaches, programs] = await Promise.all([
+  const [profile, pendingInvites, myCoaches, programs, mealPlans] = await Promise.all([
     getMyProfileDetails(supabase, user.id),
     getPendingInvitesForMe(supabase),
     getMyCoaches(supabase, user.id),
     getProgramSummaries(supabase, user.id),
+    getMealPlanSummaries(supabase, user.id),
   ]);
   const isCoach = profile.role === "coach";
 
@@ -85,6 +88,7 @@ export default async function CoachingPage() {
           {activeCoaches.map((coach, i) => {
             const linkedProfile = linkedProfiles[i] ?? null;
             const sharedPrograms = programs.filter((p) => p.owner_id === coach.coach_id);
+            const sharedMealPlans = mealPlans.filter((p) => p.owner_id === coach.coach_id);
             const activeProgramCount = sharedPrograms.filter((p) => p.is_active).length;
             const messages = conversations[i] ?? [];
             const coachLabel = linkedProfile?.display_name || coach.coach_email;
@@ -92,6 +96,7 @@ export default async function CoachingPage() {
               <div key={coach.id} className="flex flex-col gap-6">
                 <YourCoachCard coach={coach} profile={linkedProfile} activeProgramCount={activeProgramCount} />
                 <SharedProgramsSection programs={sharedPrograms} userId={user.id} />
+                <SharedMealPlansSection plans={sharedMealPlans} userId={user.id} />
                 <RecentFeedbackSection messages={messages} coachId={coach.coach_id} />
                 <MessageThread
                   coachClientId={coach.id}
