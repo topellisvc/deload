@@ -183,7 +183,13 @@ export function ClientDetail({
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        // auto-fit (not a fixed 1/2/3-column count) so a handful of cards
+        // fill the row's actual width instead of leaving 2-3 empty grid
+        // tracks worth of dead space — this now renders inside the
+        // narrower athlete detail panel (~800px, not a full page), where a
+        // fixed lg:grid-cols-3 left most of the row empty for anyone with
+        // only 1-2 programs.
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-4">
           {programs.map((program) => (
             <ProgramCard
               key={program.id}
