@@ -1,14 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getActiveProgram } from "@/lib/programs/queries";
-import type { DayRow, WeekRow } from "@/lib/programs/types";
 import { getMyStats } from "@/lib/profile/queries";
 import { getDraftSessionDayIds } from "@/lib/training/queries";
 import type { UserRole } from "@/lib/supabase/types";
+import { flattenProgramDays, resolveDisplayedDay, resolveDayIndex, type DayStatus } from "@/lib/dashboard/day-view";
 import type {
   ActiveProgramContext,
   ActivityEvent,
   DashboardStats,
-  TodayWorkout,
   UpcomingSession,
   WeeklyTrainingSummary,
 } from "@/lib/dashboard/types";
@@ -43,16 +42,6 @@ function daysBetween(earlierIsoDate: string, laterIsoDate: string): number {
   return Math.round((b - a) / 86400000);
 }
 
-function flattenProgramDays(weeks: WeekRow[]): { week: WeekRow; day: DayRow }[] {
-  const flat: { week: WeekRow; day: DayRow }[] = [];
-  for (const week of weeks) {
-    for (const day of week.days) {
-      flat.push({ week, day });
-    }
-  }
-  return flat;
-}
-
 // ============================================================
 // Active program context (Hero, Today's Workout, Progress, Upcoming)
 // ============================================================
@@ -83,7 +72,7 @@ export async function getActiveProgramContext(
 
   const flat = flattenProgramDays(program.weeks);
   if (flat.length === 0) {
-    return { program, today: null, completionPercent: null, consistencyPercent: null, upcoming: [] };
+    return { program, today: null, completionPercent: null, consistencyPercent: null, upcoming: [], todayIndex: 0, dayStatusById: {} };
   }
 
   const dayIds = flat.map((f) => f.day.id);
@@ -124,64 +113,35 @@ export async function getActiveProgramContext(
     todayIndex = 0;
   }
 
-  // The day actually being DISPLAYED — either the auto-resolved pointer
-  // above, or a day the athlete has browsed to via the dashboard's
-  // prev/next arrows. Falls back to the auto pointer if the requested id
-  // isn't in this program (e.g. stale link after switching programs).
-  const viewedIndex = viewedDayId ? flat.findIndex((f) => f.day.id === viewedDayId) : -1;
-  const displayIndex = viewedIndex >= 0 ? viewedIndex : todayIndex;
-  const displayEntry = flat[displayIndex];
-
-  // "Completed" state for the displayed day specifically — its own most
-  // recent non-skipped log, whatever date that landed on (not necessarily
-  // today's calendar date, since a browsed day can be any day in the
-  // program). For the auto-resolved today pointer this reduces to exactly
-  // the old logic, since that day only ever has a log if it was logged
-  // today (todayIndex advances past any day with an earlier log).
-  let completedToday = false;
-  let completedAt: string | null = null;
-  if (displayEntry) {
-    const mostRecentForDisplay = logs.find((l) => l.training_day_id === displayEntry.day.id) ?? null;
-    if (mostRecentForDisplay && !mostRecentForDisplay.skipped) {
-      completedToday = true;
-      completedAt = mostRecentForDisplay.completed_at ?? mostRecentForDisplay.created_at;
-    }
-  }
+  // The day actually being DISPLAYED on this initial load — either the
+  // auto-resolved pointer above, or a day the athlete had browsed to before
+  // a full page reload (deep link/refresh). Falls back to the auto pointer
+  // if the requested id isn't in this program (e.g. stale link after
+  // switching programs). Browsing after this point happens entirely
+  // client-side — see day-view.ts's own doc comment.
+  const displayIndex = resolveDayIndex(flat, viewedDayId, todayIndex);
 
   const draftDayIds = await getDraftSessionDayIds(supabase, dayIds, userId);
 
-  // "Session X of Y" — this day's position among the non-rest training
-  // days in its own week, e.g. the 2nd of 3 for the middle day of a
-  // push/pull/legs week. Rest days aren't numbered (nothing to train), and
-  // a week made up entirely of rest days has no sessions to count either.
-  let sessionPosition: number | null = null;
-  let sessionsInWeek: number | null = null;
-  if (displayEntry) {
-    const weekSessionDays = displayEntry.week.days.filter((d) => !d.is_rest_day);
-    sessionsInWeek = weekSessionDays.length > 0 ? weekSessionDays.length : null;
-    if (!displayEntry.day.is_rest_day && sessionsInWeek) {
-      const idx = weekSessionDays.findIndex((d) => d.id === displayEntry.day.id);
-      sessionPosition = idx >= 0 ? idx + 1 : null;
-    }
+  // Every day's completed/draft status, not just the displayed one — this
+  // is what makes client-side day-browsing possible with zero further
+  // queries (see ActiveProgramContext.dayStatusById's own doc comment).
+  // logs is already ordered performed_on desc, created_at desc, so the
+  // FIRST log seen per training_day_id is that day's most recent one.
+  const mostRecentLogByDay = new Map<string, (typeof logs)[number]>();
+  for (const log of logs) {
+    if (!mostRecentLogByDay.has(log.training_day_id)) mostRecentLogByDay.set(log.training_day_id, log);
+  }
+  const dayStatusById: Record<string, DayStatus> = {};
+  for (const { day } of flat) {
+    const mostRecentForDay = mostRecentLogByDay.get(day.id) ?? null;
+    dayStatusById[day.id] = {
+      completedAt: mostRecentForDay && !mostRecentForDay.skipped ? (mostRecentForDay.completed_at ?? mostRecentForDay.created_at) : null,
+      hasDraft: draftDayIds.has(day.id),
+    };
   }
 
-  const todayWorkout: TodayWorkout | null = displayEntry
-    ? {
-        weekId: displayEntry.week.id,
-        weekLabel: displayEntry.week.label || `Week ${displayEntry.week.position}`,
-        weekPosition: displayEntry.week.position,
-        totalWeeks: program.weeks.length,
-        day: displayEntry.day,
-        completedToday,
-        completedAt,
-        hasDraft: draftDayIds.has(displayEntry.day.id),
-        isRealToday: displayIndex === todayIndex,
-        prevDayId: flat[displayIndex - 1]?.day.id ?? null,
-        nextDayId: flat[displayIndex + 1]?.day.id ?? null,
-        sessionPosition,
-        sessionsInWeek,
-      }
-    : null;
+  const todayWorkout = resolveDisplayedDay({ flat, totalWeeks: program.weeks.length, displayIndex, todayIndex, dayStatusById });
 
   // Skipped days are deliberately excluded from both % figures below — a
   // skip means "didn't train," so it shouldn't inflate completion or
@@ -218,7 +178,7 @@ export async function getActiveProgramContext(
       weekLabel: f.week.label || `Week ${f.week.position}`,
     }));
 
-  return { program, today: todayWorkout, completionPercent, consistencyPercent, upcoming };
+  return { program, today: todayWorkout, completionPercent, consistencyPercent, upcoming, todayIndex, dayStatusById };
 }
 
 // ============================================================

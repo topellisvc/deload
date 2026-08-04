@@ -22,9 +22,15 @@ interface HeroSectionProps {
   email: string;
   athleteId: string;
   activeContext: ActiveProgramContext | null;
+  /** Browse to an adjacent scheduled day — resolved entirely client-side
+   * from data already on the page (see day-view.ts), not a server
+   * round-trip, so this needs to come from the caller rather than a plain
+   * `?day=<id>` Link the way it used to. */
+  onNavigateDay: (dayId: string) => void;
+  onGoToToday: () => void;
 }
 
-export function HeroSection({ displayName, email, athleteId, activeContext }: HeroSectionProps) {
+export function HeroSection({ displayName, email, athleteId, activeContext, onNavigateDay, onGoToToday }: HeroSectionProps) {
   const name = displayName || email.split("@")[0] || "there";
 
   return (
@@ -44,15 +50,25 @@ export function HeroSection({ displayName, email, athleteId, activeContext }: He
         // they can keep browsing what they already trained.
         <ProgramCompleteHero program={activeContext.program} />
       ) : activeContext.today.day.is_rest_day ? (
-        <RestDayHero context={activeContext} />
+        <RestDayHero context={activeContext} onNavigateDay={onNavigateDay} onGoToToday={onGoToToday} />
       ) : (
-        <WorkoutHero context={activeContext} athleteId={athleteId} />
+        <WorkoutHero context={activeContext} athleteId={athleteId} onNavigateDay={onNavigateDay} onGoToToday={onGoToToday} />
       )}
     </div>
   );
 }
 
-function WorkoutHero({ context, athleteId }: { context: ActiveProgramContext; athleteId: string }) {
+function WorkoutHero({
+  context,
+  athleteId,
+  onNavigateDay,
+  onGoToToday,
+}: {
+  context: ActiveProgramContext;
+  athleteId: string;
+  onNavigateDay: (dayId: string) => void;
+  onGoToToday: () => void;
+}) {
   const { program, today } = context;
   if (!today) return null;
   const exerciseCount = today.day.blocks.reduce((n, b) => n + b.exercises.length, 0);
@@ -69,7 +85,13 @@ function WorkoutHero({ context, athleteId }: { context: ActiveProgramContext; at
             {today.day.label || `Day ${today.day.position}`}
           </h1>
         </div>
-        <DayNavArrows prevDayId={today.prevDayId} nextDayId={today.nextDayId} isRealToday={today.isRealToday} />
+        <DayNavArrows
+          prevDayId={today.prevDayId}
+          nextDayId={today.nextDayId}
+          isRealToday={today.isRealToday}
+          onNavigateDay={onNavigateDay}
+          onGoToToday={onGoToToday}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -110,55 +132,70 @@ function WorkoutHero({ context, athleteId }: { context: ActiveProgramContext; at
   );
 }
 
-/** Browse adjacent scheduled days from the dashboard without leaving it —
- * pushes `?day=<id>`, which getActiveProgramContext resolves to display
- * that specific day's hero/today's-workout content while completion %,
- * consistency %, and upcoming stay anchored to the real today. */
+/** Browse adjacent scheduled days from the dashboard without leaving it.
+ * Used to push `?day=<id>` and rely on a full server round trip
+ * (getActiveProgramContext) to resolve the new day — that reran the whole
+ * dashboard's data-fetching pipeline (program tree, every stat on the page)
+ * just to swap one day for an adjacent one, which was the actual cause of
+ * "changing to the next day is slow." onNavigateDay/onGoToToday
+ * (DashboardContent, dashboard/page.tsx) now resolve the new day entirely
+ * client-side from data already on the page (day-view.ts's
+ * resolveDisplayedDay) — no navigation, no fetch, instant. */
 function DayNavArrows({
   prevDayId,
   nextDayId,
   isRealToday,
+  onNavigateDay,
+  onGoToToday,
 }: {
   prevDayId: string | null;
   nextDayId: string | null;
   isRealToday: boolean;
+  onNavigateDay: (dayId: string) => void;
+  onGoToToday: () => void;
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Link
-        href={prevDayId ? `/dashboard?day=${prevDayId}` : "#"}
-        aria-disabled={!prevDayId}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!prevDayId}
         aria-label="Previous day"
-        className={!prevDayId ? "pointer-events-none" : undefined}
-        tabIndex={!prevDayId ? -1 : undefined}
+        className="w-8 px-0"
+        onClick={() => prevDayId && onNavigateDay(prevDayId)}
       >
-        <Button variant="outline" size="sm" disabled={!prevDayId} className="w-8 px-0">
-          <ChevronLeft className="size-4" />
-        </Button>
-      </Link>
+        <ChevronLeft className="size-4" />
+      </Button>
       {!isRealToday && (
-        <Link href="/dashboard">
-          <Button variant="outline" size="sm">
-            Today
-          </Button>
-        </Link>
-      )}
-      <Link
-        href={nextDayId ? `/dashboard?day=${nextDayId}` : "#"}
-        aria-disabled={!nextDayId}
-        aria-label="Next day"
-        className={!nextDayId ? "pointer-events-none" : undefined}
-        tabIndex={!nextDayId ? -1 : undefined}
-      >
-        <Button variant="outline" size="sm" disabled={!nextDayId} className="w-8 px-0">
-          <ChevronRight className="size-4" />
+        <Button type="button" variant="outline" size="sm" onClick={onGoToToday}>
+          Today
         </Button>
-      </Link>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!nextDayId}
+        aria-label="Next day"
+        className="w-8 px-0"
+        onClick={() => nextDayId && onNavigateDay(nextDayId)}
+      >
+        <ChevronRight className="size-4" />
+      </Button>
     </div>
   );
 }
 
-function RestDayHero({ context }: { context: ActiveProgramContext }) {
+function RestDayHero({
+  context,
+  onNavigateDay,
+  onGoToToday,
+}: {
+  context: ActiveProgramContext;
+  onNavigateDay: (dayId: string) => void;
+  onGoToToday: () => void;
+}) {
   const { program, today } = context;
   if (!today) return null;
   return (
@@ -168,7 +205,13 @@ function RestDayHero({ context }: { context: ActiveProgramContext }) {
           {program.name} · {today.weekLabel}
           {!today.isRealToday && <span className="ml-1 normal-case text-muted-foreground">(browsing)</span>}
         </p>
-        <DayNavArrows prevDayId={today.prevDayId} nextDayId={today.nextDayId} isRealToday={today.isRealToday} />
+        <DayNavArrows
+          prevDayId={today.prevDayId}
+          nextDayId={today.nextDayId}
+          isRealToday={today.isRealToday}
+          onNavigateDay={onNavigateDay}
+          onGoToToday={onGoToToday}
+        />
       </div>
       <div className="flex items-center gap-2">
         <Moon className="size-5 text-primary" />

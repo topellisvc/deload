@@ -1,4 +1,5 @@
 import type { DayRow, ProgramTree } from "@/lib/programs/types";
+import type { DayStatus } from "@/lib/dashboard/day-view";
 
 /**
  * "Today's" slot in a program isn't calendar-mapped (Day 1/Day 2/Day 3...,
@@ -61,6 +62,20 @@ export interface ActiveProgramContext {
   /** Sessions logged in the last 28 days vs. the program's own non-rest-day cadence, capped at 100. Null if the program has no non-rest days. */
   consistencyPercent: number | null;
   upcoming: UpcomingSession[];
+  /** The auto-resolved "today" pointer's index into the program's flattened
+   * (week, day) list (see day-view.ts's flattenProgramDays) — exposed so
+   * the dashboard's day-browsing can tell "is this the real today" and
+   * clamp prev/next locally, without a server round trip per click. */
+  todayIndex: number;
+  /** Every day in the program's completed/draft status, keyed by day id —
+   * built once from data this function already fetches (session_logs,
+   * training_mode_sessions), not a new query. Combined with `program` and
+   * `todayIndex`, this is everything day-view.ts's resolveDisplayedDay
+   * needs to build a TodayWorkout for ANY day in the program — which is
+   * what lets DashboardContent (the dashboard page's client component)
+   * browse days entirely client-side, instantly, instead of the old
+   * `?day=<id>` navigation that re-ran this whole function on every click. */
+  dayStatusById: Record<string, DayStatus>;
 }
 
 export interface DashboardStats {
