@@ -9,6 +9,7 @@ import type { ExerciseSearchResult } from "@/lib/programs/exercise-search";
 import type { BuilderMode } from "@/lib/programs/use-builder-mode";
 import { buildExerciseList } from "@/lib/training/sequence";
 import { ExerciseBlockCard } from "@/components/programs/exercise-block-card";
+import { CircuitBlockCard, type CircuitSettingsPatch } from "@/components/programs/circuit-block-card";
 import { WorkoutSummaryBar } from "@/components/programs/workout-summary-bar";
 import { AddBlockMenu } from "@/components/programs/add-block-menu";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,10 @@ interface DayColumnProps {
    * update. */
   movingExerciseId: string | null;
   onRoundsChange: (blockId: string, rounds: number) => void;
+  /** Circuit-only settings patch (name, completion method, rest/duration/
+   * interval, goal, notes) — see circuit-block-card.tsx's own settings
+   * panel, the only place this fires from. */
+  onBlockSettingsChange: (blockId: string, patch: CircuitSettingsPatch) => void;
   onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockId: string, blockExerciseId: string, category: ExerciseCategory) => void;
@@ -124,6 +129,7 @@ export function DayColumn({
   onMoveExerciseToDay,
   movingExerciseId,
   onRoundsChange,
+  onBlockSettingsChange,
   onExerciseChange,
   onNoteChange,
   onCategoryChange,
@@ -256,6 +262,7 @@ export function DayColumn({
     onMoveExerciseToDay,
     movingExerciseId,
     onRoundsChange,
+    onBlockSettingsChange,
     onExerciseChange,
     onNoteChange,
     onCategoryChange,
@@ -477,6 +484,7 @@ interface BlockSectionProps {
   onMoveExerciseToDay: (blockId: string, blockExerciseId: string, targetDayId: string) => void;
   movingExerciseId: string | null;
   onRoundsChange: (blockId: string, rounds: number) => void;
+  onBlockSettingsChange: (blockId: string, patch: CircuitSettingsPatch) => void;
   onExerciseChange: (blockId: string, blockExerciseId: string, patch: { exercise_id: string | null; custom_name: string | null }) => void;
   onNoteChange: (blockId: string, blockExerciseId: string, notes: string | null) => void;
   onCategoryChange: (blockId: string, blockExerciseId: string, category: ExerciseCategory) => void;
@@ -519,6 +527,7 @@ function BlockSection({
   onMoveExerciseToDay,
   movingExerciseId,
   onRoundsChange,
+  onBlockSettingsChange,
   onExerciseChange,
   onNoteChange,
   onCategoryChange,
@@ -565,42 +574,79 @@ function BlockSection({
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <SortableContext items={blocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-2">
-            {blocks.map((block) => (
-              <ExerciseBlockCard
-                key={block.id}
-                block={block}
-                expandedExerciseId={expandedExerciseId}
-                onToggleExpand={toggleExpand}
-                mode={mode}
-                library={library}
-                onCreateCustomExercise={onCreateCustomExercise}
-                librarySearch={librarySearch}
-                onCreateInLibrary={onCreateInLibrary}
-                onDeleteBlock={() => onDeleteBlock(block.id)}
-                onAddExerciseToBlock={() => onAddExerciseToBlock(block.id)}
-                isAddingExercise={addingExerciseBlockId === block.id}
-                onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
-                onDuplicateExercise={(blockExerciseId) => onDuplicateExercise(block.id, blockExerciseId)}
-                otherDays={otherDays}
-                onMoveExerciseToDay={(blockExerciseId, targetDayId) => onMoveExerciseToDay(block.id, blockExerciseId, targetDayId)}
-                movingExerciseId={movingExerciseId}
-                onRoundsChange={(rounds) => onRoundsChange(block.id, rounds)}
-                onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
-                onNoteChange={(blockExerciseId, notes) => onNoteChange(block.id, blockExerciseId, notes)}
-                onCategoryChange={(blockExerciseId, category) => onCategoryChange(block.id, blockExerciseId, category)}
-                onTestMaxBeforeChange={(blockExerciseId, testMaxBefore) => onTestMaxBeforeChange(block.id, blockExerciseId, testMaxBefore)}
-                knownMaxByExerciseId={knownMaxByExerciseId}
-                onSaveKnownMax={onSaveKnownMax}
-                onPrescriptionTypeChange={(blockExerciseId, prescriptionType) =>
-                  onPrescriptionTypeChange(block.id, blockExerciseId, prescriptionType)
-                }
-                onAddSet={(blockExerciseId) => onAddSet(block.id, blockExerciseId)}
-                onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
-                onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}
-                onReorderSets={(blockExerciseId, orderedSets) => onReorderSets(block.id, blockExerciseId, orderedSets)}
-                onSaveAsTemplate={(blockExerciseId) => onSaveAsTemplate(block.id, blockExerciseId)}
-              />
-            ))}
+            {blocks.map((block) =>
+              block.block_type === "circuit" ? (
+                <CircuitBlockCard
+                  key={block.id}
+                  block={block}
+                  expandedExerciseId={expandedExerciseId}
+                  onToggleExpand={toggleExpand}
+                  mode={mode}
+                  library={library}
+                  onCreateCustomExercise={onCreateCustomExercise}
+                  librarySearch={librarySearch}
+                  onCreateInLibrary={onCreateInLibrary}
+                  onDeleteBlock={() => onDeleteBlock(block.id)}
+                  onAddExerciseToBlock={() => onAddExerciseToBlock(block.id)}
+                  isAddingExercise={addingExerciseBlockId === block.id}
+                  onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
+                  onDuplicateExercise={(blockExerciseId) => onDuplicateExercise(block.id, blockExerciseId)}
+                  otherDays={otherDays}
+                  onMoveExerciseToDay={(blockExerciseId, targetDayId) => onMoveExerciseToDay(block.id, blockExerciseId, targetDayId)}
+                  movingExerciseId={movingExerciseId}
+                  onSettingsChange={(patch) => onBlockSettingsChange(block.id, patch)}
+                  onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
+                  onNoteChange={(blockExerciseId, notes) => onNoteChange(block.id, blockExerciseId, notes)}
+                  onCategoryChange={(blockExerciseId, category) => onCategoryChange(block.id, blockExerciseId, category)}
+                  onTestMaxBeforeChange={(blockExerciseId, testMaxBefore) => onTestMaxBeforeChange(block.id, blockExerciseId, testMaxBefore)}
+                  knownMaxByExerciseId={knownMaxByExerciseId}
+                  onSaveKnownMax={onSaveKnownMax}
+                  onPrescriptionTypeChange={(blockExerciseId, prescriptionType) =>
+                    onPrescriptionTypeChange(block.id, blockExerciseId, prescriptionType)
+                  }
+                  onAddSet={(blockExerciseId) => onAddSet(block.id, blockExerciseId)}
+                  onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
+                  onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}
+                  onReorderSets={(blockExerciseId, orderedSets) => onReorderSets(block.id, blockExerciseId, orderedSets)}
+                  onSaveAsTemplate={(blockExerciseId) => onSaveAsTemplate(block.id, blockExerciseId)}
+                />
+              ) : (
+                <ExerciseBlockCard
+                  key={block.id}
+                  block={block}
+                  expandedExerciseId={expandedExerciseId}
+                  onToggleExpand={toggleExpand}
+                  mode={mode}
+                  library={library}
+                  onCreateCustomExercise={onCreateCustomExercise}
+                  librarySearch={librarySearch}
+                  onCreateInLibrary={onCreateInLibrary}
+                  onDeleteBlock={() => onDeleteBlock(block.id)}
+                  onAddExerciseToBlock={() => onAddExerciseToBlock(block.id)}
+                  isAddingExercise={addingExerciseBlockId === block.id}
+                  onRemoveExerciseFromBlock={(blockExerciseId) => onRemoveExerciseFromBlock(block.id, blockExerciseId)}
+                  onDuplicateExercise={(blockExerciseId) => onDuplicateExercise(block.id, blockExerciseId)}
+                  otherDays={otherDays}
+                  onMoveExerciseToDay={(blockExerciseId, targetDayId) => onMoveExerciseToDay(block.id, blockExerciseId, targetDayId)}
+                  movingExerciseId={movingExerciseId}
+                  onRoundsChange={(rounds) => onRoundsChange(block.id, rounds)}
+                  onExerciseChange={(blockExerciseId, patch) => onExerciseChange(block.id, blockExerciseId, patch)}
+                  onNoteChange={(blockExerciseId, notes) => onNoteChange(block.id, blockExerciseId, notes)}
+                  onCategoryChange={(blockExerciseId, category) => onCategoryChange(block.id, blockExerciseId, category)}
+                  onTestMaxBeforeChange={(blockExerciseId, testMaxBefore) => onTestMaxBeforeChange(block.id, blockExerciseId, testMaxBefore)}
+                  knownMaxByExerciseId={knownMaxByExerciseId}
+                  onSaveKnownMax={onSaveKnownMax}
+                  onPrescriptionTypeChange={(blockExerciseId, prescriptionType) =>
+                    onPrescriptionTypeChange(block.id, blockExerciseId, prescriptionType)
+                  }
+                  onAddSet={(blockExerciseId) => onAddSet(block.id, blockExerciseId)}
+                  onSetChange={(blockExerciseId, setId, patch) => onSetChange(block.id, blockExerciseId, setId, patch)}
+                  onDeleteSet={(blockExerciseId, setId) => onDeleteSet(block.id, blockExerciseId, setId)}
+                  onReorderSets={(blockExerciseId, orderedSets) => onReorderSets(block.id, blockExerciseId, orderedSets)}
+                  onSaveAsTemplate={(blockExerciseId) => onSaveAsTemplate(block.id, blockExerciseId)}
+                />
+              )
+            )}
           </div>
         </SortableContext>
       </DndContext>

@@ -1395,6 +1395,13 @@ export async function updateBlockSettings(
     rest_between_rounds_seconds: number | null;
     duration_seconds: number | null;
     interval_seconds: number | null;
+    // Not one of migration 0056's new columns (rounds already existed —
+    // see updateBlockRounds below, which most callers still use directly),
+    // but the Circuit editor's Rounds field is itself one of
+    // completion-methods.ts's method-dependent fields, so it needs to ride
+    // along in the same one-settings-object patch as the rest rather than
+    // always requiring a second round-trip.
+    rounds: number;
   }>
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from("exercise_blocks").update(patch).eq("id", blockId);

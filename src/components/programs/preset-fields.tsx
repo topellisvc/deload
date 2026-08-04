@@ -66,6 +66,56 @@ export function RestPresetField({ value, onCommit }: { value: number | null; onC
   );
 }
 
+/**
+ * The generic version of RestPresetField/DistancePresetField's chips+Custom
+ * pattern — parameterized by an arbitrary preset list instead of one fixed
+ * unit, so the Circuit block editor's Rounds / Rest Between Exercises /
+ * Rest Between Rounds / Duration / Interval fields (circuit-block-card.tsx)
+ * can all share one implementation instead of five near-identical copies.
+ * `min` defaults to 0 (every circuit-settings field the editor uses this
+ * for is a non-negative count of rounds or seconds).
+ */
+export function PresetChipField({
+  fieldLabel,
+  unit,
+  presets,
+  value,
+  onCommit,
+  min = 0,
+}: {
+  fieldLabel: string;
+  unit: string;
+  presets: { label: string; value: number }[];
+  value: number | null;
+  onCommit: (v: number | null) => void;
+  min?: number;
+}) {
+  const matchesPreset = presets.some((p) => p.value === value);
+  const [customOpen, setCustomOpen] = useState(value != null && !matchesPreset);
+
+  function pickPreset(n: number) {
+    setCustomOpen(false);
+    onCommit(n);
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{fieldLabel}</span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {presets.map((p) => (
+          <Chip key={p.value} selected={!customOpen && value === p.value} onClick={() => pickPreset(p.value)}>
+            {p.label}
+          </Chip>
+        ))}
+        <Chip selected={customOpen} onClick={() => setCustomOpen(true)}>
+          Custom
+        </Chip>
+        {customOpen && <InlineNumberField label={fieldLabel} unit={unit} value={value} onCommit={onCommit} width="w-16" min={min} />}
+      </div>
+    </div>
+  );
+}
+
 const DISTANCE_PRESETS: { label: string; meters: number }[] = [
   { label: "400m", meters: 400 },
   { label: "1km", meters: 1000 },

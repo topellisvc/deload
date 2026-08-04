@@ -108,6 +108,7 @@ function baseProps() {
     onMoveExerciseToDay: vi.fn(),
     movingExerciseId: null,
     onRoundsChange: vi.fn(),
+    onBlockSettingsChange: vi.fn(),
     onExerciseChange: vi.fn(),
     onNoteChange: vi.fn(),
     onCategoryChange: vi.fn(),

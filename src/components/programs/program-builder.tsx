@@ -780,6 +780,20 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
     });
   }
 
+  /** Circuit-only settings (name, completion method, rest/duration/interval,
+   * goal, notes) — fired from circuit-block-card.tsx's own settings panel.
+   * `rounds` rides along in the same patch shape as the others (rather than
+   * always going through handleRoundsChange above) since the Circuit
+   * editor's Rounds field is itself one of the method-dependent fields
+   * completion-methods.ts governs, not a thing every block type has a
+   * control for the way ExerciseBlockCard's plain rounds input is. */
+  function handleBlockSettingsChange(dayId: string, blockId: string, patch: Parameters<typeof m.updateBlockSettings>[2]) {
+    updateBlock(week.id, dayId, blockId, (b) => ({ ...b, ...patch }));
+    track(m.updateBlockSettings(supabase, blockId, patch)).then(({ error }) => {
+      if (error) fail(error);
+    });
+  }
+
   // ---- exercise + sets ----
   function handleExerciseChange(
     dayId: string,
@@ -1324,6 +1338,7 @@ export function ProgramBuilder({ initialProgram }: ProgramBuilderProps) {
                 }
                 movingExerciseId={movingExerciseId}
                 onRoundsChange={(blockId, rounds) => handleRoundsChange(day.id, blockId, rounds)}
+                onBlockSettingsChange={(blockId, patch) => handleBlockSettingsChange(day.id, blockId, patch)}
                 onExerciseChange={(blockId, blockExerciseId, patch) =>
                   handleExerciseChange(day.id, blockId, blockExerciseId, patch)
                 }
