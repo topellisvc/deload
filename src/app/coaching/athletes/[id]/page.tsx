@@ -80,16 +80,6 @@ export default async function AthletePage({ params }: AthletePageProps) {
 
   const activeClients = clients.filter((c) => c.status === "active");
 
-  // Same "no logged session in 14+ days (or ever)" rule
-  // getCoachingDashboard uses for the roster's own needs-attention badges
-  // (lib/coaching/queries.ts) — recomputed locally here rather than
-  // imported, same small-local-date-helper convention every other file in
-  // this codebase already follows for "today"/cutoff math.
-  const attentionCutoffDate = new Date();
-  attentionCutoffDate.setDate(attentionCutoffDate.getDate() - 14);
-  const attentionCutoff = `${attentionCutoffDate.getFullYear()}-${String(attentionCutoffDate.getMonth() + 1).padStart(2, "0")}-${String(attentionCutoffDate.getDate()).padStart(2, "0")}`;
-  const needsAttention = !lastActivityOn || lastActivityOn < attentionCutoff;
-
   return (
     <div className="flex flex-col gap-4">
       <Link
@@ -106,7 +96,6 @@ export default async function AthletePage({ params }: AthletePageProps) {
         client={client}
         programs={programs}
         lastActivityOn={lastActivityOn}
-        needsAttention={needsAttention}
         activeClients={activeClients}
         weeklySummary={weeklySummary}
         consistencyPercent={activeContext?.consistencyPercent ?? null}

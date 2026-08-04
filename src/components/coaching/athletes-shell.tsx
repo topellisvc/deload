@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UnderlineTabs, type UnderlineTabOption } from "@/components/ui/underline-tabs";
@@ -28,10 +28,10 @@ interface AthletesShellProps {
 
 /**
  * The master-detail shell behind the mockup's 4-tab "Coach" page: a
- * persistent roster panel (real search + a "needs attention" filter +
- * client-side pagination over getCoachingDashboard's already-fetched
- * clients — no separate paginated query exists yet, and a coach's roster
- * is small at this app's current scale) beside `{children}`
+ * persistent roster panel (real search + client-side pagination over
+ * getCoachingDashboard's already-fetched clients — no separate paginated
+ * query exists yet, and a coach's roster is small at this app's current
+ * scale) beside `{children}`
  * (athletes/page.tsx or athletes/[id]/page.tsx, rendered by the layout).
  * Selecting a row is a plain navigation (ClientListSection's Links), so
  * `{children}` stays a real server-rendered route rather than
@@ -49,7 +49,6 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
 
   const [tab, setTab] = useState<AthletesTab>("clients");
   const [query, setQuery] = useState("");
-  const [attentionOnly, setAttentionOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [sentInvites, setSentInvites] = useState(initialSent);
@@ -57,7 +56,7 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
 
   useEffect(() => {
     setPage(0);
-  }, [query, attentionOnly, tab]);
+  }, [query, tab]);
 
   function handleInvited(invite: CoachClient) {
     setSentInvites((prev) => [invite, ...prev]);
@@ -72,10 +71,9 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
 
   const filteredClients = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return dashboard.clients
-      .filter((c) => !q || c.email.toLowerCase().includes(q))
-      .filter((c) => !attentionOnly || c.needsAttention);
-  }, [query, attentionOnly, dashboard.clients]);
+    if (!q) return dashboard.clients;
+    return dashboard.clients.filter((c) => c.email.toLowerCase().includes(q));
+  }, [query, dashboard.clients]);
 
   const pageCount = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE));
   const pagedClients = filteredClients.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
@@ -115,28 +113,15 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
         <div className="rounded-2xl border border-border bg-surface p-4">
           {tab === "clients" && (
             <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search athletes…"
-                    aria-label="Search your athletes"
-                    className="h-10 pl-10 text-sm"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant={attentionOnly ? "primary" : "outline"}
-                  size="sm"
-                  className="h-10 shrink-0 px-2.5"
-                  aria-pressed={attentionOnly}
-                  aria-label="Show only athletes needing attention"
-                  onClick={() => setAttentionOnly((v) => !v)}
-                >
-                  <AlertTriangle className="size-4" />
-                </Button>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search athletes…"
+                  aria-label="Search your athletes"
+                  className="h-10 pl-10 text-sm"
+                />
               </div>
 
               <ClientListSection clients={pagedClients} selectedId={selectedId} />

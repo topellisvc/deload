@@ -35,11 +35,6 @@ interface AthleteDetailPanelProps {
   client: CoachClient;
   programs: ProgramSummary[];
   lastActivityOn: string | null;
-  /** Same 14-day-inactive rule getCoachingDashboard uses for the roster's
-   * own badges (athletes/[id]/page.tsx recomputes it from lastActivityOn
-   * rather than importing the roster's copy — see that page's own comment
-   * on why small date helpers are duplicated per file in this codebase). */
-  needsAttention: boolean;
   activeClients: CoachClient[];
   weeklySummary: WeeklyTrainingSummary;
   consistencyPercent: number | null;
@@ -52,10 +47,8 @@ interface AthleteDetailPanelProps {
 
 /**
  * The redesigned right-hand panel from Ellis's mockup: identity header with
- * real status badges (relationship status + needs-attention, both already
- * real facts elsewhere in this codebase, not new ones invented for this
- * header) and streak, the same real "This Week" numbers the athlete's own
- * dashboard shows (ThisWeekStats — reused, not re-derived), then
+ * a real relationship-status badge and streak, the same real "This Week"
+ * numbers the athlete's own dashboard shows (ThisWeekStats — reused, not re-derived), then
  * Programs/Activity/Notes sub-tabs, with the real message thread pinned
  * below rather than hidden behind a tab (it's the one thing a coach reaches
  * for regardless of which tab they're on) — the header's Message button
@@ -74,7 +67,6 @@ export function AthleteDetailPanel({
   client,
   programs,
   lastActivityOn,
-  needsAttention,
   activeClients,
   weeklySummary,
   consistencyPercent,
@@ -105,11 +97,6 @@ export function AthleteDetailPanel({
               <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-success">
                 Active
               </span>
-              {needsAttention && (
-                <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-danger">
-                  Needs attention
-                </span>
-              )}
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">

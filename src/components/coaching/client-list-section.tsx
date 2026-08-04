@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { getInitials, cn } from "@/lib/utils";
 import type { CoachingClientSummary } from "@/lib/coaching/types";
 
@@ -55,21 +55,9 @@ export function ClientListSection({ clients, selectedId }: { clients: CoachingCl
                 {getInitials(null, client.email)}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <p className="truncate text-sm font-medium text-foreground">{client.email}</p>
-                  {client.needsAttention ? (
-                    <span className="shrink-0 rounded-full bg-danger/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-danger">
-                      Needs attention
-                    </span>
-                  ) : (
-                    <span className="shrink-0 rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
-                      Active
-                    </span>
-                  )}
-                </div>
+                <p className="truncate text-sm font-medium text-foreground">{client.email}</p>
                 <p className="truncate text-xs text-muted-foreground">{client.activeProgramName ?? "No active program"}</p>
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  {client.needsAttention && <AlertTriangle className="size-3 shrink-0 text-danger" />}
+                <p className="text-xs text-muted-foreground">
                   {client.lastActivityOn ? `Active ${relativeDay(client.lastActivityOn)}` : "No workouts logged"}
                 </p>
               </div>
