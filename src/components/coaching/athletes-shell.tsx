@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SegmentedControl } from "@/components/ui/segmented-control";
+import { UnderlineTabs, type UnderlineTabOption } from "@/components/ui/underline-tabs";
 import { ClientListSection } from "@/components/coaching/client-list-section";
 import { PendingSentInvites } from "@/components/coaching/pending-sent-invites";
 import { InviteClientForm } from "@/components/coaching/invite-client-form";
@@ -14,13 +14,6 @@ import type { CoachingDashboardData } from "@/lib/coaching/types";
 import type { CoachClient } from "@/lib/supabase/types";
 
 type AthletesTab = "clients" | "requests" | "groups" | "analytics";
-
-const TABS: { value: AthletesTab; label: string }[] = [
-  { value: "clients", label: "Clients" },
-  { value: "requests", label: "Requests" },
-  { value: "groups", label: "Groups" },
-  { value: "analytics", label: "Analytics" },
-];
 
 const PAGE_SIZE = 8;
 
@@ -35,14 +28,15 @@ interface AthletesShellProps {
 
 /**
  * The master-detail shell behind the mockup's 4-tab "Coach" page: a
- * persistent roster panel (real search + client-side pagination over
- * getCoachingDashboard's already-fetched clients — no separate paginated
- * query exists yet, and a coach's roster is small at this app's current
- * scale) beside `{children}` (athletes/page.tsx or athletes/[id]/page.tsx,
- * rendered by the layout). Selecting a row is a plain navigation
- * (ClientListSection's Links), so `{children}` stays a real server-rendered
- * route rather than client-fetched state — only the panel chrome around it
- * (which tab, search text, page, invite form) is local UI state here.
+ * persistent roster panel (real search + a "needs attention" filter +
+ * client-side pagination over getCoachingDashboard's already-fetched
+ * clients — no separate paginated query exists yet, and a coach's roster
+ * is small at this app's current scale) beside `{children}`
+ * (athletes/page.tsx or athletes/[id]/page.tsx, rendered by the layout).
+ * Selecting a row is a plain navigation (ClientListSection's Links), so
+ * `{children}` stays a real server-rendered route rather than
+ * client-fetched state — only the panel chrome around it (which tab,
+ * search text, page, invite form) is local UI state here.
  *
  * Mobile: only one column shows at a time, picked from the URL itself
  * (usePathname) rather than a separate "selected" state — so the browser's
@@ -55,6 +49,7 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
 
   const [tab, setTab] = useState<AthletesTab>("clients");
   const [query, setQuery] = useState("");
+  const [attentionOnly, setAttentionOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [sentInvites, setSentInvites] = useState(initialSent);
@@ -62,7 +57,7 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
 
   useEffect(() => {
     setPage(0);
-  }, [query, tab]);
+  }, [query, attentionOnly, tab]);
 
   function handleInvited(invite: CoachClient) {
     setSentInvites((prev) => [invite, ...prev]);
@@ -77,12 +72,20 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
 
   const filteredClients = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return dashboard.clients;
-    return dashboard.clients.filter((c) => c.email.toLowerCase().includes(q));
-  }, [query, dashboard.clients]);
+    return dashboard.clients
+      .filter((c) => !q || c.email.toLowerCase().includes(q))
+      .filter((c) => !attentionOnly || c.needsAttention);
+  }, [query, attentionOnly, dashboard.clients]);
 
   const pageCount = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE));
   const pagedClients = filteredClients.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  const tabs: UnderlineTabOption<AthletesTab>[] = [
+    { value: "clients", label: "Clients" },
+    { value: "requests", label: "Requests", count: sentInvites.length },
+    { value: "groups", label: "Groups" },
+    { value: "analytics", label: "Analytics" },
+  ];
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-6 lg:flex-row lg:items-start lg:py-6">
@@ -92,8 +95,11 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
           hasSelection && "hidden lg:flex"
         )}
       >
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Coach</h1>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-col gap-0.5">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Coach</h1>
+            <p className="text-xs text-muted-foreground">Manage your athletes, programs, and messages.</p>
+          </div>
           <Button size="sm" onClick={() => setInviteOpen((v) => !v)} aria-expanded={inviteOpen}>
             {inviteOpen ? <X className="size-4" /> : <Plus className="size-4" />}
             Invite
@@ -104,26 +110,33 @@ export function AthletesShell({ coachId, coachEmail, dashboard, sentPendingInvit
           <InviteClientForm coachId={coachId} coachEmail={coachEmail} existingEmails={knownEmails} onInvited={handleInvited} />
         )}
 
-        <SegmentedControl
-          aria-label="Coaching sections"
-          options={TABS}
-          value={tab}
-          onChange={setTab}
-          className="w-full justify-between"
-        />
+        <UnderlineTabs aria-label="Coaching sections" options={tabs} value={tab} onChange={setTab} />
 
         <div className="rounded-2xl border border-border bg-surface p-4">
           {tab === "clients" && (
             <div className="flex flex-col gap-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search athletes…"
-                  aria-label="Search your athletes"
-                  className="h-10 pl-10 text-sm"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search athletes…"
+                    aria-label="Search your athletes"
+                    className="h-10 pl-10 text-sm"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant={attentionOnly ? "primary" : "outline"}
+                  size="sm"
+                  className="h-10 shrink-0 px-2.5"
+                  aria-pressed={attentionOnly}
+                  aria-label="Show only athletes needing attention"
+                  onClick={() => setAttentionOnly((v) => !v)}
+                >
+                  <AlertTriangle className="size-4" />
+                </Button>
               </div>
 
               <ClientListSection clients={pagedClients} selectedId={selectedId} />

@@ -1,11 +1,24 @@
 import Link from "next/link";
 import { AlertTriangle, ChevronRight } from "lucide-react";
-import { getInitials } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { getInitials, cn } from "@/lib/utils";
 import type { CoachingClientSummary } from "@/lib/coaching/types";
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+/** `iso` is a plain "YYYY-MM-DD" date (session_logs.performed_on), not a
+ * timestamp — so this reads as day-granularity ("Today"/"3 days ago"),
+ * never fake hour/minute precision the underlying data doesn't have.
+ * Date.UTC-anchored, same pattern as weekly-volume-chart.tsx's
+ * weekdayLabel, so it can't drift a day off depending on the viewer's own
+ * timezone offset. */
+function relativeDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const target = Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((today - target) / 86400000);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return new Date(target).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 /**
@@ -42,11 +55,22 @@ export function ClientListSection({ clients, selectedId }: { clients: CoachingCl
                 {getInitials(null, client.email)}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">{client.email}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate text-sm font-medium text-foreground">{client.email}</p>
+                  {client.needsAttention ? (
+                    <span className="shrink-0 rounded-full bg-danger/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-danger">
+                      Needs attention
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
+                      Active
+                    </span>
+                  )}
+                </div>
                 <p className="truncate text-xs text-muted-foreground">{client.activeProgramName ?? "No active program"}</p>
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">
                   {client.needsAttention && <AlertTriangle className="size-3 shrink-0 text-danger" />}
-                  {client.lastActivityOn ? `Last workout ${formatDate(client.lastActivityOn)}` : "No workouts logged"}
+                  {client.lastActivityOn ? `Active ${relativeDay(client.lastActivityOn)}` : "No workouts logged"}
                 </p>
               </div>
               {client.consistencyPercent !== null && (
