@@ -71,6 +71,7 @@ export function SiteHeader() {
           <Link href="/programs" aria-current={programsActive ? "page" : undefined} className={cn(navLinkClassName, programsActive && navLinkActiveClassName)}>
             Programs
           </Link>
+          <AuthNavLink href="/nutrition" label="Nutrition" />
           <AuthNavLink href="/history" label="History" />
           <AuthNavLink href="/coaching" label="Coaching" />
           <ExerciseLibraryNavLink />
@@ -117,6 +118,7 @@ export function SiteHeader() {
           <Link href="/programs" aria-current={programsActive ? "page" : undefined} className={cn(navLinkClassName, programsActive && navLinkActiveClassName)}>
             Programs
           </Link>
+          <AuthNavLink href="/nutrition" label="Nutrition" />
           <AuthNavLink href="/history" label="History" />
           <AuthNavLink href="/coaching" label="Coaching" />
           <ExerciseLibraryNavLink />

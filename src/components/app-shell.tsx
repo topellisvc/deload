@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Dumbbell, Home, ClipboardList, History, Users, Library, Newspaper, Wrench } from "lucide-react";
+import { Dumbbell, Home, ClipboardList, History, Users, Library, Newspaper, Wrench, UtensilsCrossed } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { createClient } from "@/lib/supabase/client";
 import { AccountMenu } from "@/components/auth/account-menu";
@@ -20,6 +20,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/programs", label: "Programs", icon: ClipboardList },
+  { href: "/nutrition", label: "Nutrition", icon: UtensilsCrossed },
   { href: "/history", label: "History", icon: History },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/insights", label: "Insights", icon: Newspaper },
