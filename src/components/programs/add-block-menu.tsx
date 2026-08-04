@@ -79,8 +79,19 @@ export function AddBlockMenu({ role, label, fullWidth, onAddBlock }: AddBlockMen
     // event doesn't bubble, and the day-columns row's own horizontal
     // scroll (the thing that caused this bug in the first place) is a
     // descendant element's scroll, which only a capturing listener on a
-    // shared ancestor (here, window) ever observes.
-    function handleScroll() {
+    // shared ancestor (here, window) ever observes. That same capture-all
+    // reach is why this needs its own exclusion: the menu's own option
+    // list scrolls internally (max-h-[70vh] + overflow-y-auto, for a
+    // viewport too short to fit all 16 options) and that scroll fires
+    // through here too — closing the menu the instant someone scrolled
+    // *inside* it to reach an option further down. Only scroll happening
+    // outside the menu itself (the page, or the day-columns row behind it)
+    // should dismiss it.
+    function handleScroll(e: Event) {
+      // A real page/window scroll targets document (or window itself), not
+      // a Node the menu could ever contain — guard with instanceof first
+      // since Node.contains() throws on a non-Node argument.
+      if (e.target instanceof Node && menuRef.current?.contains(e.target)) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", handlePointerDown);

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AddBlockMenu } from "./add-block-menu";
 
@@ -50,5 +50,27 @@ describe("AddBlockMenu", () => {
     const scrollRow = screen.getByTestId("scroll-row");
     expect(scrollRow.contains(menu)).toBe(false);
     expect(document.body.contains(menu)).toBe(true);
+  });
+
+  /**
+   * Regression test for a second bug introduced by the scroll-to-close fix
+   * above: the menu's own option list scrolls internally (capped at
+   * max-h-[70vh] so a short viewport can still fit all 16 options below
+   * it), and the close-on-scroll listener — needed to dismiss the menu
+   * when the page or the day-columns row behind it scrolls — was catching
+   * that internal scroll too and closing the menu the instant someone
+   * scrolled down to reach an option further down the list.
+   */
+  it("stays open when the option list itself is scrolled, but closes when the page scrolls", async () => {
+    const user = userEvent.setup();
+    render(<AddBlockMenu role="main" label="Add exercise" onAddBlock={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Add exercise" }));
+    const menu = screen.getByRole("menu", { name: "Choose block type" });
+
+    menu.dispatchEvent(new Event("scroll", { bubbles: false }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+
+    window.dispatchEvent(new Event("scroll"));
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
   });
 });
