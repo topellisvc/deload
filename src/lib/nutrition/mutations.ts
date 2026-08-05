@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Food } from "@/lib/supabase/types";
-import type { MealItemRow, MealOptionRow, MealRow, NutritionDayRow, NutritionPlanTree } from "@/lib/nutrition/types";
+import type { MealItemRow, MealOptionRow, MealRow, MealTemplateWithItems, NutritionDayRow, NutritionPlanTree, PlanTemplateTree } from "@/lib/nutrition/types";
 import { getMealPlanTree } from "@/lib/nutrition/queries";
 import { notifyMealPlanAssigned } from "@/lib/notifications/mutations";
 
@@ -201,6 +201,84 @@ async function cloneDayInto(supabase: SupabaseClient, params: { sourceDay: Nutri
   }
 
   return { error: null };
+}
+
+/**
+ * Builds a brand-new meal plan from a starter plan template ("Start from a
+ * template" in NewMealPlanDialog) — one real day/meal/option/item tree per
+ * template day/meal, each meal's single option populated straight from its
+ * referenced meal template's items. Same "copy, not share" shape as
+ * cloneMealPlan/cloneDayInto: the new plan is a fully independent, freely
+ * editable row from the moment it's created, with no lingering link back to
+ * the template it started from.
+ *
+ * `planTemplate` needs its meal templates' items already loaded — the
+ * caller fetches those via getMealTemplatesByIds using every
+ * meal_template_id the template's days reference, then passes the map in,
+ * so this function stays a pure "given the content, write the rows"
+ * mutation rather than reaching back into queries.ts mid-write.
+ */
+export async function instantiatePlanTemplate(
+  supabase: SupabaseClient,
+  params: { userId: string; athleteId?: string; name: string; planTemplate: PlanTemplateTree; mealTemplatesById: Map<string, MealTemplateWithItems> }
+): Promise<{ plan: NutritionPlanTree | null; error: string | null }> {
+  const planId = newId();
+  const athleteId = params.athleteId ?? params.userId;
+
+  const { error: planError } = await supabase.from("nutrition_plans").insert({
+    id: planId,
+    owner_id: params.userId,
+    athlete_id: athleteId,
+    name: params.name,
+  });
+  if (planError) return { plan: null, error: planError.message };
+
+  for (const day of params.planTemplate.days) {
+    const dayId = newId();
+    const { error: dayError } = await supabase.from("nutrition_days").insert({
+      id: dayId,
+      plan_id: planId,
+      position: day.position,
+      label: day.label,
+    });
+    if (dayError) return { plan: null, error: dayError.message };
+
+    for (const meal of day.meals) {
+      const mealTemplate = params.mealTemplatesById.get(meal.meal_template_id);
+      if (!mealTemplate) continue; // Defensive — shouldn't happen, same as getMealTemplates' own dangling-food_id skip.
+
+      const mealId = newId();
+      const { error: mealError } = await supabase.from("meals").insert({ id: mealId, day_id: dayId, position: meal.position, name: meal.name });
+      if (mealError) return { plan: null, error: mealError.message };
+
+      const optionId = newId();
+      const { error: optionError } = await supabase.from("meal_options").insert({ id: optionId, meal_id: mealId, position: 1, label: "Option A" });
+      if (optionError) return { plan: null, error: optionError.message };
+
+      if (mealTemplate.items.length > 0) {
+        const { error: itemsError } = await supabase.from("meal_items").insert(
+          mealTemplate.items.map((item, i) => ({
+            id: newId(),
+            meal_option_id: optionId,
+            position: i + 1,
+            food_id: item.food_id,
+            quantity_g: item.quantity_g,
+            display_label: item.display_label,
+          }))
+        );
+        if (itemsError) return { plan: null, error: itemsError.message };
+      }
+    }
+  }
+
+  const plan = await getMealPlanTree(supabase, planId);
+  if (!plan) return { plan: null, error: "Meal plan was created from the template, but couldn't be loaded back." };
+
+  if (athleteId !== params.userId) {
+    await notifyMealPlanAssigned(supabase, { coachId: params.userId, athleteId, planId, planName: params.name });
+  }
+
+  return { plan, error: null };
 }
 
 export async function updateMealPlan(
@@ -511,6 +589,50 @@ export async function addMealItem(
       created_at: new Date().toISOString(),
       food: params.food,
     },
+    error: null,
+  };
+}
+
+/**
+ * Bulk-inserts every item from a meal template into one existing meal
+ * option in one round trip — the Templates tab's "insert this" action.
+ * `startPosition` is the caller's responsibility (nextPosition(option.items)
+ * in meal-plan-builder.tsx), same convention every other add* here follows;
+ * kept as a single insert rather than N calls to addMealItem since template
+ * items always land together, not one at a time.
+ */
+export async function applyMealTemplate(
+  supabase: SupabaseClient,
+  params: { mealOptionId: string; startPosition: number; template: MealTemplateWithItems }
+): Promise<{ items: MealItemRow[]; error: string | null }> {
+  if (params.template.items.length === 0) return { items: [], error: null };
+  const now = new Date().toISOString();
+
+  const rows = params.template.items.map((templateItem, i) => ({
+    id: newId(),
+    meal_option_id: params.mealOptionId,
+    position: params.startPosition + i,
+    food_id: templateItem.food_id,
+    quantity_g: templateItem.quantity_g,
+    display_label: templateItem.display_label,
+  }));
+
+  const { error } = await supabase.from("meal_items").insert(rows);
+  if (error) return { items: [], error: error.message };
+
+  const foodByFoodId = new Map(params.template.items.map((ti) => [ti.food_id, ti.food]));
+  return {
+    items: rows.map((row): MealItemRow => ({
+      id: row.id,
+      meal_option_id: row.meal_option_id,
+      position: row.position,
+      food_id: row.food_id,
+      quantity_g: row.quantity_g,
+      display_label: row.display_label,
+      notes: null,
+      created_at: now,
+      food: foodByFoodId.get(row.food_id)!,
+    })),
     error: null,
   };
 }

@@ -12,19 +12,24 @@ import { MealPlanCard } from "@/components/nutrition/meal-plan-card";
 import { createClient } from "@/lib/supabase/client";
 import { deleteMealPlan, removeAssignedMealPlan, setActiveMealPlan } from "@/lib/nutrition/mutations";
 import { getMealPlanTree } from "@/lib/nutrition/queries";
-import type { NutritionPlanSummary, NutritionPlanTree } from "@/lib/nutrition/types";
+import type { NutritionPlanSummary, NutritionPlanTree, PlanTemplateTree } from "@/lib/nutrition/types";
 import type { CoachClient } from "@/lib/supabase/types";
 
 interface MealPlansListProps {
   plans: NutritionPlanSummary[];
   userId: string;
   activeClients: CoachClient[];
+  /** The starter plan library — threaded straight through to
+   * NewMealPlanDialog's "Start from" picker. */
+  planTemplates?: PlanTemplateTree[];
 }
 
-/** Mirrors ProgramsList, minus templates/starter-plan pickers/AI generation
- * — none of those exist for meal plans yet. Same own/client-section split
- * and card grid. */
-export function MealPlansList({ plans: initialPlans, userId, activeClients }: MealPlansListProps) {
+/** Mirrors ProgramsList, minus the AI generation/"save my own program as a
+ * template" pickers — those don't exist for meal plans. Does now offer
+ * NewMealPlanDialog's own "Start from a template" (the pre-made healthy
+ * meal/plan library, migration 0062/0063) — same own/client-section split
+ * and card grid otherwise. */
+export function MealPlansList({ plans: initialPlans, userId, activeClients, planTemplates = [] }: MealPlansListProps) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [plans, setPlans] = useState(initialPlans);
@@ -180,7 +185,13 @@ export function MealPlansList({ plans: initialPlans, userId, activeClients }: Me
         </div>
       )}
 
-      <NewMealPlanDialog open={dialogOpen} onClose={() => setDialogOpen(false)} userId={userId} activeClients={activeClients} />
+      <NewMealPlanDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        userId={userId}
+        activeClients={activeClients}
+        planTemplates={planTemplates}
+      />
 
       {sendTarget && (
         <SendMealPlanDialog open={!!sendTarget} onClose={() => setSendTarget(null)} plan={sendTarget} currentUserId={userId} activeClients={activeClients} />

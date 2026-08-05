@@ -2,15 +2,22 @@
 
 import { Check, Plus, Star, Trash2, Users, X } from "lucide-react";
 import type { Food } from "@/lib/supabase/types";
-import type { MealItemRow, MealRow } from "@/lib/nutrition/types";
+import type { MealItemRow, MealRow, MealTemplateWithItems } from "@/lib/nutrition/types";
 import { itemMacros, resolvedMealOption, sumMacros } from "@/lib/nutrition/macros";
 import { FoodSearchField } from "@/components/nutrition/food-search-field";
+import { MealTemplatePicker } from "@/components/nutrition/meal-template-picker";
 import { InlineNumberField, InlineTextField } from "@/components/programs/inline-fields";
 import { cn } from "@/lib/utils";
 
 interface MealCardProps {
   meal: MealRow;
   search: (query: string) => Promise<Food[]>;
+  /** The pre-made meal library (lib/nutrition/queries.ts' getMealTemplates)
+   * — passed down to MealTemplatePicker in each option alongside
+   * FoodSearchField. Empty array just hides the button (MealTemplatePicker
+   * returns null), so this stays optional-safe if a caller doesn't have it
+   * loaded yet. */
+  mealTemplates: MealTemplateWithItems[];
   onUpdateMeal: (patch: { name?: string; notes?: string | null; allow_athlete_swap?: boolean }) => void;
   onDeleteMeal: () => void;
   onAddOption: () => void;
@@ -18,6 +25,7 @@ interface MealCardProps {
   onDeleteOption: (optionId: string) => void;
   onSelectOption: (optionId: string) => void;
   onAddItem: (optionId: string, food: Food, quantityG: number) => void;
+  onAddTemplate: (optionId: string, template: MealTemplateWithItems) => void;
   onUpdateItemQuantity: (itemId: string, quantityG: number) => void;
   onDeleteItem: (itemId: string) => void;
   onRequestCustomFood: (optionId: string, query: string) => void;
@@ -38,6 +46,7 @@ function round(n: number): number {
 export function MealCard({
   meal,
   search,
+  mealTemplates,
   onUpdateMeal,
   onDeleteMeal,
   onAddOption,
@@ -45,6 +54,7 @@ export function MealCard({
   onDeleteOption,
   onSelectOption,
   onAddItem,
+  onAddTemplate,
   onUpdateItemQuantity,
   onDeleteItem,
   onRequestCustomFood,
@@ -132,11 +142,15 @@ export function MealCard({
                 {option.items.length === 0 && <li className="text-xs text-muted-foreground">No foods added yet.</li>}
               </ul>
 
-              <FoodSearchField
-                onSelect={(food) => onAddItem(option.id, food, food.default_serving_g ?? 100)}
-                search={search}
-                onAddCustomFood={(query) => onRequestCustomFood(option.id, query)}
-              />
+              <div className="flex items-center gap-2">
+                <FoodSearchField
+                  className="flex-1"
+                  onSelect={(food) => onAddItem(option.id, food, food.default_serving_g ?? 100)}
+                  search={search}
+                  onAddCustomFood={(query) => onRequestCustomFood(option.id, query)}
+                />
+                <MealTemplatePicker templates={mealTemplates} onSelect={(template) => onAddTemplate(option.id, template)} />
+              </div>
 
               {option.items.length > 0 && (
                 <p className="text-xs text-muted-foreground">

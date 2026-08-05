@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getMealPlanTree } from "@/lib/nutrition/queries";
+import { getMealPlanTree, getMealTemplates } from "@/lib/nutrition/queries";
 import { MealPlanBuilder } from "@/components/nutrition/meal-plan-builder";
 
 export const metadata: Metadata = {
@@ -32,9 +32,11 @@ export default async function EditMealPlanPage({ params }: EditMealPlanPageProps
     redirect(`/nutrition/${id}`);
   }
 
+  const mealTemplates = await getMealTemplates(supabase);
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
-      <MealPlanBuilder initialPlan={plan} />
+      <MealPlanBuilder initialPlan={plan} mealTemplates={mealTemplates} />
     </div>
   );
 }

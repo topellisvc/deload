@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getMealPlanSummaries } from "@/lib/nutrition/queries";
+import { getMealPlanSummaries, getPlanTemplates } from "@/lib/nutrition/queries";
 import { getMyClients } from "@/lib/coaching/queries";
 import { MealPlansList } from "@/components/nutrition/meal-plans-list";
 
@@ -22,8 +22,12 @@ export default async function NutritionPage() {
     redirect("/sign-in?redirect_to=/nutrition");
   }
 
-  const [plans, clients] = await Promise.all([getMealPlanSummaries(supabase, user.id), getMyClients(supabase, user.id)]);
+  const [plans, clients, planTemplates] = await Promise.all([
+    getMealPlanSummaries(supabase, user.id),
+    getMyClients(supabase, user.id),
+    getPlanTemplates(supabase),
+  ]);
   const activeClients = clients.filter((c) => c.status === "active");
 
-  return <MealPlansList plans={plans} userId={user.id} activeClients={activeClients} />;
+  return <MealPlansList plans={plans} userId={user.id} activeClients={activeClients} planTemplates={planTemplates} />;
 }

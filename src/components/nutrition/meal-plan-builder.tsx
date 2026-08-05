@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Food } from "@/lib/supabase/types";
-import type { NutritionPlanTree } from "@/lib/nutrition/types";
+import type { MealTemplateWithItems, NutritionPlanTree } from "@/lib/nutrition/types";
 import { daySummary } from "@/lib/nutrition/macros";
 import * as m from "@/lib/nutrition/mutations";
 import { searchFoods } from "@/lib/nutrition/queries";
@@ -29,6 +29,11 @@ function optionLetter(index: number): string {
 
 interface MealPlanBuilderProps {
   initialPlan: NutritionPlanTree;
+  /** The pre-made meal library (lib/nutrition/queries.ts' getMealTemplates)
+   * — fetched once server-side in app/nutrition/[id]/edit/page.tsx and
+   * threaded down to every MealCard's Templates picker. Defaults to empty
+   * so existing call sites/tests don't have to supply it. */
+  mealTemplates?: MealTemplateWithItems[];
 }
 
 /**
@@ -42,7 +47,7 @@ interface MealPlanBuilderProps {
  * yet. Worth adding later the same way program-builder.tsx does it if
  * reordering turns out to matter in practice.
  */
-export function MealPlanBuilder({ initialPlan }: MealPlanBuilderProps) {
+export function MealPlanBuilder({ initialPlan, mealTemplates = [] }: MealPlanBuilderProps) {
   const supabase = useMemo(() => createClient(), []);
   const [plan, setPlan] = useState(initialPlan);
   const [selectedDayId, setSelectedDayId] = useState(initialPlan.days[0]?.id ?? "");
@@ -222,6 +227,25 @@ export function MealPlanBuilder({ initialPlan }: MealPlanBuilderProps) {
     }));
   }
 
+  /** Bulk-inserts a whole template's items into one option in one shot —
+   * the Templates picker's onSelect. Mirrors handleAddItem's optimistic
+   * shape (await the mutation, then splice the real rows into state) rather
+   * than adding items one at a time, since m.applyMealTemplate itself is
+   * already a single insert covering every item. */
+  async function handleAddTemplate(dayId: string, mealId: string, optionId: string, template: (typeof mealTemplates)[number]) {
+    const option = plan.days.find((d) => d.id === dayId)?.meals.find((mm) => mm.id === mealId)?.options.find((o) => o.id === optionId);
+    if (!option) return;
+    const { items, error } = await m.applyMealTemplate(supabase, { mealOptionId: optionId, startPosition: nextPosition(option.items), template });
+    if (error) {
+      fail(error);
+      return;
+    }
+    updateMealState(dayId, mealId, (meal) => ({
+      ...meal,
+      options: meal.options.map((o) => (o.id === optionId ? { ...o, items: [...o.items, ...items] } : o)),
+    }));
+  }
+
   function handleUpdateItemQuantity(dayId: string, mealId: string, itemId: string, quantityG: number) {
     updateMealState(dayId, mealId, (meal) => ({
       ...meal,
@@ -339,6 +363,7 @@ export function MealPlanBuilder({ initialPlan }: MealPlanBuilderProps) {
                 key={meal.id}
                 meal={meal}
                 search={search}
+                mealTemplates={mealTemplates}
                 onUpdateMeal={(patch) => handleUpdateMeal(day.id, meal.id, patch)}
                 onDeleteMeal={() => handleDeleteMeal(day.id, meal.id)}
                 onAddOption={() => handleAddOption(day.id, meal.id)}
@@ -346,6 +371,7 @@ export function MealPlanBuilder({ initialPlan }: MealPlanBuilderProps) {
                 onDeleteOption={(optionId) => handleDeleteOption(day.id, meal.id, optionId)}
                 onSelectOption={(optionId) => handleSelectOption(day.id, meal.id, optionId)}
                 onAddItem={(optionId, food, quantityG) => handleAddItem(day.id, meal.id, optionId, food, quantityG)}
+                onAddTemplate={(optionId, template) => handleAddTemplate(day.id, meal.id, optionId, template)}
                 onUpdateItemQuantity={(itemId, quantityG) => handleUpdateItemQuantity(day.id, meal.id, itemId, quantityG)}
                 onDeleteItem={(itemId) => handleDeleteItem(day.id, meal.id, itemId)}
                 onRequestCustomFood={(optionId, query) => setCustomFoodRequest({ mealId: meal.id, optionId, query })}

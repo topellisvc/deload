@@ -1,6 +1,18 @@
-import type { Food, Meal, MealItem, MealOption, NutritionDay, NutritionPlan } from "@/lib/supabase/types";
+import type {
+  Food,
+  Meal,
+  MealItem,
+  MealOption,
+  MealTemplate,
+  MealTemplateItem,
+  NutritionDay,
+  NutritionPlan,
+  PlanTemplate,
+  PlanTemplateDay,
+  PlanTemplateMeal,
+} from "@/lib/supabase/types";
 
-export type { Food, Meal, MealItem, MealOption, NutritionDay, NutritionPlan };
+export type { Food, Meal, MealItem, MealOption, MealTemplate, MealTemplateItem, NutritionDay, NutritionPlan, PlanTemplate, PlanTemplateDay, PlanTemplateMeal };
 
 /**
  * The full nested shape the meal plan builder works with — fetched once
@@ -64,4 +76,35 @@ export interface DayMacroSummary {
     carbs_g: number | null;
     fat_g: number | null;
   };
+}
+
+// ============================================================
+// Meal/plan template library (migration 0062) — see lib/supabase/types.ts'
+// own header comment on MealTemplate for the shape's rationale.
+// ============================================================
+
+export interface MealTemplateItemRow extends MealTemplateItem {
+  /** Resolved from the foods table at fetch time, same guarantee
+   * MealItemRow.food carries — every macro helper assumes it's present. */
+  food: Food;
+}
+
+export interface MealTemplateWithItems extends MealTemplate {
+  items: MealTemplateItemRow[];
+}
+
+export interface PlanTemplateMealRow extends PlanTemplateMeal {
+  /** Denormalized at query time from the referenced meal_templates row —
+   * just enough to render "Breakfast: Greek Yogurt & Berries Bowl" in the
+   * plan-template picker without a second round trip per meal. */
+  mealTemplateName: string;
+  mealTemplateCategory: MealTemplate["category"];
+}
+
+export interface PlanTemplateDayRow extends PlanTemplateDay {
+  meals: PlanTemplateMealRow[];
+}
+
+export interface PlanTemplateTree extends PlanTemplate {
+  days: PlanTemplateDayRow[];
 }

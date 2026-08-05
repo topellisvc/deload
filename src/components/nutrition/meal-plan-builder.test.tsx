@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MealPlanBuilder } from "./meal-plan-builder";
-import type { NutritionPlanTree } from "@/lib/nutrition/types";
+import type { MealTemplateWithItems, NutritionPlanTree } from "@/lib/nutrition/types";
 import type { Food } from "@/lib/supabase/types";
 
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({}) }));
@@ -29,6 +29,39 @@ const chicken: Food = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
+const oats: Food = {
+  id: "usda:staple-oats",
+  name: "Oats",
+  brand: null,
+  source: "usda",
+  fdc_id: null,
+  calories: 389,
+  protein_g: 16.89,
+  carbs_g: 66.27,
+  fat_g: 6.9,
+  fiber_g: 10.6,
+  sugar_g: null,
+  sodium_mg: null,
+  default_serving_g: 100,
+  default_serving_label: "100 g",
+  owner_id: null,
+  is_archived: false,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
+const proteinOatsTemplate: MealTemplateWithItems = {
+  id: "template-b03",
+  name: "Protein Oats",
+  description: "Oats cooked in milk with banana and peanut butter.",
+  category: "breakfast",
+  tags: ["high_carb"],
+  position: 3,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+  items: [{ id: "ti-1", template_id: "template-b03", position: 1, food_id: oats.id, quantity_g: 80, display_label: "Oats (dry)", food: oats }],
+};
+
 const { mutationMocks } = vi.hoisted(() => ({
   mutationMocks: {
     updateMealPlan: vi.fn().mockResolvedValue({ error: null }),
@@ -43,6 +76,7 @@ const { mutationMocks } = vi.hoisted(() => ({
     deleteMealOption: vi.fn().mockResolvedValue({ error: null }),
     selectMealOption: vi.fn().mockResolvedValue({ error: null }),
     addMealItem: vi.fn(),
+    applyMealTemplate: vi.fn(),
     updateMealItem: vi.fn().mockResolvedValue({ error: null }),
     deleteMealItem: vi.fn().mockResolvedValue({ error: null }),
     createCustomFood: vi.fn(),
@@ -199,5 +233,43 @@ describe("MealPlanBuilder", () => {
   it("does not show a delete-day control when there's only one day", () => {
     render(<MealPlanBuilder initialPlan={makePlan()} />);
     expect(screen.queryByLabelText("Delete day")).not.toBeInTheDocument();
+  });
+
+  it("inserting a meal template adds every one of its items to that option via applyMealTemplate", async () => {
+    mutationMocks.applyMealTemplate.mockResolvedValue({
+      items: [
+        {
+          id: "item-from-template",
+          meal_option_id: "option-a",
+          position: 2,
+          food_id: oats.id,
+          quantity_g: 80,
+          display_label: "Oats (dry)",
+          notes: null,
+          created_at: "2026-01-01T00:00:00Z",
+          food: oats,
+        },
+      ],
+      error: null,
+    });
+    const user = userEvent.setup();
+    render(<MealPlanBuilder initialPlan={makePlan()} mealTemplates={[proteinOatsTemplate]} />);
+
+    // Option A already has one item (chicken, position 1) — the picker
+    // button sits next to Option A's own FoodSearchField, two levels below
+    // the header div the "Option A" input itself lives in.
+    const optionACard = screen.getByDisplayValue("Option A").closest("div")!.parentElement!.parentElement!;
+    await user.click(within(optionACard).getByRole("button", { name: /templates/i }));
+    await user.click(await screen.findByRole("option", { name: /protein oats/i }));
+
+    await waitFor(() =>
+      expect(mutationMocks.applyMealTemplate).toHaveBeenCalledWith({}, { mealOptionId: "option-a", startPosition: 2, template: proteinOatsTemplate })
+    );
+    expect(await screen.findByText("Oats (dry)")).toBeInTheDocument();
+  });
+
+  it("hides the Templates button entirely when no templates were passed in", () => {
+    render(<MealPlanBuilder initialPlan={makePlan()} />);
+    expect(screen.queryByRole("button", { name: /templates/i })).not.toBeInTheDocument();
   });
 });

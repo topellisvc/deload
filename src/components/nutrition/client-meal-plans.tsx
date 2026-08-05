@@ -12,7 +12,7 @@ import { SendMealPlanDialog } from "@/components/nutrition/send-meal-plan-dialog
 import { createClient } from "@/lib/supabase/client";
 import { deleteMealPlan, setActiveMealPlan } from "@/lib/nutrition/mutations";
 import { getMealPlanTree } from "@/lib/nutrition/queries";
-import type { NutritionPlanSummary, NutritionPlanTree } from "@/lib/nutrition/types";
+import type { NutritionPlanSummary, NutritionPlanTree, PlanTemplateTree } from "@/lib/nutrition/types";
 import type { CoachClient } from "@/lib/supabase/types";
 
 interface ClientMealPlansProps {
@@ -20,6 +20,9 @@ interface ClientMealPlansProps {
   client: CoachClient;
   plans: NutritionPlanSummary[];
   activeClients: CoachClient[];
+  /** The starter plan library — threaded straight through to
+   * NewMealPlanDialog's "Start from" picker. */
+  planTemplates?: PlanTemplateTree[];
 }
 
 /**
@@ -27,7 +30,7 @@ interface ClientMealPlansProps {
  * Mirrors ClientDetail (programs) exactly, including the "set active"
  * control.
  */
-export function ClientMealPlans({ coachId, client, plans: initialPlans, activeClients }: ClientMealPlansProps) {
+export function ClientMealPlans({ coachId, client, plans: initialPlans, activeClients, planTemplates = [] }: ClientMealPlansProps) {
   const router = useRouter();
   const [plans, setPlans] = useState(initialPlans);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
@@ -154,6 +157,7 @@ export function ClientMealPlans({ coachId, client, plans: initialPlans, activeCl
         userId={coachId}
         activeClients={activeClients}
         defaultAthleteId={client.client_id ?? undefined}
+        planTemplates={planTemplates}
       />
 
       {sendTarget && (

@@ -1,6 +1,30 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Food, Meal, MealItem, MealOption, NutritionDay, NutritionPlan } from "@/lib/supabase/types";
-import type { MealItemRow, MealOptionRow, MealRow, NutritionDayRow, NutritionPlanSummary, NutritionPlanTree } from "@/lib/nutrition/types";
+import type {
+  Food,
+  Meal,
+  MealItem,
+  MealOption,
+  MealTemplate,
+  MealTemplateItem,
+  NutritionDay,
+  NutritionPlan,
+  PlanTemplate,
+  PlanTemplateDay,
+  PlanTemplateMeal,
+} from "@/lib/supabase/types";
+import type {
+  MealItemRow,
+  MealOptionRow,
+  MealRow,
+  MealTemplateItemRow,
+  MealTemplateWithItems,
+  NutritionDayRow,
+  NutritionPlanSummary,
+  NutritionPlanTree,
+  PlanTemplateDayRow,
+  PlanTemplateMealRow,
+  PlanTemplateTree,
+} from "@/lib/nutrition/types";
 
 /**
  * The meal plan tree is four tables deep (plan -> days -> meals -> options
@@ -193,6 +217,99 @@ export async function searchFoods(supabase: SupabaseClient, query: string, limit
     return a.name.localeCompare(b.name);
   });
   return results.slice(0, limit);
+}
+
+// ============================================================
+// Meal/plan template library
+// ============================================================
+
+/**
+ * Every pre-made meal template, with its items resolved to full Food rows —
+ * the Templates tab's single data source. Small, fixed, admin-curated set
+ * (a dozen or so rows), so this just fetches everything and lets the caller
+ * filter/group client-side rather than taking a query param, same "it's
+ * cheap, don't overbuild the API" reasoning searchFoods' own docs give for
+ * capping at a small page instead. Same flat-query-and-stitch shape as
+ * getMealPlanTree, one level shallower.
+ */
+export async function getMealTemplates(supabase: SupabaseClient): Promise<MealTemplateWithItems[]> {
+  const { data: templatesData } = await supabase.from("meal_templates").select("*").order("category", { ascending: true }).order("position", { ascending: true });
+  const templates = (templatesData ?? []) as MealTemplate[];
+  if (templates.length === 0) return [];
+
+  const templateIds = templates.map((t) => t.id);
+  const { data: itemsData } = await supabase.from("meal_template_items").select("*").in("template_id", templateIds).order("position", { ascending: true });
+  const items = (itemsData ?? []) as MealTemplateItem[];
+
+  const foodIds = [...new Set(items.map((i) => i.food_id))];
+  const { data: foodsData } = foodIds.length ? await supabase.from("foods").select("*").in("id", foodIds) : { data: [] };
+  const foodsById = new Map(((foodsData ?? []) as Food[]).map((f) => [f.id, f]));
+
+  const itemsByTemplate = groupBy(items, (i) => i.template_id);
+
+  return templates.map((template) => ({
+    ...template,
+    // Same dangling-food_id defensiveness as getMealPlanTree — shouldn't
+    // happen (foods referenced by a template are admin-managed, same as the
+    // template itself), but a MealTemplateItemRow without its food would
+    // break every macro helper that assumes it's there.
+    items: (itemsByTemplate.get(template.id) ?? []).flatMap((item): MealTemplateItemRow[] => {
+      const food = foodsById.get(item.food_id);
+      return food ? [{ ...item, food }] : [];
+    }),
+  }));
+}
+
+/** Just the templates matching `ids` — used by instantiatePlanTemplate,
+ * which only needs a handful of specific templates' items rather than the
+ * whole library getMealTemplates returns. */
+export async function getMealTemplatesByIds(supabase: SupabaseClient, ids: string[]): Promise<MealTemplateWithItems[]> {
+  const all = await getMealTemplates(supabase);
+  const idSet = new Set(ids);
+  return all.filter((t) => idSet.has(t.id));
+}
+
+/**
+ * Every starter plan template, days and meals resolved (each meal carrying
+ * just its referenced meal template's name/category, not the full item
+ * list — the "Start from a template" picker only needs enough to render
+ * "Breakfast: Greek Yogurt & Berries Bowl," not full macros). Same flat
+ * fetch-and-stitch shape as getMealPlanTree.
+ */
+export async function getPlanTemplates(supabase: SupabaseClient): Promise<PlanTemplateTree[]> {
+  const { data: plansData } = await supabase.from("plan_templates").select("*").order("position", { ascending: true });
+  const plans = (plansData ?? []) as PlanTemplate[];
+  if (plans.length === 0) return [];
+
+  const planIds = plans.map((p) => p.id);
+  const { data: daysData } = await supabase.from("plan_template_days").select("*").in("template_id", planIds).order("position", { ascending: true });
+  const days = (daysData ?? []) as PlanTemplateDay[];
+  const dayIds = days.map((d) => d.id);
+
+  const { data: mealsData } = dayIds.length
+    ? await supabase.from("plan_template_meals").select("*").in("day_id", dayIds).order("position", { ascending: true })
+    : { data: [] };
+  const meals = (mealsData ?? []) as PlanTemplateMeal[];
+
+  const mealTemplateIds = [...new Set(meals.map((m) => m.meal_template_id))];
+  const { data: mealTemplatesData } = mealTemplateIds.length
+    ? await supabase.from("meal_templates").select("id, name, category").in("id", mealTemplateIds)
+    : { data: [] };
+  const mealTemplatesById = new Map(((mealTemplatesData ?? []) as Pick<MealTemplate, "id" | "name" | "category">[]).map((t) => [t.id, t]));
+
+  const mealsByDay = groupBy(meals, (m) => m.day_id);
+  const daysByPlan = groupBy(days, (d) => d.template_id);
+
+  return plans.map((plan) => ({
+    ...plan,
+    days: (daysByPlan.get(plan.id) ?? []).map((day): PlanTemplateDayRow => ({
+      ...day,
+      meals: (mealsByDay.get(day.id) ?? []).flatMap((meal): PlanTemplateMealRow[] => {
+        const mealTemplate = mealTemplatesById.get(meal.meal_template_id);
+        return mealTemplate ? [{ ...meal, mealTemplateName: mealTemplate.name, mealTemplateCategory: mealTemplate.category }] : [];
+      }),
+    })),
+  }));
 }
 
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {

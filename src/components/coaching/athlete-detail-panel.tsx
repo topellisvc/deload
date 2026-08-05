@@ -13,7 +13,7 @@ import { MessageThread } from "@/components/coaching/message-thread";
 import { ThisWeekStats } from "@/components/dashboard/this-week-stats";
 import { getInitials } from "@/lib/utils";
 import type { ProgramSummary } from "@/lib/programs/types";
-import type { NutritionPlanSummary } from "@/lib/nutrition/types";
+import type { NutritionPlanSummary, PlanTemplateTree } from "@/lib/nutrition/types";
 import type { CoachClient, LoggedSet, Message } from "@/lib/supabase/types";
 import type { SessionHistoryEntry } from "@/lib/logging/queries";
 import type { Exercise } from "@/lib/exercises/types";
@@ -38,6 +38,10 @@ interface AthleteDetailPanelProps {
   client: CoachClient;
   programs: ProgramSummary[];
   mealPlans: NutritionPlanSummary[];
+  /** The starter plan library — threaded through to ClientMealPlans' own
+   * NewMealPlanDialog "Start from" picker. Optional/defaulted so existing
+   * callers/tests don't need to supply it. */
+  planTemplates?: PlanTemplateTree[];
   lastActivityOn: string | null;
   activeClients: CoachClient[];
   weeklySummary: WeeklyTrainingSummary;
@@ -71,6 +75,7 @@ export function AthleteDetailPanel({
   client,
   programs,
   mealPlans,
+  planTemplates = [],
   lastActivityOn,
   activeClients,
   weeklySummary,
@@ -147,7 +152,9 @@ export function AthleteDetailPanel({
         />
       )}
 
-      {tab === "nutrition" && <ClientMealPlans coachId={coachId} client={client} plans={mealPlans} activeClients={activeClients} />}
+      {tab === "nutrition" && (
+        <ClientMealPlans coachId={coachId} client={client} plans={mealPlans} activeClients={activeClients} planTemplates={planTemplates} />
+      )}
 
       {tab === "activity" && (
         <div className="flex flex-col gap-6">

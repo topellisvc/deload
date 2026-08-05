@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getClientLastActivity, getMyClients, getMyRole } from "@/lib/coaching/queries";
 import { getProgramsForClient } from "@/lib/programs/queries";
-import { getMealPlansForClient } from "@/lib/nutrition/queries";
+import { getMealPlansForClient, getPlanTemplates } from "@/lib/nutrition/queries";
 import { getConversationMessages } from "@/lib/messaging/queries";
 import { getSessionHistory, getLoggedSets, groupLoggedSetsByExercise } from "@/lib/logging/queries";
 import { listExercises } from "@/lib/exercises/queries";
@@ -65,9 +65,10 @@ export default async function AthletePage({ params }: AthletePageProps) {
   // this can't join the Promise.all below.
   const activeContext = await getActiveProgramContext(supabase, id, null);
 
-  const [programs, mealPlans, lastActivityOn, historyEntries, messages, exercises, weeklySummary, athleteStats] = await Promise.all([
+  const [programs, mealPlans, planTemplates, lastActivityOn, historyEntries, messages, exercises, weeklySummary, athleteStats] = await Promise.all([
     getProgramsForClient(supabase, user.id, id),
     getMealPlansForClient(supabase, user.id, id),
+    getPlanTemplates(supabase),
     getClientLastActivity(supabase, id),
     getSessionHistory(supabase, id),
     getConversationMessages(supabase, client.id),
@@ -98,6 +99,7 @@ export default async function AthletePage({ params }: AthletePageProps) {
         client={client}
         programs={programs}
         mealPlans={mealPlans}
+        planTemplates={planTemplates}
         lastActivityOn={lastActivityOn}
         activeClients={activeClients}
         weeklySummary={weeklySummary}

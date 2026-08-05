@@ -641,3 +641,70 @@ export interface MealItem {
   notes: string | null;
   created_at: string;
 }
+
+// ============================================================
+// Meal/plan template library (migration 0062) — admin-curated reference
+// content, globally readable, distinct from a real NutritionPlan tree: no
+// owner_id/athlete_id, nothing here is ever "assigned" to anyone. A coach
+// pulls from this into a real plan they own (lib/nutrition/mutations.ts'
+// applyMealTemplate / instantiatePlanTemplate); the template row itself
+// never changes underneath them.
+// ============================================================
+
+/** One pre-made healthy meal — "Grilled Chicken & Quinoa Bowl." tags are
+ * free-form labels (e.g. "high_protein", "vegetarian") for filtering in the
+ * picker UI, not a DB-enforced taxonomy. */
+export interface MealTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  category: "breakfast" | "lunch" | "dinner" | "snack";
+  tags: string[];
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One food line within a MealTemplate — same shape as MealItem, just
+ * scoped to a template_id instead of a meal_option_id and with no notes
+ * column (nothing athlete/coach-specific ever gets attached to a shared
+ * template row). */
+export interface MealTemplateItem {
+  id: string;
+  template_id: string;
+  position: number;
+  food_id: string;
+  quantity_g: number;
+  display_label: string | null;
+}
+
+/** A full starter plan built from meal templates — "Balanced Maintenance,"
+ * "High-Protein Cut." goal is a free-form label (e.g. "cut", "bulk",
+ * "maintenance"), same convention as MealTemplate.tags. */
+export interface PlanTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  goal: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanTemplateDay {
+  id: string;
+  template_id: string;
+  position: number;
+  label: string | null;
+}
+
+/** One meal slot within a PlanTemplateDay — references a MealTemplate
+ * rather than duplicating its items, so a plan template is just a curated
+ * sequence of the same meal templates the Templates tab already offers. */
+export interface PlanTemplateMeal {
+  id: string;
+  day_id: string;
+  position: number;
+  name: string;
+  meal_template_id: string;
+}

@@ -1,4 +1,4 @@
-import type { DayMacroSummary, MacroTotals, MealItemRow, MealRow, NutritionDayRow, NutritionPlan } from "@/lib/nutrition/types";
+import type { DayMacroSummary, Food, MacroTotals, MealRow, NutritionDayRow, NutritionPlan } from "@/lib/nutrition/types";
 
 /**
  * Which MealOption a meal is currently "showing" — the selected one if set
@@ -19,8 +19,11 @@ export function resolvedMealOption(meal: MealRow) {
 const ZERO_MACROS: MacroTotals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
 
 /** One line item's macros, scaled from the food's per-100g values by
- * quantity_g. Never reads display_label — that field is cosmetic only. */
-export function itemMacros(item: MealItemRow): MacroTotals {
+ * quantity_g. Never reads display_label — that field is cosmetic only.
+ * Takes just the two fields it needs (structural, not MealItemRow) so
+ * MealTemplateItemRow — same shape, no meal_option_id/notes/created_at —
+ * can reuse it too, for the Templates picker's own macro hint. */
+export function itemMacros(item: { quantity_g: number; food: Food }): MacroTotals {
   const factor = item.quantity_g / 100;
   return {
     calories: item.food.calories * factor,
