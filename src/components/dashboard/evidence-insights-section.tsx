@@ -1,11 +1,23 @@
-import { Sparkles } from "lucide-react";
+import { AlertCircle, Flame, Moon, PartyPopper, Sparkles, TrendingUp, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Insight } from "@/lib/dashboard/insights";
+import type { Insight, InsightIconName } from "@/lib/dashboard/insights";
 
 const TONE_STYLES: Record<Insight["tone"], string> = {
   positive: "border-primary/30 bg-primary/5 text-primary",
   neutral: "border-border bg-background text-foreground",
   warning: "border-danger/30 bg-danger/5 text-danger",
+};
+
+/** Resolves computeInsights' plain-string icon identifiers (lib/dashboard/
+ * insights.ts) back to real lucide components — deliberately only done here,
+ * client-side, since a LucideIcon itself can't cross the server->client
+ * prop boundary DashboardContent sits on (see that file's own comment). */
+const ICONS: Record<InsightIconName, LucideIcon> = {
+  "alert-circle": AlertCircle,
+  flame: Flame,
+  "trending-up": TrendingUp,
+  moon: Moon,
+  "party-popper": PartyPopper,
 };
 
 /**
@@ -27,15 +39,18 @@ export function EvidenceInsightsSection({ insights }: { insights: Insight[] }) {
         </p>
       ) : (
         <div className="flex flex-col gap-2.5">
-          {insights.map((insight) => (
-            <div
-              key={insight.id}
-              className={cn("flex items-start gap-2.5 rounded-lg border p-3.5", TONE_STYLES[insight.tone])}
-            >
-              <insight.icon className="mt-0.5 size-4 shrink-0" />
-              <p className="text-sm">{insight.message}</p>
-            </div>
-          ))}
+          {insights.map((insight) => {
+            const Icon = ICONS[insight.icon];
+            return (
+              <div
+                key={insight.id}
+                className={cn("flex items-start gap-2.5 rounded-lg border p-3.5", TONE_STYLES[insight.tone])}
+              >
+                <Icon className="mt-0.5 size-4 shrink-0" />
+                <p className="text-sm">{insight.message}</p>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

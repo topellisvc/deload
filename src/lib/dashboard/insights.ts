@@ -1,5 +1,14 @@
-import type { LucideIcon } from "lucide-react";
-import { AlertCircle, Flame, Moon, PartyPopper, TrendingUp } from "lucide-react";
+/**
+ * Icon identifiers, not lucide component references — computeInsights runs
+ * server-side (app/dashboard/page.tsx) and its return value crosses into a
+ * "use client" component (DashboardContent -> EvidenceInsightsSection) as a
+ * prop. A LucideIcon is a function/forwardRef object, and Next.js can only
+ * pass plain serializable data across that boundary — passing the component
+ * itself throws "Functions cannot be passed directly to Client Components."
+ * EvidenceInsightsSection resolves these names to the real icon components
+ * on the client side, where rendering JSX is fine.
+ */
+export type InsightIconName = "alert-circle" | "flame" | "trending-up" | "moon" | "party-popper";
 
 export interface InsightInput {
   currentStreak: number;
@@ -14,7 +23,7 @@ export interface InsightInput {
 
 export interface Insight {
   id: string;
-  icon: LucideIcon;
+  icon: InsightIconName;
   tone: "positive" | "neutral" | "warning";
   message: string;
 }
@@ -37,7 +46,7 @@ export function computeInsights(input: InsightInput): Insight[] {
   if (input.daysSinceLastSession != null && input.daysSinceLastSession >= 7) {
     insights.push({
       id: "inactive",
-      icon: AlertCircle,
+      icon: "alert-circle",
       tone: "warning",
       message: `No workouts logged in ${input.daysSinceLastSession} days — time to get back on track.`,
     });
@@ -46,7 +55,7 @@ export function computeInsights(input: InsightInput): Insight[] {
   if (input.currentStreak >= 3) {
     insights.push({
       id: "streak",
-      icon: Flame,
+      icon: "flame",
       tone: "positive",
       message: `You're on a ${input.currentStreak}-day streak. Keep it going.`,
     });
@@ -55,7 +64,7 @@ export function computeInsights(input: InsightInput): Insight[] {
   if (input.sessionsPrevious14Days > 0 && input.sessionsLast14Days > input.sessionsPrevious14Days) {
     insights.push({
       id: "consistency_improved",
-      icon: TrendingUp,
+      icon: "trending-up",
       tone: "positive",
       message: `Consistency is up — ${input.sessionsLast14Days} sessions in the last 2 weeks, vs ${input.sessionsPrevious14Days} the 2 weeks before.`,
     });
@@ -64,7 +73,7 @@ export function computeInsights(input: InsightInput): Insight[] {
   if (input.upcomingWeekLabel && /deload|recovery|rest/i.test(input.upcomingWeekLabel)) {
     insights.push({
       id: "recovery_week",
-      icon: Moon,
+      icon: "moon",
       tone: "neutral",
       message: `${input.upcomingWeekLabel} is coming up next.`,
     });
@@ -73,7 +82,7 @@ export function computeInsights(input: InsightInput): Insight[] {
   if (input.completionPercent != null && input.completionPercent >= 80) {
     insights.push({
       id: "near_complete",
-      icon: PartyPopper,
+      icon: "party-popper",
       tone: "positive",
       message: `You're ${input.completionPercent}% of the way through your current program.`,
     });
